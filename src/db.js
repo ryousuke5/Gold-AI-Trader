@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
-const enabled=Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY);
-const supabase=enabled?createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY):null;
+const supabaseKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY||'';
+const enabled=Boolean(process.env.SUPABASE_URL&&supabaseKey);
+const supabase=enabled?createClient(process.env.SUPABASE_URL,supabaseKey):null;
 export function dbEnabled(){return Boolean(supabase);}
 export async function getSignalByKey({signalId=null,symbol=null,timeframe=null,barTimeIso=null,strategyVersion=null}={}) {
   if(!supabase) return null;
