@@ -1,0 +1,19 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { normalizeFeatures, validateFeatures, ruleCandidate } from '../src/features.js';
+import { calculateLots, evaluateRisk } from '../src/risk.js';
+
+const base = {
+  bid: 3000, ask: 3000.3, point: 0.01, spread: 0.3, spread_points: 30, bar_time: Math.floor(Date.now()/1000)-30,
+  m5:{ema20:3001,ema50:2999,rsi14:45,atr14:3,high20:3005,low20:2995},
+  h1:{ema20:3010,ema50:3005,ema200:2990,rsi14:58,atr14:8}
+};
+test('features validate',()=>{const f=normalizeFeatures(base);assert.deepEqual(validateFeatures(f),[]);});
+test('rule candidate identifies bullish setup',()=>assert.equal(ruleCandidate(normalizeFeatures(base)),'BUY'));
+test('lot calculation returns stepped size without exceeding risk',()=>{const r=calculateLots({equity:10000,riskPct:0.25,entry:3000,stopLoss:2995,tickSize:0.01,tickValue:1,minLot:0.01,maxLot:100,lotStep:0.01});assert.ok(r.lots>0);assert.ok(r.lots<=r.rawLots);});
+test('WAIT is never approved',()=>{const f=normalizeFeatures(base);const r=evaluateRisk({decision:{decision:'WAIT',confidence:1},features:f,account:{},signalCreatedAt:Date.now(),now:Date.now()});assert.equal(r.approved,false);});
+test('confidence above 1 is blocked',()=>{const f=normalizeFeatures(base);const r=evaluateRisk({decision:{decision:'BUY',candidate:'BUY',confidence:1.2,risk_reward:2,entry:3000,stop_loss:2995,take_profit:3010},features:f,account:{equity:10000,open_positions:0,daily_pnl_pct:0,drawdown_pct:0,risk_data_ready:true,trade_allowed:1,tick_size:0.01,tick_value:1,min_lot:0.01,max_lot:100,lot_step:0.01},signalCreatedAt:Date.now(),now:Date.now()});assert.equal(r.approved,false);});
+test('bad BUY price geometry is blocked',()=>{const f=normalizeFeatures(base);const r=evaluateRisk({decision:{decision:'BUY',candidate:'BUY',confidence:.8,risk_reward:2,entry:3000,stop_loss:3001,take_profit:3010},features:f,account:{equity:10000,open_positions:0,daily_pnl_pct:0,drawdown_pct:0,risk_data_ready:true,trade_allowed:1,tick_size:.01,tick_value:1,min_lot:.01,max_lot:100,lot_step:.01},signalCreatedAt:Date.now(),now:Date.now()});assert.equal(r.approved,false);});
+test('daily loss blocks new order',()=>{const f=normalizeFeatures(base);const r=evaluateRisk({decision:{decision:'BUY',candidate:'BUY',confidence:.8,risk_reward:2,entry:3000,stop_loss:2995,take_profit:3010},features:f,account:{equity:10000,open_positions:0,daily_pnl_pct:-2.1,drawdown_pct:0,risk_data_ready:true,trade_allowed:1,tick_size:.01,tick_value:1,min_lot:.01,max_lot:100,lot_step:.01},signalCreatedAt:Date.now(),now:Date.now()});assert.equal(r.approved,false);});
+test('broker trade permission blocks order',()=>{const f=normalizeFeatures(base);const r=evaluateRisk({decision:{decision:'BUY',candidate:'BUY',confidence:.8,risk_reward:2,entry:3000,stop_loss:2995,take_profit:3010},features:f,account:{equity:10000,open_positions:0,daily_pnl_pct:0,drawdown_pct:0,risk_data_ready:true,trade_allowed:0,tick_size:.01,tick_value:1,min_lot:.01,max_lot:100,lot_step:.01},signalCreatedAt:Date.now(),now:Date.now()});assert.equal(r.approved,false);});
+test('stale bar blocks order',()=>{const f=normalizeFeatures({...base,bar_time:Math.floor(Date.now()/1000)-1000});const r=evaluateRisk({decision:{decision:'BUY',candidate:'BUY',confidence:.8,risk_reward:2,entry:3000,stop_loss:2995,take_profit:3010},features:f,account:{equity:10000,open_positions:0,daily_pnl_pct:0,drawdown_pct:0,risk_data_ready:true,trade_allowed:1,tick_size:.01,tick_value:1,min_lot:.01,max_lot:100,lot_step:.01},signalCreatedAt:Date.now(),now:Date.now()});assert.equal(r.approved,false);});
