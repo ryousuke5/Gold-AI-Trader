@@ -1,0 +1,57 @@
+services:
+  - type: web
+    name: gold-ai-trader-v1
+    runtime: node
+    buildCommand: npm install --no-audit --no-fund
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: GOLD_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.5
+      - key: OPENAI_REASONING_EFFORT
+        value: medium
+      - key: OPENAI_TIMEOUT_MS
+        value: "12000"
+      - key: DEFAULT_SYMBOL
+        value: XAUUSD
+      - key: STRATEGY_VERSION
+        value: gold-m5-h1-v1
+      - key: AI_ONLY_ON_CANDIDATE
+        value: "true"
+      - key: MAX_RISK_PER_TRADE_PCT
+        value: "0.25"
+      - key: MAX_DAILY_LOSS_PCT
+        value: "2"
+      - key: MAX_DRAWDOWN_PCT
+        value: "5"
+      - key: MAX_OPEN_POSITIONS
+        value: "1"
+      - key: MAX_SPREAD_PRICE
+        value: "0.50"
+      - key: MIN_CONFIDENCE
+        value: "0.70"
+      - key: MIN_RR
+        value: "1.50"
+      - key: MAX_SIGNAL_AGE_SECONDS
+        value: "90"
+      - key: MIN_STOP_DISTANCE_PRICE
+        value: "0.50"
+      - key: MAX_STOP_DISTANCE_PRICE
+        value: "20"
+      - key: MIN_STOP_ATR_MULTIPLE
+        value: "0.50"
+      - key: MAX_STOP_ATR_MULTIPLE
+        value: "2.00"
+      - key: MAX_ENTRY_DEVIATION_PRICE
+        value: "1.00"
