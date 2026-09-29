@@ -14,6 +14,9 @@ input double MaxSpreadPrice = 0.50;
 input int    RequestTimeoutMs = 8000;
 
 datetime g_lastClosedM5Bar = 0;
+datetime g_lastAttemptedM5Bar = 0;
+datetime g_lastAttemptAt = 0;
+int g_retrySeconds = 30;
 
 //---------------------------------------------------------
 // String helpers
@@ -415,7 +418,15 @@ void OnTimer()
    if(closedBar == g_lastClosedM5Bar)
       return;
 
-   g_lastClosedM5Bar = closedBar;
+   datetime now = TimeCurrent();
+
+   if(closedBar == g_lastAttemptedM5Bar &&
+      g_lastAttemptAt > 0 &&
+      (now - g_lastAttemptAt) < g_retrySeconds)
+      return;
+
+   g_lastAttemptedM5Bar = closedBar;
+   g_lastAttemptAt = now;
 
    string payload = "";
    string response = "";
@@ -425,6 +436,7 @@ void OnTimer()
 
    if(PostJson("/api/gold/signal", payload, response))
    {
+      g_lastClosedM5Bar = closedBar;
       Print("GoldAITrader: signal response = ", response);
 
       if(AllowAutoOrders)
