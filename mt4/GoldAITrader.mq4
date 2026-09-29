@@ -1,6 +1,6 @@
 #property strict
-#property version   "1.3"
-#property description "XAUUSD AI Trader V1.3 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
+#property version   "1.4"
+#property description "XAUUSD AI Trader V1.4 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
 input string ApiKey = "CHANGE_ME";
@@ -73,15 +73,23 @@ string JsonNumber(double value, int digits)
 
 bool IsValidApiConfiguration()
 {
-   if(StringFind(ApiBaseUrl, "https://") != 0)
+   bool urlOk = (StringFind(TrimText(ApiBaseUrl), "https://") == 0);
+   bool keyOk = (StringLen(TrimText(ApiKey)) >= 16 && TrimText(ApiKey) != "CHANGE_ME");
+
+   Print("GoldAITrader: API config check. url_ok=",
+         (urlOk ? "true" : "false"),
+         " key_ok=",
+         (keyOk ? "true" : "false"));
+
+   if(!urlOk)
    {
       Print("GoldAITrader: ApiBaseUrl must start with https://");
       return false;
    }
 
-   if(StringLen(TrimText(ApiKey)) < 16 || ApiKey == "CHANGE_ME")
+   if(!keyOk)
    {
-      Print("GoldAITrader: ApiKey is not configured.");
+      Print("GoldAITrader: ApiKey is not configured or is too short.");
       return false;
    }
 
@@ -350,7 +358,7 @@ bool PostJson(string path, string payload, string &response)
    StringConcatenate(
       headers,
       "Content-Type: application/json\r\n",
-      "X-Gold-API-Key: ", ApiKey, "\r\n",
+      "X-Gold-API-Key: ", TrimText(ApiKey), "\r\n",
       "X-Request-Id: ", IntegerToString((int)GetTickCount()), "\r\n"
    );
 
