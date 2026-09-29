@@ -16,7 +16,7 @@ const aiOnlyOnCandidate=process.env.AI_ONLY_ON_CANDIDATE!=='false';
 const memoryState={id:'global',auto_trading_enabled:false,mode:'ANALYSIS',emergency_stopped_at:null,updated_at:new Date().toISOString()};
 const seenBars=new Map();
 function timingSafeEquals(a,b){const left=Buffer.from(String(a||''));const right=Buffer.from(String(b||''));return left.length===right.length&&crypto.timingSafeEqual(left,right);}
-function auth(req,res,next){const expected=process.env.GOLD_API_KEY;if(!expected)return res.status(503).json({ok:false,error:'GOLD_API_KEY is not configured'});const supplied=String(req.headers['x-gold-api-key']||'');if(!timingSafeEquals(supplied,expected))return res.status(401).json({ok:false,error:'unauthorized',supplied_key_length:supplied.length,supplied_key_fingerprint:keyFingerprint(supplied),server_key_length:expected.length,server_key_fingerprint:keyFingerprint(expected)});next();});const supplied=String(req.headers['x-gold-api-key']||'');if(!timingSafeEquals(supplied,expected))return res.status(401).json({ok:false,error:'unauthorized'});next();}
+function auth(req,res,next){const expected=process.env.GOLD_API_KEY;if(!expected)return res.status(503).json({ok:false,error:'GOLD_API_KEY is not configured'});const supplied=String(req.headers['x-gold-api-key']||'');if(!timingSafeEquals(supplied,expected))return res.status(401).json({ok:false,error:'unauthorized',supplied_key_length:supplied.length,supplied_key_fingerprint:keyFingerprint(supplied),server_key_length:expected.length,server_key_fingerprint:keyFingerprint(expected)});next();}
 function nowIso(){return new Date().toISOString();}
 function keyFingerprint(value){
   return crypto.createHash('sha256').update(String(value||''),'utf8').digest('hex').slice(0,12);
