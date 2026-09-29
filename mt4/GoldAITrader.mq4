@@ -453,8 +453,18 @@ int OnInit()
 {
    string sym = TradeSymbol();
 
+   Print("GoldAITrader: starting initialization. symbol=", sym,
+         " api=", ApiBaseUrl,
+         " timer=", TimerSeconds,
+         " timeoutMs=", RequestTimeoutMs,
+         " signalRequests=", (EnableSignalRequests ? "true" : "false"),
+         " autoOrders=", (AllowAutoOrders ? "requested-but-disabled" : "off"));
+
    if(!IsValidApiConfiguration())
+   {
+      Print("GoldAITrader: initialization blocked by API configuration.");
       return INIT_FAILED;
+   }
 
    if(!IsGoldSymbol(sym))
    {
@@ -462,20 +472,33 @@ int OnInit()
       return INIT_FAILED;
    }
 
+   ResetLastError();
+
    if(!SymbolSelect(sym, true))
+   {
+      Print("GoldAITrader: SymbolSelect failed during initialization. error=", GetLastError(),
+            " symbol=", sym);
       return INIT_FAILED;
+   }
 
    if(TimerSeconds < 1)
+   {
+      Print("GoldAITrader: TimerSeconds must be >= 1. current=", TimerSeconds);
       return INIT_FAILED;
+   }
 
    if(RequestTimeoutMs < 1000)
+   {
+      Print("GoldAITrader: RequestTimeoutMs must be >= 1000. current=", RequestTimeoutMs);
       return INIT_FAILED;
+   }
 
    ResetLastError();
 
    if(!EventSetTimer(TimerSeconds))
    {
-      Print("GoldAITrader: EventSetTimer failed. error=", GetLastError());
+      Print("GoldAITrader: EventSetTimer failed. error=", GetLastError(),
+            " timer=", TimerSeconds);
       return INIT_FAILED;
    }
 
