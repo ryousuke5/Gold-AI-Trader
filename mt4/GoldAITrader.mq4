@@ -1,6 +1,6 @@
 #property strict
-#property version   "1.2"
-#property description "XAUUSD AI Trader V1 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
+#property version   "1.3"
+#property description "XAUUSD AI Trader V1.3 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
 input string ApiKey = "CHANGE_ME";
