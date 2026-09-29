@@ -210,6 +210,9 @@ bool BuildSignalPayload(string &payload)
    double spread = ask - bid;
    double spreadPoints = 0.0;
 
+   if(spread > MaxSpreadPrice)
+      Print("GoldAITrader: spread is above local observation threshold. spread=", DoubleToString(spread, digits), " max=", DoubleToString(MaxSpreadPrice, digits));
+
    if(point > 0.0)
       spreadPoints = spread / point;
 
@@ -348,8 +351,8 @@ bool PostJson(string path, string payload, string &response)
       "X-Request-Id: ", IntegerToString((int)GetTickCount()), "\r\n"
    );
 
-   char postData[];
-   char result[];
+   uchar postData[];
+   uchar result[];
    string resultHeaders = "";
 
    int payloadLength = StringLen(payload);
