@@ -17,6 +17,8 @@ datetime g_lastClosedM5Bar = 0;
 datetime g_lastAttemptedM5Bar = 0;
 datetime g_lastAttemptAt = 0;
 int g_retrySeconds = 30;
+bool g_apiConfigReady = false;
+bool g_apiConfigWarningLogged = false;
 
 //---------------------------------------------------------
 // String helpers
@@ -402,6 +404,16 @@ void OnTimer()
    if(!EnableSignalRequests)
       return;
 
+   if(!g_apiConfigReady)
+   {
+      if(!g_apiConfigWarningLogged)
+      {
+         Print("GoldAITrader: signal requests paused until ApiBaseUrl and ApiKey are configured.");
+         g_apiConfigWarningLogged = true;
+      }
+      return;
+   }
+
    string sym = TradeSymbol();
 
    if(!IsGoldSymbol(sym))
@@ -460,10 +472,11 @@ int OnInit()
          " signalRequests=", (EnableSignalRequests ? "true" : "false"),
          " autoOrders=", (AllowAutoOrders ? "requested-but-disabled" : "off"));
 
-   if(!IsValidApiConfiguration())
+   g_apiConfigReady = IsValidApiConfiguration();
+
+   if(!g_apiConfigReady)
    {
-      Print("GoldAITrader: initialization blocked by API configuration.");
-      return INIT_FAILED;
+      Print("GoldAITrader: API configuration is incomplete. EA will stay attached, but signal requests are paused.");
    }
 
    if(!IsGoldSymbol(sym))
