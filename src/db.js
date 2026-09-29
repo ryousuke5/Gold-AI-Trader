@@ -3,6 +3,14 @@ const supabaseKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_
 const enabled=Boolean(process.env.SUPABASE_URL&&supabaseKey);
 const supabase=enabled?createClient(process.env.SUPABASE_URL,supabaseKey):null;
 export function dbEnabled(){return Boolean(supabase);}
+export async function probeGoldDatabase(){
+  if(!supabase) return {ok:false,status:'not_configured'};
+  const {data,error}=await supabase.from('gold_system_state').select('id,mode,auto_trading_enabled').eq('id','global').maybeSingle();
+  if(!error) return {ok:true,status:'ok',state_present:Boolean(data)};
+  const code=String(error.code||'');
+  if(code==='PGRST205'||code==='42P01') return {ok:false,status:'schema_missing'};
+  return {ok:false,status:'error'};
+}
 export async function getSignalByKey({signalId=null,symbol=null,timeframe=null,barTimeIso=null,strategyVersion=null}={}) {
   if(!supabase) return null;
   let q=supabase.from('gold_ai_signals').select('*').limit(1);
