@@ -281,56 +281,54 @@ bool BuildSignalPayload(string &payload)
 
    string json = "";
 
-   StringConcatenate(
-      json,
-      "{",
-      "\"symbol\":\"", JsonEscape(sym), "\",",
-      "\"timeframe\":\"M5\",",
-      "\"features\":{",
-         "\"bid\":", JsonNumber(bid, digits), ",",
-         "\"ask\":", JsonNumber(ask, digits), ",",
-         "\"point\":", JsonNumber(point, digits), ",",
-         "\"spread\":", JsonNumber(spread, digits), ",",
-         "\"spread_points\":", JsonNumber(spreadPoints, 2), ",",
-         "\"bar_time\":", IntegerToString((int)closedBarTime), ",",
-         "\"m5\":{",
-            "\"ema20\":", JsonNumber(m5Ema20, digits), ",",
-            "\"ema50\":", JsonNumber(m5Ema50, digits), ",",
-            "\"rsi14\":", JsonNumber(m5Rsi14, 2), ",",
-            "\"atr14\":", JsonNumber(m5Atr14, digits), ",",
-            "\"high20\":", JsonNumber(m5High20, digits), ",",
-            "\"low20\":", JsonNumber(m5Low20, digits),
-         "},",
-         "\"h1\":{",
-            "\"ema20\":", JsonNumber(h1Ema20, digits), ",",
-            "\"ema50\":", JsonNumber(h1Ema50, digits), ",",
-            "\"ema200\":", JsonNumber(h1Ema200, digits), ",",
-            "\"rsi14\":", JsonNumber(h1Rsi14, 2), ",",
-            "\"atr14\":", JsonNumber(h1Atr14, digits),
-         "},",
-         "\"recent_m5\":[],",
-         "\"recent_h1\":[]",
-      "},",
-      "\"account\":{",
-         "\"equity\":", JsonNumber(equity, 2), ",",
-         "\"balance\":", JsonNumber(balance, 2), ",",
-         "\"open_positions\":", IntegerToString(OpenPositions(sym)), ",",
-         "\"daily_pnl_pct\":", JsonNumber(dailyPnlPct, 4), ",",
-         "\"drawdown_pct\":", JsonNumber(drawdownPct, 4), ",",
-         "\"tick_size\":", JsonNumber(tickSize, digits), ",",
-         "\"tick_value\":", JsonNumber(tickValue, 8), ",",
-         "\"min_lot\":", JsonNumber(minLot, 8), ",",
-         "\"max_lot\":", JsonNumber(maxLot, 8), ",",
-         "\"lot_step\":", JsonNumber(lotStep, 8), ",",
-         "\"point\":", JsonNumber(point, digits), ",",
-         "\"digits\":", IntegerToString(digits), ",",
-         "\"stop_level_points\":", IntegerToString(stopLevelPoints), ",",
-         "\"freeze_level_points\":", IntegerToString(freezeLevelPoints), ",",
-         "\"trade_allowed\":", IntegerToString(tradeAllowed), ",",
-         "\"risk_data_ready\":", (riskDataReady ? "true" : "false"),
-      "}",
-      "}"
-   );
+   json += "{";
+   json += "\"symbol\":\"" + JsonEscape(sym) + "\",";
+   json += "\"timeframe\":\"M5\",";
+   json += "\"features\":{";
+   json += "\"bid\":" + JsonNumber(bid, digits) + ",";
+   json += "\"ask\":" + JsonNumber(ask, digits) + ",";
+   json += "\"point\":" + JsonNumber(point, digits) + ",";
+   json += "\"spread\":" + JsonNumber(spread, digits) + ",";
+   json += "\"spread_points\":" + JsonNumber(spreadPoints, 2) + ",";
+   json += "\"bar_time\":" + IntegerToString((int)closedBarTime) + ",";
+   json += "\"m5\":{";
+   json += "\"ema20\":" + JsonNumber(m5Ema20, digits) + ",";
+   json += "\"ema50\":" + JsonNumber(m5Ema50, digits) + ",";
+   json += "\"rsi14\":" + JsonNumber(m5Rsi14, 2) + ",";
+   json += "\"atr14\":" + JsonNumber(m5Atr14, digits) + ",";
+   json += "\"high20\":" + JsonNumber(m5High20, digits) + ",";
+   json += "\"low20\":" + JsonNumber(m5Low20, digits);
+   json += "},";
+   json += "\"h1\":{";
+   json += "\"ema20\":" + JsonNumber(h1Ema20, digits) + ",";
+   json += "\"ema50\":" + JsonNumber(h1Ema50, digits) + ",";
+   json += "\"ema200\":" + JsonNumber(h1Ema200, digits) + ",";
+   json += "\"rsi14\":" + JsonNumber(h1Rsi14, 2) + ",";
+   json += "\"atr14\":" + JsonNumber(h1Atr14, digits);
+   json += "},";
+   json += "\"recent_m5\":[],";
+   json += "\"recent_h1\":[]";
+   json += "},";
+   json += "\"account\":{";
+   json += "\"equity\":" + JsonNumber(equity, 2) + ",";
+   json += "\"balance\":" + JsonNumber(balance, 2) + ",";
+   json += "\"open_positions\":" + IntegerToString(OpenPositions(sym)) + ",";
+   json += "\"daily_pnl_pct\":" + JsonNumber(dailyPnlPct, 4) + ",";
+   json += "\"drawdown_pct\":" + JsonNumber(drawdownPct, 4) + ",";
+   json += "\"tick_size\":" + JsonNumber(tickSize, digits) + ",";
+   json += "\"tick_value\":" + JsonNumber(tickValue, 8) + ",";
+   json += "\"min_lot\":" + JsonNumber(minLot, 8) + ",";
+   json += "\"max_lot\":" + JsonNumber(maxLot, 8) + ",";
+   json += "\"lot_step\":" + JsonNumber(lotStep, 8) + ",";
+   json += "\"point\":" + JsonNumber(point, digits) + ",";
+   json += "\"digits\":" + IntegerToString(digits) + ",";
+   json += "\"stop_level_points\":" + IntegerToString(stopLevelPoints) + ",";
+   json += "\"freeze_level_points\":" + IntegerToString(freezeLevelPoints) + ",";
+   json += "\"trade_allowed\":" + IntegerToString(tradeAllowed) + ",";
+   json += "\"risk_data_ready\":" + (riskDataReady ? "true" : "false");
+   json += "}";
+   json += "}";
+
 
    payload = json;
    return true;
