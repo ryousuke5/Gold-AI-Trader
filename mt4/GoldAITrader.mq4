@@ -1,6 +1,6 @@
 #property strict
-#property version   "1.4"
-#property description "XAUUSD AI Trader V1.4 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
+#property version   "1.5"
+#property description "XAUUSD AI Trader V1.5 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
 input string ApiKey = "CHANGE_ME";
@@ -473,7 +473,7 @@ int OnInit()
 {
    string sym = TradeSymbol();
 
-   Print("GoldAITrader: starting initialization. symbol=", sym,
+   Print("GoldAITrader V1.5 BUILD=20260930A: starting initialization. symbol=", sym,
          " api=", ApiBaseUrl,
          " timer=", TimerSeconds,
          " timeoutMs=", RequestTimeoutMs,
