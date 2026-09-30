@@ -1,6 +1,6 @@
 #property strict
-#property version   "2.1"
-#property description "XAUUSD AI Trader Secure V2.1 - local key file. Analysis bridge only. No orders."
+#property version   "2.2"
+#property description "XAUUSD AI Trader Secure V2.2 - local key file. Analysis bridge only. No orders."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
 input string ApiKeyFile = "GoldAITrader.key";
@@ -11,12 +11,12 @@ input bool   AllowAutoOrders = false;
 input int    TimerSeconds = 5;
 input int    MagicNumber = 26092801;
 input double MaxSpreadPrice = 0.50;
-input int    RequestTimeoutMs = 8000;
+input int    RequestTimeoutMs = 70000;
 
 datetime g_lastClosedM5Bar = 0;
 datetime g_lastAttemptedM5Bar = 0;
 datetime g_lastAttemptAt = 0;
-int g_retrySeconds = 30;
+int g_retrySeconds = 75;
 bool g_apiConfigReady = false;
 bool g_apiConfigWarningLogged = false;
 string g_apiKey = "";
@@ -78,7 +78,7 @@ bool LoadApiKeyFromFile()
 
    if(StringLen(fileName) <= 0)
    {
-      Print("GoldAITrader Secure V2.1: ApiKeyFile is empty.");
+      Print("GoldAITrader Secure V2.2: ApiKeyFile is empty.");
       return false;
    }
 
@@ -88,7 +88,7 @@ bool LoadApiKeyFromFile()
 
    if(handle == INVALID_HANDLE)
    {
-      Print("GoldAITrader Secure V2.1: could not open ApiKeyFile='", fileName,
+      Print("GoldAITrader Secure V2.2: could not open ApiKeyFile='", fileName,
             "'. error=", GetLastError());
       return false;
    }
