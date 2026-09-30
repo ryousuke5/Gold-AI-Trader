@@ -30,7 +30,7 @@ services:
       - key: AI_ONLY_ON_CANDIDATE
         value: "true"
       - key: MAX_RISK_PER_TRADE_PCT
-        value: "0.25"
+        value: "2"
       - key: MAX_DAILY_LOSS_PCT
         value: "2"
       - key: MAX_DRAWDOWN_PCT
