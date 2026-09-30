@@ -1,6 +1,6 @@
 #property strict
-#property version   "1.5"
-#property description "XAUUSD AI Trader V1.5 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
+#property version   "1.6"
+#property description "XAUUSD AI Trader V1.6 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
 input string ApiKey = "CHANGE_ME";
@@ -354,13 +354,12 @@ bool PostJson(string path, string payload, string &response)
 {
    string url = ApiBaseUrl + path;
 
-   string headers = "";
-   StringConcatenate(
-      headers,
-      "Content-Type: application/json\r\n",
-      "X-Gold-API-Key: ", TrimText(ApiKey), "\r\n",
-      "X-Request-Id: ", IntegerToString((int)GetTickCount()), "\r\n"
-   );
+   string headers = "Content-Type: application/json\r\n";
+   headers += "X-Gold-API-Key: " + TrimText(ApiKey) + "\r\n";
+   headers += "X-Request-Id: " + IntegerToString((int)GetTickCount()) + "\r\n";
+
+   Print("GoldAITrader V1.6: request header length=", StringLen(headers),
+         " api_key_length=", StringLen(TrimText(ApiKey)));
 
    uchar postData[];
    uchar result[];
@@ -454,6 +453,9 @@ void OnTimer()
    if(!BuildSignalPayload(payload))
       return;
 
+   Print("GoldAITrader V1.6: local ApiKey length=", StringLen(TrimText(ApiKey)),
+         " url_length=", StringLen(TrimText(ApiBaseUrl)));
+
    if(PostJson("/api/gold/signal", payload, response))
    {
       g_lastClosedM5Bar = closedBar;
@@ -473,7 +475,7 @@ int OnInit()
 {
    string sym = TradeSymbol();
 
-   Print("GoldAITrader V1.5 BUILD=20260930A: starting initialization. symbol=", sym,
+   Print("GoldAITrader V1.6 BUILD=20260930B: starting initialization. symbol=", sym,
          " api=", ApiBaseUrl,
          " timer=", TimerSeconds,
          " timeoutMs=", RequestTimeoutMs,
