@@ -1,12 +1,13 @@
 #property strict
-#property version   "1.6"
-#property description "XAUUSD AI Trader V1.6 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
+#property version   "1.7"
+#property description "XAUUSD AI Trader V1.7 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
 input string ApiKey = "CHANGE_ME";
 input string SymbolName = "";
 input bool   RequireGoldSymbol = true;
 input bool   EnableSignalRequests = true;
+input bool   RunAITestOnce = false;
 input bool   AllowAutoOrders = false;
 input int    TimerSeconds = 5;
 input int    MagicNumber = 26092801;
@@ -387,6 +388,12 @@ bool PostJson(string path, string payload, string &response)
 
    response = CharArrayToString(result, 0, -1, CP_UTF8);
 
+   if(httpCode == 409 && StringFind(response, "\"error\":\"duplicate_bar\"") >= 0)
+   {
+      Print("GoldAITrader: duplicate_bar accepted as already processed. path=", path);
+      return true;
+   }
+
    if(httpCode < 200 || httpCode >= 300)
    {
       Print("GoldAITrader: WebRequest failed. HTTP=",
@@ -453,8 +460,23 @@ void OnTimer()
    if(!BuildSignalPayload(payload))
       return;
 
-   Print("GoldAITrader V1.6: local ApiKey length=", StringLen(TrimText(ApiKey)),
+   Print("GoldAITrader V1.7: local ApiKey length=", StringLen(TrimText(ApiKey)),
          " url_length=", StringLen(TrimText(ApiBaseUrl)));
+
+   if(RunAITestOnce && !g_aiTestDone)
+   {
+      string aiTestResponse = "";
+      if(PostJson("/api/gold/ai-test", payload, aiTestResponse))
+      {
+         g_aiTestDone = true;
+         Print("GoldAITrader V1.7: AI test response = ", aiTestResponse);
+      }
+      else
+      {
+         Print("GoldAITrader V1.7: AI test request failed; will retry.");
+      }
+      return;
+   }
 
    if(PostJson("/api/gold/signal", payload, response))
    {
