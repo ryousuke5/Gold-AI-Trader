@@ -18,7 +18,6 @@ datetime g_lastClosedM5Bar = 0;
 datetime g_lastAttemptedM5Bar = 0;
 datetime g_lastAttemptAt = 0;
 int g_retrySeconds = 30;
-bool g_aiTestDone = false;
 bool g_apiConfigReady = false;
 bool g_apiConfigWarningLogged = false;
 
@@ -464,17 +463,25 @@ void OnTimer()
    Print("GoldAITrader V1.7: local ApiKey length=", StringLen(TrimText(ApiKey)),
          " url_length=", StringLen(TrimText(ApiBaseUrl)));
 
-   if(RunAITestOnce && !g_aiTestDone)
+   if(RunAITestOnce)
    {
-      string aiTestResponse = "";
-      if(PostJson("/api/gold/ai-test", payload, aiTestResponse))
+      string aiTestDoneKey = "GoldAITraderV17:AI_TEST_DONE";
+      if(!GlobalVariableCheck(aiTestDoneKey))
       {
-         g_aiTestDone = true;
-         Print("GoldAITrader V1.7: AI test response = ", aiTestResponse);
+         string aiTestResponse = "";
+         if(PostJson("/api/gold/ai-test", payload, aiTestResponse))
+         {
+            GlobalVariableSet(aiTestDoneKey, TimeCurrent());
+            Print("GoldAITrader V1.7: AI test response = ", aiTestResponse);
+         }
+         else
+         {
+            Print("GoldAITrader V1.7: AI test request failed; will retry.");
+         }
       }
       else
       {
-         Print("GoldAITrader V1.7: AI test request failed; will retry.");
+         Print("GoldAITrader V1.7: one-shot AI test already completed; normal signal mode is paused while RunAITestOnce=true.");
       }
       return;
    }
