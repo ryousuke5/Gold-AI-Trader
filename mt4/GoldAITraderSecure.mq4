@@ -1,5 +1,5 @@
 #property strict
-#property version   "2.2"
+#property version   "2.3"
 #property description "XAUUSD AI Trader Secure V2.2 - local key file. Analysis bridge only. No orders."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
