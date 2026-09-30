@@ -1,13 +1,12 @@
 #property strict
-#property version   "2.0"
-#property description "XAUUSD AI Trader V2.0 - XM MT4 analysis bridge. API key is loaded from a local file. Auto trading is disabled."
+#property version   "2.1"
+#property description "XAUUSD AI Trader Secure V2.1 - local key file. Analysis bridge only. No orders."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
 input string ApiKeyFile = "GoldAITrader.key";
 input string SymbolName = "";
 input bool   RequireGoldSymbol = true;
 input bool   EnableSignalRequests = true;
-input bool   RunAITestOnce = false;
 input bool   AllowAutoOrders = false;
 input int    TimerSeconds = 5;
 input int    MagicNumber = 26092801;
@@ -79,7 +78,7 @@ bool LoadApiKeyFromFile()
 
    if(StringLen(fileName) <= 0)
    {
-      Print("GoldAITrader: ApiKeyFile is empty.");
+      Print("GoldAITrader Secure V2.1: ApiKeyFile is empty.");
       return false;
    }
 
@@ -89,7 +88,7 @@ bool LoadApiKeyFromFile()
 
    if(handle == INVALID_HANDLE)
    {
-      Print("GoldAITrader: could not open ApiKeyFile='", fileName,
+      Print("GoldAITrader Secure V2.1: could not open ApiKeyFile='", fileName,
             "'. error=", GetLastError());
       return false;
    }
@@ -99,7 +98,7 @@ bool LoadApiKeyFromFile()
 
    g_apiKey = TrimText(key);
 
-   Print("GoldAITrader: API key file loaded. key_length=",
+   Print("GoldAITrader Secure V2.1: API key file loaded. key_length=",
          StringLen(g_apiKey));
 
    return (StringLen(g_apiKey) >= 16);
@@ -110,7 +109,7 @@ bool IsValidApiConfiguration()
    bool urlOk = (StringFind(TrimText(ApiBaseUrl), "https://") == 0);
    bool keyOk = (StringLen(TrimText(g_apiKey)) >= 16);
 
-   Print("GoldAITrader: API config check. url_ok=",
+   Print("GoldAITrader Secure V2.1: API config check. url_ok=",
          (urlOk ? "true" : "false"),
          " key_loaded=",
          (keyOk ? "true" : "false"));
@@ -123,7 +122,7 @@ bool IsValidApiConfiguration()
 
    if(!keyOk)
    {
-      Print("GoldAITrader: ApiKeyFile does not contain a valid API key.");
+      Print("GoldAITrader Secure V2.1: ApiKeyFile does not contain a valid API key.");
       return false;
    }
 
@@ -389,10 +388,10 @@ bool PostJson(string path, string payload, string &response)
    string url = ApiBaseUrl + path;
 
    string headers = "Content-Type: application/json\r\n";
-   headers += "X-Gold-API-Key: " + TrimText(ApiKey) + "\r\n";
+   headers += "X-Gold-API-Key: " + TrimText(g_apiKey) + "\r\n";
    headers += "X-Request-Id: " + IntegerToString((int)GetTickCount()) + "\r\n";
 
-   Print("GoldAITrader V2.0: request header length=", StringLen(headers),
+   Print("GoldAITrader Secure V2.1: request header length=", StringLen(headers),
          " api_key_length=", StringLen(TrimText(g_apiKey)));
 
    uchar postData[];
@@ -455,7 +454,7 @@ void OnTimer()
    {
       if(!g_apiConfigWarningLogged)
       {
-         Print("GoldAITrader: signal requests paused until ApiBaseUrl and ApiKey are configured.");
+         Print("GoldAITrader Secure V2.1: signal requests paused until ApiKeyFile is valid.");
          g_apiConfigWarningLogged = true;
       }
       return;
@@ -493,44 +492,21 @@ void OnTimer()
    if(!BuildSignalPayload(payload))
       return;
 
-   Print("GoldAITrader V1.8: local ApiKey length=", StringLen(TrimText(ApiKey)),
-         " url_length=", StringLen(TrimText(ApiBaseUrl)));
-
-   if(RunAITestOnce)
-   {
-      string aiTestDoneKey = "GoldAITraderV18:AI_TEST_DONE";
-      if(!GlobalVariableCheck(aiTestDoneKey))
-      {
-         string aiTestResponse = "";
-         if(PostJson("/api/gold/ai-test", payload, aiTestResponse))
-         {
-            GlobalVariableSet(aiTestDoneKey, TimeCurrent());
-            Print("GoldAITrader V2.0: AI test response = ", aiTestResponse);
-         }
-         else
-         {
-            Print("GoldAITrader V1.7: AI test request failed; will retry.");
-         }
-      }
-      else
-      {
-         Print("GoldAITrader V1.7: one-shot AI test already completed; normal signal mode is paused while RunAITestOnce=true.");
-      }
-      return;
-   }
+   Print("GoldAITrader Secure V2.1: sending signal. symbol=", sym,
+         " api_key_loaded=true");
 
    if(PostJson("/api/gold/signal", payload, response))
    {
       g_lastClosedM5Bar = closedBar;
-      Print("GoldAITrader: signal response = ", response);
+      Print("GoldAITrader Secure V2.1: signal response = ", response);
 
       if(AllowAutoOrders)
       {
-         Print("GoldAITrader: AllowAutoOrders=true is ignored in V1.2 analysis bridge. No orders are sent.");
+         Print("GoldAITrader Secure V2.1: AllowAutoOrders is ignored. No orders are sent in Secure analysis bridge.");
       }
    }
 }
-
+ 
 //---------------------------------------------------------
 // EA lifecycle
 //---------------------------------------------------------
@@ -550,7 +526,7 @@ int OnInit()
 
    if(!g_apiConfigReady)
    {
-      Print("GoldAITrader: API configuration is incomplete. EA will stay attached, but signal requests are paused.");
+      Print("GoldAITrader Secure V2.1: API configuration is incomplete. EA will stay attached, but signal requests are paused.");
    }
 
    if(!IsGoldSymbol(sym))
