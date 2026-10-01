@@ -31,12 +31,6 @@ const SOURCES = {
   h1: process.env.BACKTEST_H1_SOURCE || 'https://raw.githubusercontent.com/ejtraderLabs/historical-data/main/EURUSD/EURUSDh1.csv'
 };
 
-function assertFinite(value, name) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) throw new Error(`Invalid ${name}: ${value}`);
-  return n;
-}
-
 function parseTimestamp(raw) {
   const s = String(raw || '').trim().replace(/^"|"$/g, '');
   if (!s) return NaN;
@@ -536,11 +530,11 @@ function csvEscape(v) {
 }
 
 function tradesToCsv(trades) {
-  if (!trades.length) return 'signal_time,entry_time,exit_time,side,setup_type,h1_trend,entry,stop_loss,take_profit,lots,risk_cash,gross_pips,net_pips,gross_pnl,net_pnl,transaction_cost,spread_cost_pips,slippage_cost_pips,exit_reason,holding_minutes,spread_caused_loss\\n';
+  if (!trades.length) return 'signal_time,entry_time,exit_time,side,setup_type,h1_trend,entry,stop_loss,take_profit,lots,risk_cash,gross_pips,net_pips,gross_pnl,net_pnl,transaction_cost,spread_cost_pips,slippage_cost_pips,exit_reason,holding_minutes,spread_caused_loss\n';
   const headers = Object.keys(trades[0]);
   const rows = [headers.join(',')];
   for (const t of trades) rows.push(headers.map((h) => csvEscape(t[h])).join(','));
-  return rows.join('\\n') + '\\n';
+  return rows.join('\n') + '\n';
 }
 
 export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.h1, config = CONFIG } = {}) {
