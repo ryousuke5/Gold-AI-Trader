@@ -60,8 +60,21 @@ function parseCsv(text) {
   const lines = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
   if (lines.length < 2) return [];
   const header = splitCsvLine(lines[0]).map((x) => x.trim().replace(/^"|"$/g, '').toLowerCase());
-  const idx = Object.fromEntries(header.map((h, i) => [h, i]));
-  const dateKey = ['datetime', 'date', 'time', 'timestamp', 'timestamp_utc'].find((key) => idx[key] !== undefined) || header[0];
+  let idx = Object.fromEntries(header.map((h, i) => [h, i]));
+  let dateKey = ['datetime', 'date', 'time', 'timestamp', 'timestamp_utc'].find((key) => idx[key] !== undefined) || header[0];
+  let startLine = 1;
+
+  const headerLooksLikeData =
+    header.length >= 5 &&
+    Number.isFinite(parseTimestamp(header[0])) &&
+    header.slice(1, 5).every((value) => Number.isFinite(Number(value)));
+
+  if (headerLooksLikeData) {
+    idx = { datetime: 0, open: 1, high: 2, low: 3, close: 4, volume: 5 };
+    dateKey = 'datetime';
+    startLine = 0;
+  }
+
   const required = [dateKey, 'open', 'high', 'low', 'close'];
   for (const key of required) if (idx[key] === undefined) {
     console.log('CSV header:', JSON.stringify(header));
@@ -69,7 +82,7 @@ function parseCsv(text) {
   }
 
   const rows = [];
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = startLine; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
     const cells = splitCsvLine(line);
