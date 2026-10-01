@@ -2,9 +2,6 @@ name: EURUSD AI Fundamental Replay
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-
 jobs:
   replay:
     runs-on: ubuntu-latest
