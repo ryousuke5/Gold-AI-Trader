@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 const input=process.env.MACRO_INPUT || 'backtest-output/eurusd_macro_daily.csv';
 const output=process.env.FUNDAMENTAL_MASK_OUTPUT || 'backtest-output/eurusd_fundamental_proxy_mask.csv';
@@ -33,4 +34,6 @@ async function main(){
   await fs.writeFile(output,out.join('\n')+'\n');
   console.log('Proxy fundamental rows:',rows.length);
 }
-main().catch(e=>{console.error(e);process.exitCode=1;});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch(e=>{console.error(e);process.exitCode=1;});
+}
