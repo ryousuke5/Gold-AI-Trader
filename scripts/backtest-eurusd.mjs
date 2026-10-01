@@ -445,6 +445,8 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
   const rawM15 = parseCsv(m15Text);
   const rawH1 = parseCsv(h1Text);
   if (rawM15.length < 500 || rawH1.length < 300) {
+    console.log('M15 raw sample:', JSON.stringify(m15Text.slice(0, 1200)));
+    console.log('H1 raw sample:', JSON.stringify(h1Text.slice(0, 1200)));
     throw new Error(`Insufficient downloaded data: M15=${rawM15.length}, H1=${rawH1.length}. Verify CSV schema/datetime format.`);
   }
 
