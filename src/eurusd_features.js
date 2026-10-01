@@ -160,7 +160,7 @@ export function buildEurUsdSetup(f, options = {}) {
   const structureLow = minLow(recent5);
   const structureHigh = maxHigh(recent5);
 
-  const pipSize = f.point > 0 && f.point <= 0.0001 ? f.point * 10 : 0.0001;
+  const pipSize = f.point >= 0.0001 ? 0.0001 : f.point * 10;
   const spreadPips = pipSize > 0 ? f.spread / pipSize : 999;
   const spreadAtrPct = f.m15.atr14 > 0 ? (f.spread / f.m15.atr14) * 100 : 999;
   const spreadOkay = spreadPips <= maxSpreadPips && spreadAtrPct <= maxSpreadAtrPct;
