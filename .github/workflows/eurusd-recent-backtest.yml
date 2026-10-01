@@ -2,8 +2,6 @@ name: EURUSD Recent Backtest
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 jobs:
   spread_sensitivity:
