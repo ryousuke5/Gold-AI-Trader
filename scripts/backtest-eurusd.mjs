@@ -18,6 +18,9 @@ const CONFIG = {
   minRR: Math.max(1.0, Number(process.env.BACKTEST_MIN_RR || 1.80)),
   maxSpreadPips: Math.max(0.1, Number(process.env.BACKTEST_MAX_SPREAD_PIPS || 1.20)),
   maxSpreadToTpPct: Math.max(1, Number(process.env.BACKTEST_MAX_SPREAD_TO_TP_PCT || 12)),
+  fundamentalSource: process.env.BACKTEST_FUNDAMENTAL_SOURCE || '',
+  minFundamentalConfidence: Math.min(1, Math.max(0.5, Number(process.env.BACKTEST_MIN_FUNDAMENTAL_CONFIDENCE || 0.65))),
+  maxFundamentalAgeHours: Math.max(1, Number(process.env.BACKTEST_MAX_FUNDAMENTAL_AGE_HOURS || 48)),
   minLot: 0.01,
   maxLot: 100,
   lotStep: 0.01
@@ -250,6 +253,65 @@ function sliceRecentBars(bars, index, count = 80) {
     close: b.close,
     volume: b.volume
   }));
+}
+
+function parseFundamentalCsv(text) {
+  const lines = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return [];
+  const header = splitCsvLine(lines[0]).map((x) => x.trim().replace(/^"|"$/g, '').toLowerCase());
+  const idx = Object.fromEntries(header.map((h, i) => [h, i]));
+  const timeKey = ['timestamp', 'datetime', 'date', 'time'].find((key) => idx[key] !== undefined);
+  const required = [timeKey, 'bias', 'confidence', 'freshness', 'event_risk_next_24h'];
+  if (!timeKey || required.some((key) => idx[key] === undefined)) {
+    throw new Error('Fundamental CSV requires timestamp,bias,confidence,freshness,event_risk_next_24h columns');
+  }
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = splitCsvLine(lines[i]);
+    const t = parseTimestamp(cells[idx[timeKey]]);
+    const confidence = Number(cells[idx.confidence]);
+    if (!Number.isFinite(t) || !Number.isFinite(confidence)) continue;
+    rows.push({
+      time: Math.floor(t / 1000),
+      bias: String(cells[idx.bias] || '').trim().toUpperCase(),
+      confidence,
+      freshness: String(cells[idx.freshness] || '').trim().toUpperCase(),
+      event_risk_next_24h: String(cells[idx.event_risk_next_24h] || '').trim().toUpperCase()
+    });
+  }
+  rows.sort((a, b) => a.time - b.time);
+  return rows;
+}
+
+function latestFundamentalAssessment(mask, signalTime, maxAgeHours = 48) {
+  if (!mask?.length) return null;
+  const cutoff = signalTime - Math.max(1, Number(maxAgeHours)) * 3600;
+  let lo = 0;
+  let hi = mask.length - 1;
+  let best = -1;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (mask[mid].time <= signalTime) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (best < 0 || mask[best].time < cutoff) return null;
+  return mask[best];
+}
+
+function fundamentalGate(setup, assessment, config) {
+  if (setup.candidate === 'WAIT') return { allowed: false, reason: 'technical_wait' };
+  if (!assessment) return { allowed: false, reason: 'fundamental_missing_or_stale' };
+  const expectedBias = setup.candidate === 'BUY' ? 'BULLISH_EURUSD' : 'BEARISH_EURUSD';
+  if (assessment.confidence < config.minFundamentalConfidence) return { allowed: false, reason: 'fundamental_confidence_below_threshold' };
+  if (!['CURRENT', 'MIXED'].includes(assessment.freshness)) return { allowed: false, reason: 'fundamental_not_current' };
+  if (assessment.event_risk_next_24h === 'HIGH') return { allowed: false, reason: 'high_impact_event_next_24h' };
+  if (assessment.event_risk_next_24h === 'UNKNOWN') return { allowed: false, reason: 'event_risk_unknown' };
+  if (assessment.bias !== expectedBias) return { allowed: false, reason: 'fundamental_direction_mismatch' };
+  return { allowed: true, reason: 'fundamental_confirmed' };
 }
 
 function floorLot(raw, minLot = 0.01, maxLot = 100, lotStep = 0.01) {
@@ -500,9 +562,16 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
 
   const m15Ind = addIndicators(m15);
   const h1Ind = addIndicators(h1);
-  const trades = [];
+  let trades = [];
+  let fundamentalTrades = [];
   let equity = config.initialEquity;
+  let fundamentalEquity = config.initialEquity;
   let nextAvailableIndex = 0;
+  let fundamentalNextAvailableIndex = 0;
+  let technicalCandidates = 0;
+  let fundamentalRejected = 0;
+  const fundamentalRejectReasons = {};
+  const fundamentalMask = config.fundamentalSource ? parseFundamentalCsv(await fetchText(config.fundamentalSource)) : null;
   const spreadPrice = config.spreadPips * pipSize();
 
   const firstIndex = Math.max(210, 80);
@@ -510,7 +579,10 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
     const signalBar = m15Ind[i];
     if (i % 10000 === 0) console.log(`Progress: ${i}/${m15Ind.length}`);
     if (signalBar.time < startTime || signalBar.time > endTime) continue;
-    if (i < nextAvailableIndex) continue;
+
+    const techEligible = i >= nextAvailableIndex;
+    const fundamentalEligible = Boolean(fundamentalMask?.length) && i >= fundamentalNextAvailableIndex;
+    if (!techEligible && !fundamentalEligible) continue;
     if (![signalBar.ema20, signalBar.ema50, signalBar.rsi14, signalBar.atr14].every(Number.isFinite)) continue;
 
     const h1Index = latestCompletedH1Index(h1Ind, signalBar.time);
@@ -551,35 +623,72 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       takeProfitR: 2,
       maxSpreadToTpPct: config.maxSpreadToTpPct
     });
-
     if (setup.candidate === 'WAIT') continue;
 
-    const nextBar = m15Ind[i + 1];
-    const futureBars = m15Ind.slice(i + 1);
-    const trade = simulateTrade({
-      signalBar,
-      nextBar,
-      futureBars,
-      setup,
-      equity,
-      spreadPips: config.spreadPips,
-      slippagePips: config.slippagePips,
-      riskPct: config.riskPct
-    });
-    if (!trade) continue;
+    technicalCandidates++;
 
-    trades.push(trade);
-    equity += trade.net_pnl;
-    nextAvailableIndex = m15Ind.findIndex((b) => b.time > trade.exit_time);
-    if (nextAvailableIndex < 0) break;
-    i = Math.max(i, nextAvailableIndex - 1);
+    if (techEligible) {
+      const nextBar = m15Ind[i + 1];
+      const futureBars = m15Ind.slice(i + 1);
+      const trade = simulateTrade({
+        signalBar,
+        nextBar,
+        futureBars,
+        setup,
+        equity,
+        spreadPips: config.spreadPips,
+        slippagePips: config.slippagePips,
+        riskPct: config.riskPct
+      });
+      if (trade) {
+        trades.push(trade);
+        equity += trade.net_pnl;
+        nextAvailableIndex = m15Ind.findIndex((b) => b.time > trade.exit_time);
+        if (nextAvailableIndex < 0) nextAvailableIndex = m15Ind.length;
+      }
+    }
+
+    if (fundamentalEligible) {
+      const assessment = latestFundamentalAssessment(
+        fundamentalMask,
+        signalBar.time,
+        config.maxFundamentalAgeHours
+      );
+      const gate = fundamentalGate(setup, assessment, config);
+      if (!gate.allowed) {
+        fundamentalRejected++;
+        fundamentalRejectReasons[gate.reason] = (fundamentalRejectReasons[gate.reason] || 0) + 1;
+      } else {
+        const nextBar = m15Ind[i + 1];
+        const futureBars = m15Ind.slice(i + 1);
+        const trade = simulateTrade({
+          signalBar,
+          nextBar,
+          futureBars,
+          setup,
+          equity: fundamentalEquity,
+          spreadPips: config.spreadPips,
+          slippagePips: config.slippagePips,
+          riskPct: config.riskPct
+        });
+        if (trade) {
+          fundamentalTrades.push(trade);
+          fundamentalEquity += trade.net_pnl;
+          fundamentalNextAvailableIndex = m15Ind.findIndex((b) => b.time > trade.exit_time);
+          if (fundamentalNextAvailableIndex < 0) fundamentalNextAvailableIndex = m15Ind.length;
+        }
+      }
+    }
   }
 
   const summary = summarizeTrades(trades, config.initialEquity);
+  const fundamentalSummary = fundamentalMask ? summarizeTrades(fundamentalTrades, config.initialEquity) : null;
   const report = {
     strategy: 'EURUSD M15 setup + H1 trend (technical core)',
-    fundamental_backtest_status: 'NOT_RUN',
-    fundamental_backtest_note: 'Historical AI/web-search outputs are not available in the price dataset, so this report measures the technical core separately. It must not be interpreted as full technical+AI historical performance.',
+    fundamental_backtest_status: fundamentalMask ? 'RUN' : 'NOT_RUN',
+    fundamental_backtest_note: fundamentalMask
+      ? 'A timestamped historical fundamental mask was applied causally at or before each signal. Verify that the mask was created without lookahead.'
+      : 'Historical AI/web-search outputs are not available in the price dataset, so this report measures the technical core separately. It must not be interpreted as full technical+AI historical performance.',
     data_source: { m15: m15Source, h1: h1Source },
     source_period: {
       m15_first: new Date(rawM15[0].time * 1000).toISOString(),
@@ -599,14 +708,23 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       execution: 'next M15 bar open',
       same_bar_conflict: 'stop first',
       tp_multiple_r: 2,
-      fundamental_filter: 'excluded from historical performance due lack of historical AI/news labels'
+      fundamental_filter: fundamentalMask
+        ? { source: config.fundamentalSource, min_confidence: config.minFundamentalConfidence, max_age_hours: config.maxFundamentalAgeHours, high_event_blocked: true }
+        : 'excluded from historical performance due lack of historical AI/news labels'
     },
     data_quality: {
       m15: dataQuality(m15, 900),
       h1: dataQuality(h1, 3600)
     },
     summary,
-    monthly: monthlyBreakdown(trades)
+    monthly: monthlyBreakdown(trades),
+    fundamental_filtered_summary: fundamentalSummary,
+    fundamental_filter_stats: fundamentalMask ? {
+      historical_mask_rows: fundamentalMask.length,
+      technical_candidates: technicalCandidates,
+      rejected_candidates: fundamentalRejected,
+      rejection_reasons: fundamentalRejectReasons
+    } : null
   };
 
   const outDir = process.env.BACKTEST_OUTPUT_DIR || path.resolve(__dirname, '../backtest-output');
@@ -619,6 +737,88 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
   console.log('Data:', report.source_period.m15_first, '->', report.source_period.m15_last);
   console.log('Test:', report.test_period.start, '->', report.test_period.end);
   console.log('Fundamental historical backtest:', report.fundamental_backtest_status);
+  if (fundamentalSummary) {
+    console.log('Fundamental-filtered trades:', fundamentalSummary.trades);
+    console.log('Fundamental-filtered PF:', formatNumber(fundamentalSummary.profit_factor));
+    console.log('Fundamental-filtered expectancy:', '
+  console.log('Trades:', summary.trades);
+  console.log('Win rate:', formatNumber(summary.win_rate_pct) + '%');
+  console.log('Profit factor:', formatNumber(summary.profit_factor));
+  console.log('Expectancy:', '$' + formatNumber(summary.expectancy_per_trade), '/', formatNumber(summary.expectancy_pips_per_trade) + ' pips');
+  console.log('Net profit:', '$' + formatNumber(summary.net_profit));
+  console.log('Return:', formatNumber(summary.return_pct) + '%');
+  console.log('Max DD:', '$' + formatNumber(summary.max_drawdown), '/', formatNumber(summary.max_drawdown_pct) + '%');
+  console.log('Avg holding:', formatNumber(summary.avg_holding_minutes) + ' min');
+  console.log('Transaction costs:', '$' + formatNumber(summary.transaction_cost_total));
+  console.log('Spread-caused loss trades:', summary.spread_caused_loss_trades, '/', summary.trades, '(' + formatNumber(summary.spread_caused_loss_rate_pct) + '%)');
+  console.log('Artifacts:', outDir);
+  return { report, trades };
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const args = parseArgs();
+  if (args.get('lookback-days')) CONFIG.lookbackDays = Math.max(30, Number(args.get('lookback-days')));
+  if (args.get('spread-pips')) CONFIG.spreadPips = Math.max(0, Number(args.get('spread-pips')));
+  if (args.get('slippage-pips')) CONFIG.slippagePips = Math.max(0, Number(args.get('slippage-pips')));
+  if (args.get('start')) CONFIG.startDate = args.get('start');
+  if (args.get('end')) CONFIG.endDate = args.get('end');
+  if (args.get('initial-equity')) CONFIG.initialEquity = Math.max(1000, Number(args.get('initial-equity')));
+  await runBacktest({ config: CONFIG });
+}
+ + formatNumber(fundamentalSummary.expectancy_per_trade), '/', formatNumber(fundamentalSummary.expectancy_pips_per_trade) + ' pips');
+    console.log('Fundamental-filtered net profit:', '
+  console.log('Trades:', summary.trades);
+  console.log('Win rate:', formatNumber(summary.win_rate_pct) + '%');
+  console.log('Profit factor:', formatNumber(summary.profit_factor));
+  console.log('Expectancy:', '$' + formatNumber(summary.expectancy_per_trade), '/', formatNumber(summary.expectancy_pips_per_trade) + ' pips');
+  console.log('Net profit:', '$' + formatNumber(summary.net_profit));
+  console.log('Return:', formatNumber(summary.return_pct) + '%');
+  console.log('Max DD:', '$' + formatNumber(summary.max_drawdown), '/', formatNumber(summary.max_drawdown_pct) + '%');
+  console.log('Avg holding:', formatNumber(summary.avg_holding_minutes) + ' min');
+  console.log('Transaction costs:', '$' + formatNumber(summary.transaction_cost_total));
+  console.log('Spread-caused loss trades:', summary.spread_caused_loss_trades, '/', summary.trades, '(' + formatNumber(summary.spread_caused_loss_rate_pct) + '%)');
+  console.log('Artifacts:', outDir);
+  return { report, trades };
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const args = parseArgs();
+  if (args.get('lookback-days')) CONFIG.lookbackDays = Math.max(30, Number(args.get('lookback-days')));
+  if (args.get('spread-pips')) CONFIG.spreadPips = Math.max(0, Number(args.get('spread-pips')));
+  if (args.get('slippage-pips')) CONFIG.slippagePips = Math.max(0, Number(args.get('slippage-pips')));
+  if (args.get('start')) CONFIG.startDate = args.get('start');
+  if (args.get('end')) CONFIG.endDate = args.get('end');
+  if (args.get('initial-equity')) CONFIG.initialEquity = Math.max(1000, Number(args.get('initial-equity')));
+  await runBacktest({ config: CONFIG });
+}
+ + formatNumber(fundamentalSummary.net_profit));
+    console.log('Fundamental-filtered Max DD:', '
+  console.log('Trades:', summary.trades);
+  console.log('Win rate:', formatNumber(summary.win_rate_pct) + '%');
+  console.log('Profit factor:', formatNumber(summary.profit_factor));
+  console.log('Expectancy:', '$' + formatNumber(summary.expectancy_per_trade), '/', formatNumber(summary.expectancy_pips_per_trade) + ' pips');
+  console.log('Net profit:', '$' + formatNumber(summary.net_profit));
+  console.log('Return:', formatNumber(summary.return_pct) + '%');
+  console.log('Max DD:', '$' + formatNumber(summary.max_drawdown), '/', formatNumber(summary.max_drawdown_pct) + '%');
+  console.log('Avg holding:', formatNumber(summary.avg_holding_minutes) + ' min');
+  console.log('Transaction costs:', '$' + formatNumber(summary.transaction_cost_total));
+  console.log('Spread-caused loss trades:', summary.spread_caused_loss_trades, '/', summary.trades, '(' + formatNumber(summary.spread_caused_loss_rate_pct) + '%)');
+  console.log('Artifacts:', outDir);
+  return { report, trades };
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const args = parseArgs();
+  if (args.get('lookback-days')) CONFIG.lookbackDays = Math.max(30, Number(args.get('lookback-days')));
+  if (args.get('spread-pips')) CONFIG.spreadPips = Math.max(0, Number(args.get('spread-pips')));
+  if (args.get('slippage-pips')) CONFIG.slippagePips = Math.max(0, Number(args.get('slippage-pips')));
+  if (args.get('start')) CONFIG.startDate = args.get('start');
+  if (args.get('end')) CONFIG.endDate = args.get('end');
+  if (args.get('initial-equity')) CONFIG.initialEquity = Math.max(1000, Number(args.get('initial-equity')));
+  await runBacktest({ config: CONFIG });
+}
+ + formatNumber(fundamentalSummary.max_drawdown), '/', formatNumber(fundamentalSummary.max_drawdown_pct) + '%');
+  }
   console.log('Trades:', summary.trades);
   console.log('Win rate:', formatNumber(summary.win_rate_pct) + '%');
   console.log('Profit factor:', formatNumber(summary.profit_factor));
