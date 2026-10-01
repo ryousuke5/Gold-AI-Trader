@@ -23,6 +23,8 @@ jobs:
           OPENAI_MODEL: "gpt-5-mini"
           MACRO_INPUT: "backtest-output/eurusd_macro_daily.csv"
           FUNDAMENTAL_MASK_OUTPUT: "backtest-output/eurusd_fundamental_ai_mask.csv"
+          AI_REPLAY_CHUNK_SIZE: "90"
+          AI_REPLAY_MAX_RETRIES: "3"
         run: node scripts/ai-eurusd-fundamental-replay.mjs
       - name: Run backtest with AI fundamental filter
         env:
