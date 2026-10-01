@@ -169,13 +169,18 @@ function atr(bars, period) {
 
 function addIndicators(bars) {
   const closes = bars.map((b) => b.close);
+  const ema20 = ema(closes, 20);
+  const ema50 = ema(closes, 50);
+  const ema200 = ema(closes, 200);
+  const rsi14 = rsi(closes, 14);
+  const atr14 = atr(bars, 14);
   return bars.map((bar, i) => ({
     ...bar,
-    ema20: ema(closes, 20)[i],
-    ema50: ema(closes, 50)[i],
-    ema200: ema(closes, 200)[i],
-    rsi14: rsi(closes, 14)[i],
-    atr14: atr(bars, 14)[i]
+    ema20: ema20[i],
+    ema50: ema50[i],
+    ema200: ema200[i],
+    rsi14: rsi14[i],
+    atr14: atr14[i]
   }));
 }
 
@@ -185,7 +190,7 @@ function buildH1Lookup(h1) {
   return lookup;
 }
 
-function latestCompletedH1(h1WithIndicators, signalTime) {
+function latestCompletedH1Index(h1WithIndicators, signalTime) {
   const target = signalTime - 3600;
   let lo = 0;
   let hi = h1WithIndicators.length - 1;
@@ -199,7 +204,7 @@ function latestCompletedH1(h1WithIndicators, signalTime) {
       hi = mid - 1;
     }
   }
-  return best >= 0 ? h1WithIndicators[best] : null;
+  return best;
 }
 
 function sliceRecentBars(bars, index, count = 80) {
@@ -274,7 +279,9 @@ function simulateTrade({ signalBar, nextBar, futureBars, setup, equity, spreadPi
 
   const exitPrice = exitMid;
   const grossEntry = nextBar.open;
-  const grossExit = futureBars.find((b) => b.time === exitTime)?.close ?? exitMid;
+  const grossExit = exitTime === futureBars[futureBars.length - 1]?.time
+    ? futureBars[futureBars.length - 1].close
+    : futureBars.find((b) => b.time === exitTime)?.close ?? exitMid;
   const grossPips = side === 'BUY'
     ? (grossExit - grossEntry) / pipSize()
     : (grossEntry - grossExit) / pipSize();
@@ -461,8 +468,6 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
 
   const m15Ind = addIndicators(m15);
   const h1Ind = addIndicators(h1);
-  buildH1Lookup(h1Ind);
-
   const trades = [];
   let equity = config.initialEquity;
   let nextAvailableIndex = 0;
@@ -471,11 +476,13 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
   const firstIndex = Math.max(210, 80);
   for (let i = firstIndex; i < m15Ind.length - 1; i++) {
     const signalBar = m15Ind[i];
+    if (i % 10000 === 0) console.log(`Progress: ${i}/${m15Ind.length}`);
     if (signalBar.time < startTime || signalBar.time > endTime) continue;
     if (i < nextAvailableIndex) continue;
     if (![signalBar.ema20, signalBar.ema50, signalBar.rsi14, signalBar.atr14].every(Number.isFinite)) continue;
 
-    const h1Bar = latestCompletedH1(h1Ind, signalBar.time);
+    const h1Index = latestCompletedH1Index(h1Ind, signalBar.time);
+    const h1Bar = h1Index >= 0 ? h1Ind[h1Index] : null;
     if (!h1Bar || ![h1Bar.close, h1Bar.ema20, h1Bar.ema50, h1Bar.ema200, h1Bar.rsi14, h1Bar.atr14].every(Number.isFinite)) continue;
 
     const mid = signalBar.close;
@@ -501,7 +508,7 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
         atr14: h1Bar.atr14
       },
       recentM15: sliceRecentBars(m15Ind, i, 80),
-      recentH1: sliceRecentBars(h1Ind, h1Ind.indexOf(h1Bar), 80)
+      recentH1: sliceRecentBars(h1Ind, h1Index, 80)
     };
 
     const setup = buildEurUsdSetup(features, {
