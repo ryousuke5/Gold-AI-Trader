@@ -312,7 +312,7 @@ function simulateTrade({ signalBar, nextBar, futureBars, setup, equity, spreadPi
     net_pips: netPips,
     gross_pnl: grossPnl,
     net_pnl: netPnl,
-    transaction_cost,
+    transaction_cost: transactionCost,
     spread_cost_pips: spreadPips,
     slippage_cost_pips: slippagePips * 2,
     exit_reason: exitReason,
