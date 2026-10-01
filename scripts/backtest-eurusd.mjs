@@ -63,7 +63,10 @@ function parseCsv(text) {
   const idx = Object.fromEntries(header.map((h, i) => [h, i]));
   const dateKey = ['datetime', 'date', 'time', 'timestamp', 'timestamp_utc'].find((key) => idx[key] !== undefined) || header[0];
   const required = [dateKey, 'open', 'high', 'low', 'close'];
-  for (const key of required) if (idx[key] === undefined) throw new Error(`CSV missing column: ${key}`);
+  for (const key of required) if (idx[key] === undefined) {
+    console.log('CSV header:', JSON.stringify(header));
+    throw new Error(`CSV missing column: ${key}`);
+  }
 
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
