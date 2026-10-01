@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeFeatures, validateFeatures, ruleCandidate } from '../src/features.js';
 import { calculateLots, evaluateRisk } from '../src/risk.js';
-import { validateFundamentalSourceFreshness } from '../src/ai.js';
+import { validateFundamentalSourceFreshness, enforceFundamentalSafety } from '../src/ai.js';
 
 const base = {
   bid: 3000, ask: 3000.3, point: 0.01, spread: 0.3, spread_points: 30, bar_time: Math.floor(Date.now()/1000)-30,
@@ -32,3 +32,5 @@ test('WAIT with low confidence is rejected only for decision_wait',()=>{const f=
 test('current fundamental requires a date-verifiable recent source',()=>{const now=new Date('2026-10-01T12:00:00Z');const ok=validateFundamentalSourceFreshness([{url:'https://www.federalreserve.gov/newsevents/speech/barr20261001a.htm'}],'CURRENT',now,48);assert.equal(ok.ok,true);});
 test('old dated source cannot certify current fundamental',()=>{const now=new Date('2026-10-01T12:00:00Z');const r=validateFundamentalSourceFreshness([{url:'https://www.federalreserve.gov/monetarypolicy/pressreleases/monetary20260916a.htm'}],'CURRENT',now,48);assert.equal(r.ok,false);assert.equal(r.reason,'fundamental_current_source_not_date_verifiable');});
 test('neutral source freshness does not require current date evidence',()=>{const now=new Date('2026-10-01T12:00:00Z');const r=validateFundamentalSourceFreshness([{url:'https://www.gold.org/goldhub/data/gold-etfs-holdings-and-flows'}],'STALE',now,48);assert.equal(r.ok,true);});
+
+test('unverifiable current source forces BUY to WAIT instead of throwing',()=>{const d={decision:'BUY',confidence:.8,entry:3000,stop_loss:2995,take_profit:3010,risk_reward:2,invalid_reasons:[],fundamental:{bias:'BULLISH_GOLD',confidence:.8,freshness:'CURRENT',summary:'x',drivers:[],risks:[],source_urls:[]}};const r=enforceFundamentalSafety(d,{ok:false,reason:'fundamental_current_source_not_date_verifiable'});assert.equal(r.decision,'WAIT');assert.equal(r.entry,0);assert.equal(r.fundamental.freshness,'INSUFFICIENT');assert.ok(r.invalid_reasons.includes('fundamental_current_source_not_date_verifiable'));});

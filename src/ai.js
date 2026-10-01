@@ -96,6 +96,31 @@ function sourceDateFromUrl(url) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+export function enforceFundamentalSafety(decision, freshnessCheck) {
+  const next = JSON.parse(JSON.stringify(decision || {}));
+  if (freshnessCheck?.ok !== false) return next;
+  const f = next.fundamental || {};
+  if (String(next.decision || 'WAIT').toUpperCase() !== 'WAIT') {
+    next.decision = 'WAIT';
+    next.entry = 0;
+    next.stop_loss = 0;
+    next.take_profit = 0;
+    next.risk_reward = 0;
+    next.invalid_reasons = Array.isArray(next.invalid_reasons) ? next.invalid_reasons.map(String) : [];
+    if (!next.invalid_reasons.includes(freshnessCheck.reason)) next.invalid_reasons.push(freshnessCheck.reason);
+  }
+  next.fundamental = {
+    bias: String(f.bias || 'INSUFFICIENT').toUpperCase(),
+    confidence: Number.isFinite(Number(f.confidence)) ? Number(f.confidence) : 0,
+    freshness: 'INSUFFICIENT',
+    summary: String(f.summary || '') + ' Current-source verification was insufficient, so the trading decision was forced to WAIT.',
+    drivers: Array.isArray(f.drivers) ? f.drivers.map(String) : [],
+    risks: Array.isArray(f.risks) ? f.risks.map(String) : [],
+    source_urls: Array.isArray(f.source_urls) ? f.source_urls.filter((x) => typeof x === 'string') : []
+  };
+  return next;
+}
+
 export function validateFundamentalSourceFreshness(sources, freshness, now = new Date(), lookbackHours = 48) {
   const level = String(freshness || 'INSUFFICIENT').toUpperCase();
   if (level !== 'CURRENT' && level !== 'MIXED') return { ok: true, reason: null, recent_count: 0 };
@@ -226,11 +251,9 @@ export async function analyzeWithOpenAI({ features, candidate, symbol, model = p
       now,
       lookbackHours
     );
-    if (candidate !== 'WAIT' && !freshnessCheck.ok) {
-      throw new Error(freshnessCheck.reason);
-    }
+    const safeDecisionResult = candidate !== 'WAIT' ? enforceFundamentalSafety(decision, freshnessCheck) : decision;
     return {
-      decision,
+      decision: safeDecisionResult,
       responseId: envelope?.id || null,
       model,
       sources: sourceSelection.selected,
