@@ -41,6 +41,17 @@ export function evaluateRisk({ decision, features, account, signalCreatedAt = Da
   if (!(Number(d.confidence) >= limits.minConfidence && Number(d.confidence) <= 1)) reasons.push('confidence_out_of_range_or_below_threshold');
   if (direction !== 'WAIT' && !(Number(d.risk_reward) >= limits.minRR)) reasons.push('rr_below_threshold');
   if (direction !== 'WAIT' && d.candidate && direction !== String(d.candidate).toUpperCase()) reasons.push('ai_direction_conflicts_with_candidate');
+  const fundamental = d.fundamental || {};
+  const fundamentalBias = String(fundamental.bias || 'INSUFFICIENT').toUpperCase();
+  const fundamentalConfidence = Number(fundamental.confidence);
+  const fundamentalFreshness = String(fundamental.freshness || 'INSUFFICIENT').toUpperCase();
+  if (direction !== 'WAIT') {
+    if (!['BULLISH_GOLD','BEARISH_GOLD','NEUTRAL','INSUFFICIENT'].includes(fundamentalBias)) reasons.push('invalid_fundamental_bias');
+    if (!(Number.isFinite(fundamentalConfidence) && fundamentalConfidence >= 0 && fundamentalConfidence <= 1)) reasons.push('invalid_fundamental_confidence');
+    if (!['CURRENT','MIXED','STALE','INSUFFICIENT'].includes(fundamentalFreshness)) reasons.push('invalid_fundamental_freshness');
+    if (fundamentalBias === 'INSUFFICIENT' || fundamentalFreshness === 'STALE' || fundamentalFreshness === 'INSUFFICIENT') reasons.push('fundamental_data_insufficient');
+    if (fundamentalConfidence >= 0.70 && ((direction === 'BUY' && fundamentalBias === 'BEARISH_GOLD') || (direction === 'SELL' && fundamentalBias === 'BULLISH_GOLD'))) reasons.push('fundamental_conflict');
+  }
   if (Number(features.spread) > limits.maxSpreadPrice) reasons.push('spread_too_wide');
   if (ageSeconds > limits.maxSignalAgeSeconds || barAgeSeconds > limits.maxSignalAgeSeconds) reasons.push('signal_expired');
   if (Number(a.open_positions || 0) >= limits.maxOpenPositions) reasons.push('max_open_positions');
