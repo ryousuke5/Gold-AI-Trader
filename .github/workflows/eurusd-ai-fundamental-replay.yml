@@ -2,11 +2,8 @@ name: EURUSD AI Fundamental Replay
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 jobs:
   replay:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-eurusd-ai-replay]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
