@@ -99,7 +99,7 @@ function isPrimaryOrReuters(url) {
     'reuters.com',
     'www.reuters.com',
     'cmegroup.com'
-  ].some((allowed) => host === allowed || host.endsWith('.' + allowed));
+  ].some((allowed) => host === allowed || host.endsWith('.' + allowed) || host.endsWith(allowed));
 }
 
 export function validateEurUsdFundamentalAssessment(result, now = new Date()) {
