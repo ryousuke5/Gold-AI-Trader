@@ -1,0 +1,36 @@
+name: EURUSD Backtest - Alternative Source
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run 2-year technical backtest
+        env:
+          BACKTEST_LOOKBACK_DAYS: "730"
+          BACKTEST_INITIAL_EQUITY: "100000"
+          BACKTEST_RISK_PCT: "0.25"
+          BACKTEST_SPREAD_PIPS: "0.8"
+          BACKTEST_SLIPPAGE_PIPS: "0.1"
+          BACKTEST_MIN_STOP_ATR: "0.50"
+          BACKTEST_MAX_STOP_ATR: "1.50"
+          BACKTEST_MIN_RR: "1.80"
+          BACKTEST_MAX_SPREAD_PIPS: "1.20"
+          BACKTEST_MAX_SPREAD_TO_TP_PCT: "12"
+          BACKTEST_OUTPUT_DIR: backtest-output
+          BACKTEST_M15_SOURCE: "https://raw.githubusercontent.com/jaxontn/historical-Data/main/EURUSD_M15.csv"
+          BACKTEST_H1_SOURCE: "https://raw.githubusercontent.com/jaxontn/historical-Data/main/EURUSD_H1.csv"
+        run: node scripts/backtest-eurusd.mjs
+      - name: Upload backtest artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-backtest-alt-source
+          path: backtest-output/
+          retention-days: 30
