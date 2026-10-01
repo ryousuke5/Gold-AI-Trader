@@ -32,10 +32,10 @@ jobs:
         env:
           MACRO_INPUT: 'backtest-output/eurusd_macro_daily.csv'
           FUNDAMENTAL_MASK_OUTPUT: 'backtest-output/eurusd_fundamental_proxy_mask.csv'
-          PROXY_STRONG_CHANGE: '\${{ matrix.strong }}'
-          PROXY_MILD_CHANGE: '\${{ matrix.mild }}'
-          PROXY_MAX_LEVEL_FOR_BULL: '\${{ matrix.bull_level }}'
-          PROXY_MIN_LEVEL_FOR_BEAR: '\${{ matrix.bear_level }}'
+          PROXY_STRONG_CHANGE: '${{ matrix.strong }}'
+          PROXY_MILD_CHANGE: '${{ matrix.mild }}'
+          PROXY_MAX_LEVEL_FOR_BULL: '${{ matrix.bull_level }}'
+          PROXY_MIN_LEVEL_FOR_BEAR: '${{ matrix.bear_level }}'
         run: node scripts/build-eurusd-fundamental-proxy.mjs
       - name: Backtest
         env:
@@ -52,11 +52,11 @@ jobs:
           BACKTEST_MAX_SPREAD_TO_TP_PCT: '12'
           BACKTEST_M15_SOURCE: 'https://raw.githubusercontent.com/ejtraderLabs/historical-data/main/EURUSD/EURUSDm15.csv'
           BACKTEST_H1_SOURCE: 'https://raw.githubusercontent.com/ejtraderLabs/historical-data/main/EURUSD/EURUSDh1.csv'
-          BACKTEST_FUNDAMENTAL_SOURCE: '\${{ github.workspace }}/backtest-output/eurusd_fundamental_proxy_mask.csv'
-          BACKTEST_OUTPUT_DIR: 'backtest-output/\${{ matrix.label }}'
+          BACKTEST_FUNDAMENTAL_SOURCE: '${{ github.workspace }}/backtest-output/eurusd_fundamental_proxy_mask.csv'
+          BACKTEST_OUTPUT_DIR: 'backtest-output/${{ matrix.label }}'
         run: node scripts/backtest-eurusd.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: eurusd-proxy-\${{ matrix.label }}
-          path: backtest-output/\${{ matrix.label }}/
+          name: eurusd-proxy-${{ matrix.label }}
+          path: backtest-output/${{ matrix.label }}/
           retention-days: 30
