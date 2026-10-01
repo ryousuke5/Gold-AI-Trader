@@ -249,7 +249,7 @@ function sliceRecentBars(bars, index, count = 80) {
   }));
 }
 
-function parseFundamentalCsv(text) {
+export function parseFundamentalCsv(text) {
   const lines = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
   const header = splitCsvLine(lines[0]).map((x) => x.trim().replace(/^"|"$/g, '').toLowerCase());
@@ -277,7 +277,7 @@ function parseFundamentalCsv(text) {
   return rows;
 }
 
-function latestFundamentalAssessment(mask, signalTime, maxAgeHours = 48) {
+export function latestFundamentalAssessment(mask, signalTime, maxAgeHours = 48) {
   if (!mask?.length) return null;
   const cutoff = signalTime - Math.max(1, Number(maxAgeHours)) * 3600;
   let lo = 0;
@@ -296,7 +296,7 @@ function latestFundamentalAssessment(mask, signalTime, maxAgeHours = 48) {
   return mask[best];
 }
 
-function fundamentalGate(setup, assessment, config) {
+export function fundamentalGate(setup, assessment, config) {
   if (setup.candidate === 'WAIT') return { allowed: false, reason: 'technical_wait' };
   if (!assessment) return { allowed: false, reason: 'fundamental_missing_or_stale' };
   const expectedBias = setup.candidate === 'BUY' ? 'BULLISH_EURUSD' : 'BEARISH_EURUSD';
@@ -529,7 +529,7 @@ function csvEscape(v) {
   return /[",\\n]/.test(s) ? '"' + s.replaceAll('"', '""') + '"' : s;
 }
 
-function tradesToCsv(trades) {
+export function tradesToCsv(trades) {
   if (!trades.length) return 'signal_time,entry_time,exit_time,side,setup_type,h1_trend,entry,stop_loss,take_profit,lots,risk_cash,gross_pips,net_pips,gross_pnl,net_pnl,transaction_cost,spread_cost_pips,slippage_cost_pips,exit_reason,holding_minutes,spread_caused_loss\n';
   const headers = Object.keys(trades[0]);
   const rows = [headers.join(',')];
