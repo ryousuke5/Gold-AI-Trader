@@ -2,6 +2,8 @@ name: EURUSD Backtest - Alternative Source
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   backtest:
