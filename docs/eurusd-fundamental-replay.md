@@ -46,3 +46,25 @@ For the currently configured technical backtests, the project uses public EURUSD
 The repository also contains `scripts/build-eurusd-fundamental-proxy.mjs`. This is **not an AI result**. It classifies EURUSD direction from point-in-time US-minus-EUR policy-rate levels and 20-day changes, and marks central-bank meeting dates as high event risk. It is used only as a baseline control to measure whether a simple causal fundamental filter changes the technical-core backtest.
 
 The current 2020-03-04 to 2022-03-04 replay produced 7 filtered trades: PF 1.40, expectancy +1.62 pips/trade, net +$413.74, max drawdown 0.76%. The small sample size means this result is exploratory and not evidence of stable profitability.
+
+
+## Proxy sensitivity (2020-03-04 to 2022-03-04)
+
+All runs use the same EURUSD M15/H1 prices, 0.25% risk/trade, 0.8 pip spread, 0.1 pip slippage per side, next-M15-open execution, and 2R target. Only the deterministic policy-rate proxy thresholds differ.
+
+| Profile | Filtered trades | PF | Expectancy (pips) | Net P&L | Max DD |
+|---|---:|---:|---:|---:|---:|
+| strict | 7 | 1.40 | +1.62 | +$413.74 | 0.76% |
+| medium | 9 | 1.48 | +2.90 | +$627.08 | 0.76% |
+| loose | 10 | 1.23 | +1.78 | +$359.31 | 0.76% |
+| momentum-only | 6 | 0.95 | -0.08 | -$54.04 | 0.76% |
+
+The sample remains too small to establish stable profitability. In particular, the proxy is a control experiment, not the live AI/web-search fundamental layer.
+
+## Historical-data caution
+
+FRED documents that current FRED data can differ from what was known at a past date because economic observations can be revised; ALFRED preserves real-time periods and vintage dates for point-in-time reconstruction. For future macro replay expansion beyond non-revised policy-rate series, use ALFRED-style vintages rather than current revised observations to avoid look-ahead bias. citeturn677807search1turn677807search4turn677807search6
+
+## AI replay stability
+
+The AI historical replay now processes the macro snapshots in configurable chunks (default 90 days) with up to three retries. This avoids a single oversized structured-output response for the full history.
