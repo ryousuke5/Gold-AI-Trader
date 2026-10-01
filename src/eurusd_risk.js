@@ -44,7 +44,7 @@ export function evaluateEurUsdRisk({ decision, setup, features, account, signalC
     if (!(Number(d.confidence) >= limits.minConfidence && Number(d.confidence) <= 1)) reasons.push('setup_confidence_below_threshold');
     if (!(Number(d.risk_reward) >= limits.minRR)) reasons.push('rr_below_threshold');
     if (Number(features.spread) > 0) {
-      const pipSize = features.point > 0 && features.point <= 0.0001 ? features.point * 10 : 0.0001;
+      const pipSize = features.point >= 0.0001 ? 0.0001 : features.point * 10;
       const spreadPips = features.spread / pipSize;
       if (spreadPips > limits.maxSpreadPips) reasons.push('spread_too_wide');
     } else reasons.push('spread_missing');
@@ -118,7 +118,7 @@ export function evaluateEurUsdRisk({ decision, setup, features, account, signalC
           riskCash: Number(sizing.riskCash || 0),
           actualRR: rr,
           stopAtr,
-          spreadPips: features.spread / (features.point * 10)
+          spreadPips: features.spread / (features.point >= 0.0001 ? 0.0001 : features.point * 10)
         };
       }
       reasons.push('lot_sizing_missing_symbol_spec');
