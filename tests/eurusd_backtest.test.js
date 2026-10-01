@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFundamentalCsv, latestFundamentalAssessment, fundamentalGate, tradesToCsv } from '../scripts/backtest-eurusd.mjs';
+import { classifyFundamentalProxy } from '../scripts/build-eurusd-fundamental-proxy.mjs';
 
 function ema(values, period) {
   const out = new Array(values.length).fill(null);
@@ -87,4 +88,20 @@ test('trade CSV uses real line breaks', () => {
   }]);
   assert.ok(csv.includes('\n'));
   assert.equal(csv.split('\n').length, 3);
+});
+
+
+test('fundamental proxy is causal and conservative', () => {
+  assert.deepEqual(classifyFundamentalProxy({
+    policy_diff_change_20d: '-0.30',
+    usd_minus_eur_policy_rate: '1.00'
+  }), { bias: 'BULLISH_EURUSD', confidence: 0.75 });
+  assert.deepEqual(classifyFundamentalProxy({
+    policy_diff_change_20d: '0.30',
+    usd_minus_eur_policy_rate: '2.50'
+  }), { bias: 'BEARISH_EURUSD', confidence: 0.75 });
+  assert.deepEqual(classifyFundamentalProxy({
+    policy_diff_change_20d: '0.04',
+    usd_minus_eur_policy_rate: '1.00'
+  }), { bias: 'NEUTRAL', confidence: 0.60 });
 });
