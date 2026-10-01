@@ -7,7 +7,7 @@ function bars({direction='up', count=8, base=1.1000, step=0.00015, atr=0.0008}={
   const out = [];
   for (let i = 0; i < count; i += 1) {
     const close = direction === 'up' ? base + i * step : base - i * step;
-    const open = close - (direction === 'up' ? 0.00004 : -0.00004);
+    const open = close - (direction === 'up' ? 0.00010 : -0.00010);
     out.push({
       time: 1727000000 + i * 900,
       open,
@@ -18,6 +18,19 @@ function bars({direction='up', count=8, base=1.1000, step=0.00015, atr=0.0008}={
     });
   }
   return out;
+}
+
+function setupBarsBuy() {
+  return [
+    { time: 1727000000, open: 1.09960, high: 1.09995, low: 1.09950, close: 1.09985, volume: 100 },
+    { time: 1727000900, open: 1.09985, high: 1.10015, low: 1.09975, close: 1.10005, volume: 110 },
+    { time: 1727001800, open: 1.10005, high: 1.10030, low: 1.09990, close: 1.10020, volume: 120 },
+    { time: 1727002700, open: 1.10020, high: 1.10038, low: 1.10000, close: 1.10018, volume: 130 },
+    { time: 1727003600, open: 1.10018, high: 1.10035, low: 1.09998, close: 1.10010, volume: 140 },
+    { time: 1727004500, open: 1.10010, high: 1.10028, low: 1.09995, close: 1.10008, volume: 150 },
+    { time: 1727005400, open: 1.10008, high: 1.10020, low: 1.09990, close: 1.10000, volume: 160 },
+    { time: 1727006300, open: 1.10072, high: 1.10120, low: 1.10065, close: 1.10105, volume: 220 }
+  ];
 }
 
 function baseFeatures(overrides = {}) {
@@ -33,11 +46,11 @@ function baseFeatures(overrides = {}) {
   });
 }
 
-test('EURUSD M15 pullback/reclaim candidate aligns with H1 trend', () => {
-  const f = baseFeatures();
+test('EURUSD M15 breakout candidate aligns with H1 trend', () => {
+  const f = baseFeatures({ recent_m15: setupBarsBuy() });
   const errors = validateEurUsdFeatures(f);
   assert.deepEqual(errors, []);
-  const setup = buildEurUsdSetup(f, { maxSpreadPips: 1.0 });
+  const setup = buildEurUsdSetup(f, { maxSpreadPips: 1.0, maxSpreadToTpPct: 20 });
   assert.equal(setup.trend, 'UP');
   assert.equal(setup.candidate, 'BUY');
   assert.ok(['PULLBACK_RECLAIM', 'BREAKOUT'].includes(setup.setup_type));
