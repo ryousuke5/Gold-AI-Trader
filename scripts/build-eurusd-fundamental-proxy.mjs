@@ -12,7 +12,7 @@ function parseCsv(text){
     return row;
   });
 }
-function classify(row){
+export function classifyFundamentalProxy(row){
   const d20=Number(row.policy_diff_change_20d);
   const level=Number(row.usd_minus_eur_policy_rate);
   let bias='NEUTRAL', confidence=0.60;
@@ -27,7 +27,7 @@ async function main(){
   if(rows.length<300) throw new Error('Not enough macro rows: '+rows.length);
   const out=['timestamp,bias,confidence,freshness,event_risk_next_24h'];
   for(const row of rows){
-    const c=classify(row);
+    const c=classifyFundamentalProxy(row);
     out.push([row.timestamp,c.bias,c.confidence.toFixed(4),'CURRENT',row.event_risk_next_24h].join(','));
   }
   await fs.writeFile(output,out.join('\n')+'\n');
