@@ -88,6 +88,26 @@ function selectFundamentalSources(decision, response) {
   };
 }
 
+function sourceDateFromUrl(url) {
+  const s = String(url || '');
+  const match = s.match(/(?:^|[^0-9])(20\\d{2})[-_\/]?([01]\\d)[-_\/]?([0-3]\\d)(?:[^0-9]|$)/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function validateFundamentalSourceFreshness(sources, freshness, now = new Date(), lookbackHours = 48) {
+  const level = String(freshness || 'INSUFFICIENT').toUpperCase();
+  if (level !== 'CURRENT' && level !== 'MIXED') return { ok: true, reason: null, recent_count: 0 };
+  const cutoff = new Date(now.getTime() - Math.max(1, Number(lookbackHours)) * 3600 * 1000);
+  const recent = (Array.isArray(sources) ? sources : []).filter((source) => {
+    const d = sourceDateFromUrl(source?.url);
+    return d && d >= cutoff && d <= now;
+  });
+  if (recent.length > 0) return { ok: true, reason: null, recent_count: recent.length };
+  return { ok: false, reason: 'fundamental_current_source_not_date_verifiable', recent_count: 0 };
+}
+
 export async function analyzeWithOpenAI({ features, candidate, symbol, model = process.env.OPENAI_MODEL || 'gpt-5.5' }) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
@@ -200,6 +220,15 @@ export async function analyzeWithOpenAI({ features, candidate, symbol, model = p
     if (candidate !== 'WAIT' && sourceSelection.selected.length === 0) {
       throw new Error('fundamental_sources_unverified');
     }
+    const freshnessCheck = validateFundamentalSourceFreshness(
+      sourceSelection.selected,
+      decision?.fundamental?.freshness,
+      now,
+      lookbackHours
+    );
+    if (candidate !== 'WAIT' && !freshnessCheck.ok) {
+      throw new Error(freshnessCheck.reason);
+    }
     return {
       decision,
       responseId: envelope?.id || null,
@@ -207,6 +236,7 @@ export async function analyzeWithOpenAI({ features, candidate, symbol, model = p
       sources: sourceSelection.selected,
       searchedSources: sourceSelection.catalog,
       sourceSelectionMethod: sourceSelection.selectionMethod,
+      sourceFreshnessCheck: freshnessCheck,
       webSearchUsed: true
     };
   } catch (error) {
