@@ -20,9 +20,10 @@ const decisionSchema = {
         freshness: { type: 'string', enum: ['CURRENT', 'MIXED', 'STALE', 'INSUFFICIENT'] },
         summary: { type: 'string' },
         drivers: { type: 'array', items: { type: 'string' } },
-        risks: { type: 'array', items: { type: 'string' } }
+        risks: { type: 'array', items: { type: 'string' } },
+        source_urls: { type: 'array', items: { type: 'string' } }
       },
-      required: ['bias', 'confidence', 'freshness', 'summary', 'drivers', 'risks']
+      required: ['bias', 'confidence', 'freshness', 'summary', 'drivers', 'risks', 'source_urls']
     }
   },
   required: ['decision', 'confidence', 'market_regime', 'entry', 'stop_loss', 'take_profit', 'risk_reward', 'reason', 'invalid_reasons', 'fundamental']
@@ -40,34 +41,51 @@ function outputText(response) {
 }
 
 function collectSources(response) {
-  const cited = [];
+  const all = [];
   const push = (source) => {
     const url = typeof source?.url === 'string' ? source.url : null;
     if (!url) return;
     const title = typeof source?.title === 'string' ? source.title : url;
-    if (!cited.some((x) => x.url === url)) cited.push({ title, url });
+    if (!all.some((x) => x.url === url)) all.push({ title, url });
   };
+  for (const source of Array.isArray(response?.sources) ? response.sources : []) push(source);
   for (const item of Array.isArray(response?.output) ? response.output : []) {
+    const sources = item?.action?.sources || item?.sources;
+    for (const source of Array.isArray(sources) ? sources : []) push(source);
     for (const content of Array.isArray(item?.content) ? item.content : []) {
       for (const annotation of Array.isArray(content?.annotations) ? content.annotations : []) {
         if (annotation?.type === 'url_citation') push(annotation?.url_citation);
       }
     }
   }
-  if (cited.length > 0) return cited.slice(0, 8);
-  const fallback = [];
-  const pushFallback = (source) => {
-    const url = typeof source?.url === 'string' ? source.url : null;
-    if (!url) return;
-    const title = typeof source?.title === 'string' ? source.title : url;
-    if (!fallback.some((x) => x.url === url)) fallback.push({ title, url });
-  };
-  for (const source of Array.isArray(response?.sources) ? response.sources : []) pushFallback(source);
+  return all.slice(0, 20);
+}
+
+function selectFundamentalSources(decision, response) {
+  const catalog = collectSources(response);
+  const requested = Array.isArray(decision?.fundamental?.source_urls)
+    ? decision.fundamental.source_urls.filter((x) => typeof x === 'string' && x.trim())
+    : [];
+  const exact = catalog.filter((source) => requested.includes(source.url)).slice(0, 8);
+  const cited = [];
+  const citedSet = new Set();
   for (const item of Array.isArray(response?.output) ? response.output : []) {
-    const sources = item?.action?.sources || item?.sources;
-    for (const source of Array.isArray(sources) ? sources : []) pushFallback(source);
+    for (const content of Array.isArray(item?.content) ? item.content : []) {
+      for (const annotation of Array.isArray(content?.annotations) ? content.annotations : []) {
+        if (annotation?.type !== 'url_citation') continue;
+        const source = annotation?.url_citation;
+        if (typeof source?.url !== 'string' || citedSet.has(source.url)) continue;
+        citedSet.add(source.url);
+        cited.push({ title: typeof source.title === 'string' ? source.title : source.url, url: source.url });
+      }
+    }
   }
-  return fallback.slice(0, 8);
+  const selected = exact.length ? exact : cited.slice(0, 8);
+  return {
+    selected,
+    catalog,
+    selectionMethod: exact.length ? 'MODEL_URLS_MATCHED_TO_SEARCH_RESULTS' : (cited.length ? 'ANNOTATIONS' : 'NONE')
+  };
 }
 
 export async function analyzeWithOpenAI({ features, candidate, symbol, model = process.env.OPENAI_MODEL || 'gpt-5.5' }) {
@@ -120,7 +138,8 @@ export async function analyzeWithOpenAI({ features, candidate, symbol, model = p
     'If fundamental evidence is INSUFFICIENT or STALE, prefer WAIT for a BUY/SELL decision.',
     'Neutral fundamentals do not force WAIT by themselves when technical evidence is strong.',
     'Do not manufacture entry, stop, or take-profit values. For WAIT, all price fields must be 0.',
-    'Return the fundamental assessment as structured data with concise drivers and risks.'
+    'Return the fundamental assessment as structured data with concise drivers and risks.',
+    'In fundamental.source_urls, list the exact URLs of the sources you actually used for the fundamental conclusion. Only use URLs returned by the web search.'
   ].join('\n');
 
   const userInput = {
@@ -146,7 +165,10 @@ export async function analyzeWithOpenAI({ features, candidate, symbol, model = p
         tools: [{
           type: 'web_search',
           search_context_size: process.env.OPENAI_WEB_SEARCH_CONTEXT_SIZE || 'low',
-          external_web_access: true
+          external_web_access: true,
+          filters: {
+            allowed_domains: String(process.env.OPENAI_ALLOWED_DOMAINS || 'federalreserve.gov,bls.gov,bea.gov,home.treasury.gov,fred.stlouisfed.org,cmegroup.com,reuters.com,gold.org').split(',').map((x) => x.trim()).filter(Boolean)
+          }
         }],
         tool_choice: 'required',
         include: ['web_search_call.action.sources'],
@@ -174,11 +196,17 @@ export async function analyzeWithOpenAI({ features, candidate, symbol, model = p
     if (!raw) throw new Error('OpenAI structured output was empty');
 
     const decision = JSON.parse(raw);
+    const sourceSelection = selectFundamentalSources(decision, envelope);
+    if (candidate !== 'WAIT' && sourceSelection.selected.length === 0) {
+      throw new Error('fundamental_sources_unverified');
+    }
     return {
       decision,
       responseId: envelope?.id || null,
       model,
-      sources: collectSources(envelope),
+      sources: sourceSelection.selected,
+      searchedSources: sourceSelection.catalog,
+      sourceSelectionMethod: sourceSelection.selectionMethod,
       webSearchUsed: true
     };
   } catch (error) {
