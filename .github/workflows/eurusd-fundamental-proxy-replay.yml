@@ -39,7 +39,7 @@ jobs:
           BACKTEST_MAX_SPREAD_TO_TP_PCT: "12"
           BACKTEST_M15_SOURCE: "https://raw.githubusercontent.com/ejtraderLabs/historical-data/main/EURUSD/EURUSDm15.csv"
           BACKTEST_H1_SOURCE: "https://raw.githubusercontent.com/ejtraderLabs/historical-data/main/EURUSD/EURUSDh1.csv"
-          BACKTEST_FUNDAMENTAL_SOURCE: "\${{ github.workspace }}/backtest-output/eurusd_fundamental_proxy_mask.csv"
+          BACKTEST_FUNDAMENTAL_SOURCE: "${{ github.workspace }}/backtest-output/eurusd_fundamental_proxy_mask.csv"
           BACKTEST_OUTPUT_DIR: "backtest-output/fundamental-proxy"
         run: node scripts/backtest-eurusd.mjs
       - uses: actions/upload-artifact@v4
