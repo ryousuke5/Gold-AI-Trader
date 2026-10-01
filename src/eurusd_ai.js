@@ -79,11 +79,12 @@ function selectSources(decision, response) {
 }
 
 function hostname(url) {
-  try {
-    return new URL(url).hostname.toLowerCase();
-  } catch {
-    return '';
-  }
+  const raw = String(url || '').trim().toLowerCase();
+  return raw
+    .replace(/^https?:\/\//, '')
+    .split('/')[0]
+    .split(':')[0]
+    .replace(/^www\./, '');
 }
 
 function isPrimaryOrReuters(url) {
