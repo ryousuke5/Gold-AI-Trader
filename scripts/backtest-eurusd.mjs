@@ -34,10 +34,32 @@ function assertFinite(value, name) {
   return n;
 }
 
+function parseTimestamp(raw) {
+  const s = String(raw || '').trim().replace(/^"|"$/g, '');
+  if (!s) return NaN;
+  if (/^\\d{8}(?:\\s|T)?\\d{6}$/.test(s)) {
+    const digits = s.replace(/\\D/g, '');
+    const iso = `${digits.slice(0,4)}-${digits.slice(4,6)}-${digits.slice(6,8)}T${digits.slice(8,10)}:${digits.slice(10,12)}:${digits.slice(12,14)}Z`;
+    return Date.parse(iso);
+  }
+  if (/^\\d{8}$/.test(s)) {
+    const iso = `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T00:00:00Z`;
+    return Date.parse(iso);
+  }
+  const normalized = s.replace(/\\./g, '-').replace(' ', 'T');
+  const withZone = /(?:Z|[+-]\\d{2}:?\\d{2})$/.test(normalized) ? normalized : normalized + 'Z';
+  return Date.parse(withZone);
+}
+
+function splitCsvLine(line) {
+  if (line.includes(';') && !line.includes(',')) return line.split(';');
+  return line.split(',');
+}
+
 function parseCsv(text) {
   const lines = text.replace(/^\\uFEFF/, '').trim().split(/\\r?\\n/);
   if (lines.length < 2) return [];
-  const header = lines[0].split(',').map((x) => x.trim().toLowerCase());
+  const header = splitCsvLine(lines[0]).map((x) => x.trim().replace(/^"|"$/g, '').toLowerCase());
   const idx = Object.fromEntries(header.map((h, i) => [h, i]));
   const dateKey = idx.datetime !== undefined ? 'datetime' : 'date';
   const required = [dateKey, 'open', 'high', 'low', 'close'];
@@ -47,13 +69,13 @@ function parseCsv(text) {
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    const cells = line.split(',');
+    const cells = splitCsvLine(line);
     const rawClose = Number(cells[idx.close]);
     if (!Number.isFinite(rawClose) || rawClose <= 0) continue;
     const priceScale = rawClose > 10 ? 100000 : 1;
     const parsePrice = (k) => Number(cells[idx[k]]) / priceScale;
     const rawTime = String(cells[idx[dateKey]]).trim();
-    const time = Date.parse(rawTime.endsWith('Z') ? rawTime : rawTime.replace(' ', 'T') + 'Z');
+    const time = parseTimestamp(rawTime);
     if (!Number.isFinite(time)) continue;
     const open = parsePrice('open');
     const high = parsePrice('high');
@@ -422,7 +444,9 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
   const [m15Text, h1Text] = await Promise.all([fetchText(m15Source), fetchText(h1Source)]);
   const rawM15 = parseCsv(m15Text);
   const rawH1 = parseCsv(h1Text);
-  if (rawM15.length < 500 || rawH1.length < 300) throw new Error(`Insufficient downloaded data: M15=${rawM15.length}, H1=${rawH1.length}`);
+  if (rawM15.length < 500 || rawH1.length < 300) {
+    throw new Error(`Insufficient downloaded data: M15=${rawM15.length}, H1=${rawH1.length}. Verify CSV schema/datetime format.`);
+  }
 
   const latestTime = rawM15[rawM15.length - 1].time;
   const defaultStart = latestTime - config.lookbackDays * 86400;
