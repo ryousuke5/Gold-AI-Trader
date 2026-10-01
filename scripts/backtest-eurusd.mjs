@@ -61,7 +61,7 @@ function parseCsv(text) {
   if (lines.length < 2) return [];
   const header = splitCsvLine(lines[0]).map((x) => x.trim().replace(/^"|"$/g, '').toLowerCase());
   const idx = Object.fromEntries(header.map((h, i) => [h, i]));
-  const dateKey = idx.datetime !== undefined ? 'datetime' : 'date';
+  const dateKey = ['datetime', 'date', 'time', 'timestamp', 'timestamp_utc'].find((key) => idx[key] !== undefined) || header[0];
   const required = [dateKey, 'open', 'high', 'low', 'close'];
   for (const key of required) if (idx[key] === undefined) throw new Error(`CSV missing column: ${key}`);
 
