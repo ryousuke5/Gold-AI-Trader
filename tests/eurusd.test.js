@@ -25,10 +25,10 @@ function setupBarsBuy() {
     { time: 1727000000, open: 1.09960, high: 1.09995, low: 1.09950, close: 1.09985, volume: 100 },
     { time: 1727000900, open: 1.09985, high: 1.10015, low: 1.09975, close: 1.10005, volume: 110 },
     { time: 1727001800, open: 1.10005, high: 1.10030, low: 1.09990, close: 1.10020, volume: 120 },
-    { time: 1727002700, open: 1.10020, high: 1.10038, low: 1.10000, close: 1.10018, volume: 130 },
-    { time: 1727003600, open: 1.10018, high: 1.10035, low: 1.09998, close: 1.10010, volume: 140 },
-    { time: 1727004500, open: 1.10010, high: 1.10028, low: 1.09995, close: 1.10008, volume: 150 },
-    { time: 1727005400, open: 1.10008, high: 1.10020, low: 1.09990, close: 1.10000, volume: 160 },
+    { time: 1727002700, open: 1.10020, high: 1.10038, low: 1.10012, close: 1.10018, volume: 130 },
+    { time: 1727003600, open: 1.10018, high: 1.10035, low: 1.10015, close: 1.10010, volume: 140 },
+    { time: 1727004500, open: 1.10010, high: 1.10028, low: 1.10010, close: 1.10008, volume: 150 },
+    { time: 1727005400, open: 1.10008, high: 1.10020, low: 1.10018, close: 1.10000, volume: 160 },
     { time: 1727006300, open: 1.10072, high: 1.10120, low: 1.10065, close: 1.10105, volume: 220 }
   ];
 }
