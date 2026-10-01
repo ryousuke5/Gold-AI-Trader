@@ -40,19 +40,34 @@ function outputText(response) {
 }
 
 function collectSources(response) {
-  const found = [];
+  const cited = [];
   const push = (source) => {
     const url = typeof source?.url === 'string' ? source.url : null;
     if (!url) return;
     const title = typeof source?.title === 'string' ? source.title : url;
-    if (!found.some((x) => x.url === url)) found.push({ title, url });
+    if (!cited.some((x) => x.url === url)) cited.push({ title, url });
   };
-  for (const source of Array.isArray(response?.sources) ? response.sources : []) push(source);
+  for (const item of Array.isArray(response?.output) ? response.output : []) {
+    for (const content of Array.isArray(item?.content) ? item.content : []) {
+      for (const annotation of Array.isArray(content?.annotations) ? content.annotations : []) {
+        if (annotation?.type === 'url_citation') push(annotation?.url_citation);
+      }
+    }
+  }
+  if (cited.length > 0) return cited.slice(0, 8);
+  const fallback = [];
+  const pushFallback = (source) => {
+    const url = typeof source?.url === 'string' ? source.url : null;
+    if (!url) return;
+    const title = typeof source?.title === 'string' ? source.title : url;
+    if (!fallback.some((x) => x.url === url)) fallback.push({ title, url });
+  };
+  for (const source of Array.isArray(response?.sources) ? response.sources : []) pushFallback(source);
   for (const item of Array.isArray(response?.output) ? response.output : []) {
     const sources = item?.action?.sources || item?.sources;
-    for (const source of Array.isArray(sources) ? sources : []) push(source);
+    for (const source of Array.isArray(sources) ? sources : []) pushFallback(source);
   }
-  return found.slice(0, 8);
+  return fallback.slice(0, 8);
 }
 
 export async function analyzeWithOpenAI({ features, candidate, symbol, model = process.env.OPENAI_MODEL || 'gpt-5.5' }) {
@@ -90,6 +105,10 @@ export async function analyzeWithOpenAI({ features, candidate, symbol, model = p
     '5) Central-bank gold demand, ETF flows, and major gold-market positioning when fresh and reliable.',
     '6) Major geopolitical or risk-off events that can materially affect safe-haven demand.',
     'Use exact publication/event dates. Prefer primary sources and reputable financial reporting.',
+    'For CURRENT or MIXED assessments, do not use information older than the ' + String(lookbackHours) + '-hour lookback as current evidence, except clearly labeled structural background such as World Gold Council data.',
+    'If an older source is retrieved, treat it as background only or ignore it; never cite an old source as evidence for a current market-moving claim.',
+    'Prioritize these domains when relevant: federalreserve.gov, bls.gov, treasury.gov, fred.stlouisfed.org, reuters.com, gold.org, cmegroup.com.',
+    'Do not let search-result breadth override source quality or recency.',
     'Do not treat a single headline as sufficient evidence.',
     '',
     'Fundamental bias must be based on the balance of current evidence:',
