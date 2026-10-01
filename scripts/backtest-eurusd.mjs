@@ -37,17 +37,17 @@ function assertFinite(value, name) {
 function parseTimestamp(raw) {
   const s = String(raw || '').trim().replace(/^"|"$/g, '');
   if (!s) return NaN;
-  if (/^\\d{8}(?:\\s|T)?\\d{6}$/.test(s)) {
-    const digits = s.replace(/\\D/g, '');
+  if (/^\d{8}(?:\s|T)?\d{6}$/.test(s)) {
+    const digits = s.replace(/\D/g, '');
     const iso = `${digits.slice(0,4)}-${digits.slice(4,6)}-${digits.slice(6,8)}T${digits.slice(8,10)}:${digits.slice(10,12)}:${digits.slice(12,14)}Z`;
     return Date.parse(iso);
   }
-  if (/^\\d{8}$/.test(s)) {
+  if (/^\d{8}$/.test(s)) {
     const iso = `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T00:00:00Z`;
     return Date.parse(iso);
   }
-  const normalized = s.replace(/\\./g, '-').replace(' ', 'T');
-  const withZone = /(?:Z|[+-]\\d{2}:?\\d{2})$/.test(normalized) ? normalized : normalized + 'Z';
+  const normalized = s.replace(/\./g, '-').replace(' ', 'T');
+  const withZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(normalized) ? normalized : normalized + 'Z';
   return Date.parse(withZone);
 }
 
@@ -57,7 +57,7 @@ function splitCsvLine(line) {
 }
 
 function parseCsv(text) {
-  const lines = text.replace(/^\\uFEFF/, '').trim().split(/\\r?\\n/);
+  const lines = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
   if (lines.length < 2) return [];
   const header = splitCsvLine(lines[0]).map((x) => x.trim().replace(/^"|"$/g, '').toLowerCase());
   const idx = Object.fromEntries(header.map((h, i) => [h, i]));
