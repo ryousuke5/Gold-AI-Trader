@@ -105,3 +105,18 @@ test('fundamental proxy is causal and conservative', () => {
     usd_minus_eur_policy_rate: '1.00'
   }), { bias: 'NEUTRAL', confidence: 0.60 });
 });
+
+
+test('fundamental proxy thresholds are directionally consistent', async () => {
+  const { classifyFundamentalProxy } = await import('../scripts/build-eurusd-fundamental-proxy.mjs');
+  const strong = classifyFundamentalProxy({
+    policy_diff_change_20d: '-0.30',
+    usd_minus_eur_policy_rate: '1.00'
+  });
+  const neutral = classifyFundamentalProxy({
+    policy_diff_change_20d: '0.01',
+    usd_minus_eur_policy_rate: '1.00'
+  });
+  assert.equal(strong.bias, 'BULLISH_EURUSD');
+  assert.equal(neutral.bias, 'NEUTRAL');
+});
