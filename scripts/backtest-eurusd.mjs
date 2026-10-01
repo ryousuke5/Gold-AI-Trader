@@ -117,7 +117,7 @@ function parseCsv(text) {
 
 async function fetchText(url) {
   if (typeof url === 'string' && !/^https?:\/\//i.test(url)) {
-    return await readFile(url, 'utf8');
+    return await fs.readFile(url, 'utf8');
   }
   const res = await fetch(url, { headers: { 'user-agent': 'Gold-AI-Trader-backtest/1.0' } });
   if (!res.ok) throw new Error(`Download failed ${res.status}: ${url}`);
