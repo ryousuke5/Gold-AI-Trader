@@ -1,6 +1,6 @@
 #property strict
-#property version   "2.3"
-#property description "XAUUSD AI Trader Secure V2.3 - local key file. Analysis bridge only. No orders."
+#property version   "2.4"
+#property description "XAUUSD AI Trader Secure V2.4 - local key file. Analysis bridge only. No orders."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
 input string ApiKeyFile = "GoldAITrader.key";
@@ -12,7 +12,7 @@ input int    TimerSeconds = 5;
 input int    SignalIntervalMinutes = 10;
 input int    MagicNumber = 26092801;
 input double MaxSpreadPrice = 0.50;
-input int    RequestTimeoutMs = 70000;
+input int    RequestTimeoutMs = 90000;
 
 datetime g_lastClosedM5Bar = 0;
 datetime g_lastSignalRequestAt = 0;
@@ -77,7 +77,7 @@ bool LoadApiKeyFromFile()
 
    if(StringLen(fileName) <= 0)
    {
-      Print("GoldAITrader Secure V2.3: ApiKeyFile is empty.");
+      Print("GoldAITrader Secure V2.4: ApiKeyFile is empty.");
       return false;
    }
 
@@ -515,7 +515,7 @@ int OnInit()
 {
    string sym = TradeSymbol();
 
-   Print("GoldAITrader Secure V2.3 BUILD=20261001A: starting initialization. symbol=", sym,
+   Print("GoldAITrader Secure V2.3 BUILD=20261001B: starting initialization. symbol=", sym,
          " api=", ApiBaseUrl,
          " timer=", TimerSeconds,
          " signalIntervalMinutes=", SignalIntervalMinutes,
