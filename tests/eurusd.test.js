@@ -76,7 +76,7 @@ test('EURUSD M15 breakout candidate supports SELL in H1 downtrend', () => {
   const f = baseFeatures({
     bid: 1.10092,
     ask: 1.10100,
-    m15: { ema20: 1.10120, ema50: 1.10155, rsi14: 45, atr14: 0.00080 },
+    m15: { ema20: 1.10100, ema50: 1.10130, rsi14: 45, atr14: 0.00080 },
     h1: { close: 1.10060, ema20: 1.10180, ema50: 1.10210, ema200: 1.10270, rsi14: 44, atr14: 0.00250 },
     recent_m15: setupBarsSell()
   });
