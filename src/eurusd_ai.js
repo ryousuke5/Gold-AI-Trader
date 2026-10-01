@@ -73,7 +73,8 @@ function selectSources(decision, response) {
       }
     }
   }
-  const selected = exact.length > 0 ? exact : cited.slice(0, 8);
+  const merged = [...exact, ...cited.filter((citedSource) => !exact.some((exactSource) => exactSource.url === citedSource.url))];
+  const selected = merged.slice(0, 8);
   return { selected, catalog };
 }
 
@@ -222,7 +223,7 @@ export async function analyzeEurUsdFundamental({ features, candidate, model = pr
         reasoning: { effort: process.env.OPENAI_REASONING_EFFORT || 'medium' },
         tools: [{
           type: 'web_search',
-          search_context_size: process.env.OPENAI_WEB_SEARCH_CONTEXT_SIZE || 'medium',
+          search_context_size: process.env.EURUSD_OPENAI_WEB_SEARCH_CONTEXT_SIZE || process.env.OPENAI_WEB_SEARCH_CONTEXT_SIZE || 'medium',
           external_web_access: true,
           filters: {
             allowed_domains: String(process.env.EURUSD_OPENAI_ALLOWED_DOMAINS || 'ecb.europa.eu,ec.europa.eu,federalreserve.gov,bls.gov,bea.gov,home.treasury.gov,fred.stlouisfed.org,reuters.com,cmegroup.com')
