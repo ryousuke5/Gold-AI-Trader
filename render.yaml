@@ -22,7 +22,11 @@ services:
       - key: OPENAI_REASONING_EFFORT
         value: medium
       - key: OPENAI_TIMEOUT_MS
-        value: "12000"
+        value: "60000"
+      - key: OPENAI_WEB_SEARCH_CONTEXT_SIZE
+        value: "low"
+      - key: FUNDAMENTAL_LOOKBACK_HOURS
+        value: "48"
       - key: DEFAULT_SYMBOL
         value: XAUUSD
       - key: STRATEGY_VERSION
