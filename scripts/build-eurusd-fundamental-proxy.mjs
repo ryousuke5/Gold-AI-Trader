@@ -4,6 +4,13 @@ import { fileURLToPath } from 'node:url';
 const input=process.env.MACRO_INPUT || 'backtest-output/eurusd_macro_daily.csv';
 const output=process.env.FUNDAMENTAL_MASK_OUTPUT || 'backtest-output/eurusd_fundamental_proxy_mask.csv';
 
+const THRESHOLDS = {
+  strongChange: Number(process.env.PROXY_STRONG_CHANGE || 0.25),
+  mildChange: Number(process.env.PROXY_MILD_CHANGE || 0.10),
+  maxLevelForBull: Number(process.env.PROXY_MAX_LEVEL_FOR_BULL || 1.50),
+  minLevelForBear: Number(process.env.PROXY_MIN_LEVEL_FOR_BEAR || 1.50)
+};
+
 function parseCsv(text){
   const lines=text.replace(/^\uFEFF/,'').trim().split(/\r?\n/).filter(Boolean);
   const header=lines[0].split(',');
@@ -17,10 +24,10 @@ export function classifyFundamentalProxy(row){
   const d20=Number(row.policy_diff_change_20d);
   const level=Number(row.usd_minus_eur_policy_rate);
   let bias='NEUTRAL', confidence=0.60;
-  if (d20 <= -0.25) { bias='BULLISH_EURUSD'; confidence=0.75; }
-  else if (d20 <= -0.10 && level <= 1.50) { bias='BULLISH_EURUSD'; confidence=0.68; }
-  else if (d20 >= 0.25) { bias='BEARISH_EURUSD'; confidence=0.75; }
-  else if (d20 >= 0.10 && level >= 1.50) { bias='BEARISH_EURUSD'; confidence=0.68; }
+  if (d20 <= -THRESHOLDS.strongChange) { bias='BULLISH_EURUSD'; confidence=0.75; }
+  else if (d20 <= -THRESHOLDS.mildChange && level <= THRESHOLDS.maxLevelForBull) { bias='BULLISH_EURUSD'; confidence=0.68; }
+  else if (d20 >= THRESHOLDS.strongChange) { bias='BEARISH_EURUSD'; confidence=0.75; }
+  else if (d20 >= THRESHOLDS.mildChange && level >= THRESHOLDS.minLevelForBear) { bias='BEARISH_EURUSD'; confidence=0.68; }
   return {bias,confidence};
 }
 async function main(){
