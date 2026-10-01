@@ -734,7 +734,10 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
   if (fundamentalSummary) {
     console.log('Fundamental-filtered trades:', fundamentalSummary.trades);
     console.log('Fundamental-filtered PF:', formatNumber(fundamentalSummary.profit_factor));
-    console.log('Fundamental-filtered expectancy:', '
+    console.log('Fundamental-filtered expectancy:', '$' + formatNumber(fundamentalSummary.expectancy_per_trade), '/', formatNumber(fundamentalSummary.expectancy_pips_per_trade) + ' pips');
+    console.log('Fundamental-filtered net profit:', '$' + formatNumber(fundamentalSummary.net_profit));
+    console.log('Fundamental-filtered Max DD:', '$' + formatNumber(fundamentalSummary.max_drawdown), '/', formatNumber(fundamentalSummary.max_drawdown_pct) + '%');
+  }
   console.log('Trades:', summary.trades);
   console.log('Win rate:', formatNumber(summary.win_rate_pct) + '%');
   console.log('Profit factor:', formatNumber(summary.profit_factor));
