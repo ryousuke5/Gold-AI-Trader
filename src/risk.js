@@ -89,5 +89,20 @@ export function evaluateRisk({ decision, features, account, signalCreatedAt = Da
 }
 export function safeDecision(decision={}) {
   const confidence=Number(decision.confidence);
-  return { decision:String(decision.decision||'WAIT').toUpperCase(), confidence:Number.isFinite(confidence)?confidence:0, market_regime:String(decision.market_regime||'UNCLEAR').toUpperCase(), entry:Number(decision.entry||0), stop_loss:Number(decision.stop_loss||0), take_profit:Number(decision.take_profit||0), risk_reward:Number(decision.risk_reward||0), reason:String(decision.reason||''), invalid_reasons:Array.isArray(decision.invalid_reasons)?decision.invalid_reasons.map(String):[] };
+  const fundamental=decision?.fundamental||{};
+  const fundamentalConfidence=Number(fundamental.confidence);
+  return {
+    decision:String(decision.decision||'WAIT').toUpperCase(), confidence:Number.isFinite(confidence)?confidence:0,
+    market_regime:String(decision.market_regime||'UNCLEAR').toUpperCase(), entry:Number(decision.entry||0), stop_loss:Number(decision.stop_loss||0),
+    take_profit:Number(decision.take_profit||0), risk_reward:Number(decision.risk_reward||0), reason:String(decision.reason||''),
+    invalid_reasons:Array.isArray(decision.invalid_reasons)?decision.invalid_reasons.map(String):[],
+    fundamental:{
+      bias:String(fundamental.bias||'INSUFFICIENT').toUpperCase(),
+      confidence:Number.isFinite(fundamentalConfidence)?fundamentalConfidence:0,
+      freshness:String(fundamental.freshness||'INSUFFICIENT').toUpperCase(),
+      summary:String(fundamental.summary||''),
+      drivers:Array.isArray(fundamental.drivers)?fundamental.drivers.map(String):[],
+      risks:Array.isArray(fundamental.risks)?fundamental.risks.map(String):[]
+    }
+  };
 }
