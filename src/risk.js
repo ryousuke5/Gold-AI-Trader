@@ -38,7 +38,7 @@ export function evaluateRisk({ decision, features, account, signalCreatedAt = Da
   const barAgeSeconds = Number.isFinite(Number(features.barTime)) && Number(features.barTime) > 0 ? Math.max(0, (now - Number(features.barTime) * 1000) / 1000) : Number.POSITIVE_INFINITY;
   if (!['BUY','SELL','WAIT'].includes(direction)) reasons.push('invalid_decision');
   if (direction === 'WAIT') reasons.push('decision_wait');
-  if (!(Number(d.confidence) >= limits.minConfidence && Number(d.confidence) <= 1)) reasons.push('confidence_out_of_range_or_below_threshold');
+  if (direction !== 'WAIT' && !(Number(d.confidence) >= limits.minConfidence && Number(d.confidence) <= 1)) reasons.push('confidence_out_of_range_or_below_threshold');
   if (direction !== 'WAIT' && !(Number(d.risk_reward) >= limits.minRR)) reasons.push('rr_below_threshold');
   if (direction !== 'WAIT' && d.candidate && direction !== String(d.candidate).toUpperCase()) reasons.push('ai_direction_conflicts_with_candidate');
   const fundamental = d.fundamental || {};
