@@ -59,13 +59,20 @@ async function main(){
   const out=[], history=[];
   for(const date of dateRange(CONFIG.start,CONFIG.end)){
     const prev=shiftDate(date,-1);
+    const prior5=shiftDate(date,-6);
+    const prior20=shiftDate(date,-21);
     if(dff.has(prev)) history.dff=dff.get(prev); if(ecb.has(prev)) history.ecb=ecb.get(prev);
     if(!Number.isFinite(history.dff)||!Number.isFinite(history.ecb)) continue;
+    const diff=history.dff-history.ecb;
+    const prior5Diff=(Number.isFinite(dff.get(prior5))&&Number.isFinite(ecb.get(prior5))) ? dff.get(prior5)-ecb.get(prior5) : diff;
+    const prior20Diff=(Number.isFinite(dff.get(prior20))&&Number.isFinite(ecb.get(prior20))) ? dff.get(prior20)-ecb.get(prior20) : diff;
     out.push({
       timestamp: date+'T00:00:00Z',
       fed_funds: history.dff.toFixed(4),
       ecb_deposit: history.ecb.toFixed(4),
-      usd_minus_eur_policy_rate: (history.dff-history.ecb).toFixed(4),
+      usd_minus_eur_policy_rate: diff.toFixed(4),
+      policy_diff_change_5d: (diff-prior5Diff).toFixed(4),
+      policy_diff_change_20d: (diff-prior20Diff).toFixed(4),
       fomc_event_next_24h: FOMC_DATES.has(date)?'YES':'NO',
       ecb_event_next_24h: ECB_DATES.has(date)?'YES':'NO',
       event_risk_next_24h: (FOMC_DATES.has(date)||ECB_DATES.has(date))?'HIGH':'LOW'
