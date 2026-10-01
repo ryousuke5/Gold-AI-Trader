@@ -184,10 +184,28 @@ function addIndicators(bars) {
   }));
 }
 
-function buildH1Lookup(h1) {
-  const lookup = new Map();
-  for (const bar of h1) lookup.set(bar.time, bar);
-  return lookup;
+function aggregateM15ToH1(m15) {
+  const buckets = new Map();
+  for (const bar of m15) {
+    const hour = Math.floor(bar.time / 3600) * 3600;
+    const current = buckets.get(hour);
+    if (!current) {
+      buckets.set(hour, {
+        time: hour,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+        volume: bar.volume
+      });
+    } else {
+      current.high = Math.max(current.high, bar.high);
+      current.low = Math.min(current.low, bar.low);
+      current.close = bar.close;
+      current.volume += bar.volume;
+    }
+  }
+  return [...buckets.values()].sort((a, b) => a.time - b.time);
 }
 
 function latestCompletedH1Index(h1WithIndicators, signalTime) {
@@ -448,12 +466,10 @@ function tradesToCsv(trades) {
 }
 
 export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.h1, config = CONFIG } = {}) {
-  const [m15Text, h1Text] = await Promise.all([fetchText(m15Source), fetchText(h1Source)]);
+  const m15Text = await fetchText(m15Source);
   const rawM15 = parseCsv(m15Text);
-  const rawH1 = parseCsv(h1Text);
-  if (rawM15.length < 500 || rawH1.length < 300) {
-    console.log('M15 raw sample:', JSON.stringify(m15Text.slice(0, 1200)));
-    console.log('H1 raw sample:', JSON.stringify(h1Text.slice(0, 1200)));
+  const rawH1 = h1Source === 'FROM_M15' ? aggregateM15ToH1(rawM15) : parseCsv(await fetchText(h1Source));
+  if (rawM15.length < 500 || rawH1.length < 100) {
     throw new Error(`Insufficient downloaded data: M15=${rawM15.length}, H1=${rawH1.length}. Verify CSV schema/datetime format.`);
   }
 
