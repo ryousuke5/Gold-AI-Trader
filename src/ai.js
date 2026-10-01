@@ -90,7 +90,7 @@ function selectFundamentalSources(decision, response) {
 
 function sourceDateFromUrl(url) {
   const s = String(url || '');
-  const match = s.match(/(?:^|[^0-9])(20\\d{2})[-_\/]?([01]\\d)[-_\/]?([0-3]\\d)(?:[^0-9]|$)/);
+  const match = s.match(/(?:^|[^0-9])(20\d{2})[-_\/]?([01]\d)[-_\/]?([0-3]\d)(?:[^0-9]|$)/);
   if (!match) return null;
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   return Number.isNaN(date.getTime()) ? null : date;
