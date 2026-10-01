@@ -40,3 +40,9 @@ A replay with no mask explicitly reports fundamental_backtest_status=NOT_RUN.
 ## Data provenance
 
 For the currently configured technical backtests, the project uses public EURUSD M15/H1 CSV sources in GitHub Actions. See the workflow files for exact source URLs and date windows.
+
+## Deterministic macro proxy
+
+The repository also contains `scripts/build-eurusd-fundamental-proxy.mjs`. This is **not an AI result**. It classifies EURUSD direction from point-in-time US-minus-EUR policy-rate levels and 20-day changes, and marks central-bank meeting dates as high event risk. It is used only as a baseline control to measure whether a simple causal fundamental filter changes the technical-core backtest.
+
+The current 2020-03-04 to 2022-03-04 replay produced 7 filtered trades: PF 1.40, expectancy +1.62 pips/trade, net +$413.74, max drawdown 0.76%. The small sample size means this result is exploratory and not evidence of stable profitability.
