@@ -1,0 +1,49 @@
+name: EURUSD Fundamental Proxy Replay
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Build macro snapshots
+        env:
+          MACRO_START: "2019-01-01"
+          MACRO_END: "2022-03-04"
+          MACRO_OUTPUT: "backtest-output/eurusd_macro_daily.csv"
+        run: node scripts/build-eurusd-macro-snapshot.mjs
+      - name: Build deterministic fundamental proxy
+        env:
+          MACRO_INPUT: "backtest-output/eurusd_macro_daily.csv"
+          FUNDAMENTAL_MASK_OUTPUT: "backtest-output/eurusd_fundamental_proxy_mask.csv"
+        run: node scripts/build-eurusd-fundamental-proxy.mjs
+      - name: Run backtest with fundamental proxy
+        env:
+          BACKTEST_LOOKBACK_DAYS: "730"
+          BACKTEST_INITIAL_EQUITY: "100000"
+          BACKTEST_RISK_PCT: "0.25"
+          BACKTEST_SPREAD_PIPS: "0.8"
+          BACKTEST_SLIPPAGE_PIPS: "0.1"
+          BACKTEST_MIN_STOP_ATR: "0.50"
+          BACKTEST_MAX_STOP_ATR: "1.50"
+          BACKTEST_MIN_RR: "1.80"
+          BACKTEST_MAX_SPREAD_PIPS: "1.20"
+          BACKTEST_MAX_SPREAD_TO_TP_PCT: "12"
+          BACKTEST_M15_SOURCE: "https://raw.githubusercontent.com/ejtraderLabs/historical-data/main/EURUSD/EURUSDm15.csv"
+          BACKTEST_H1_SOURCE: "https://raw.githubusercontent.com/ejtraderLabs/historical-data/main/EURUSD/EURUSDh1.csv"
+          BACKTEST_FUNDAMENTAL_SOURCE: "\${{ github.workspace }}/backtest-output/eurusd_fundamental_proxy_mask.csv"
+          BACKTEST_OUTPUT_DIR: "backtest-output/fundamental-proxy"
+        run: node scripts/backtest-eurusd.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-fundamental-proxy-replay
+          path: backtest-output/
+          retention-days: 30
