@@ -152,6 +152,174 @@ function rsiInSellContinuationZone(rsi, min, max) {
  *
  * The AI layer is intentionally NOT used here; it is an environment filter downstream.
  */
+function buildRetestCandidate(f, bars, trend, options) {
+  const retestLookback = Math.max(2, Math.floor(Number(options.retestMaxAgeBars ?? process.env.EURUSD_RETEST_MAX_AGE_BARS ?? 4)));
+  const toleranceAtr = Math.max(0.05, Number(options.retestToleranceAtr ?? process.env.EURUSD_RETEST_TOLERANCE_ATR ?? 0.25));
+  const minRetestBodyAtr = Math.max(0.05, Number(options.retestMinBodyAtr ?? process.env.EURUSD_RETEST_MIN_BODY_ATR ?? 0.10));
+  const minRetestCloseLocation = Math.min(0.99, Math.max(0.5, Number(options.retestMinCloseLocation ?? process.env.EURUSD_RETEST_MIN_CLOSE_LOCATION ?? 0.55)));
+  const breakoutMinAtr = Math.max(0.02, Number(options.breakoutAtr ?? process.env.EURUSD_BREAKOUT_MIN_ATR ?? 0.05));
+  const minBreakoutBodyAtr = Math.max(0.05, Number(options.minBodyAtr ?? process.env.EURUSD_BREAKOUT_MIN_BODY_ATR ?? 0.25));
+  const minVolumeRatio = Math.max(0.5, Number(options.minVolumeRatio ?? process.env.EURUSD_BREAKOUT_MIN_VOLUME_RATIO ?? 1.10));
+  const requireVolume = String(options.requireVolume ?? process.env.EURUSD_BREAKOUT_REQUIRE_VOLUME ?? 'true').toLowerCase() !== 'false';
+  const buyRsiMin = Math.max(1, Number(options.buyRsiMin ?? process.env.EURUSD_BREAKOUT_BUY_RSI_MIN ?? 48));
+  const buyRsiMax = Math.min(99, Number(options.buyRsiMax ?? process.env.EURUSD_BREAKOUT_BUY_RSI_MAX ?? 70));
+  const sellRsiMin = Math.max(1, Number(options.sellRsiMin ?? process.env.EURUSD_BREAKOUT_SELL_RSI_MIN ?? 30));
+  const sellRsiMax = Math.min(99, Number(options.sellRsiMax ?? process.env.EURUSD_BREAKOUT_SELL_RSI_MAX ?? 52));
+  const atr = Number(f.m15?.atr14 || 0);
+  if (!(atr > 0) || bars.length < 4) return null;
+
+  const latest = bars[bars.length - 1];
+  const m15Up = f.m15.ema20 > f.m15.ema50;
+  const m15Down = f.m15.ema20 < f.m15.ema50;
+  const latestRange = Math.max(0, latest.high - latest.low);
+  const latestBodyAtr = latestRange > 0 ? Math.abs(latest.close - latest.open) / atr : 0;
+  const latestCloseLocation = latestRange > 0 ? (latest.close - latest.low) / latestRange : 0;
+  const priorVolumes = bars.slice(-Math.min(6, bars.length - 1), -1).map((b) => b.volume).filter((v) => v > 0);
+  const avgVolume = average(priorVolumes);
+  const latestVolumeAvailable = latest.volume > 0 && avgVolume > 0;
+  const latestVolumeRatio = avgVolume > 0 ? latest.volume / avgVolume : 0;
+  const latestVolumeGate = !latestVolumeAvailable ? true : (requireVolume ? latestVolumeRatio >= minVolumeRatio : true);
+
+  for (let age = 1; age <= retestLookback; age++) {
+    const breakoutIndex = bars.length - 1 - age;
+    if (breakoutIndex < 2) continue;
+    const breakout = bars[breakoutIndex];
+    const rangeBars = bars.slice(Math.max(0, breakoutIndex - 5), breakoutIndex);
+    if (rangeBars.length < 2) continue;
+
+    const rangeHigh = maxHigh(rangeBars);
+    const rangeLow = minLow(rangeBars);
+    const breakoutRange = Math.max(0, breakout.high - breakout.low);
+    const breakoutBodyAtr = atr > 0 ? Math.abs(breakout.close - breakout.open) / atr : 0;
+    const breakoutCloseLocation = breakoutRange > 0 ? (breakout.close - breakout.low) / breakoutRange : 0;
+
+    const priorToBreakout = bars[breakoutIndex - 1];
+    const breakoutVolumeBars = rangeBars.map((b) => b.volume).filter((v) => v > 0);
+    const avgBreakoutVolume = average(breakoutVolumeBars);
+    const breakoutVolumeAvailable = breakout.volume > 0 && avgBreakoutVolume > 0;
+    const breakoutVolumeRatio = avgBreakoutVolume > 0 ? breakout.volume / avgBreakoutVolume : 0;
+    const breakoutVolumeGate = !breakoutVolumeAvailable
+      ? true
+      : (requireVolume ? breakoutVolumeRatio >= minVolumeRatio : true);
+
+    const buyBreakout =
+      trend === 'UP' &&
+      m15Up &&
+      breakout.close > rangeHigh + atr * breakoutMinAtr &&
+      priorToBreakout.close <= rangeHigh &&
+      breakoutBodyAtr >= minBreakoutBodyAtr &&
+      breakoutCloseLocation >= 0.58 &&
+      breakoutVolumeGate;
+
+    const sellBreakout =
+      trend === 'DOWN' &&
+      m15Down &&
+      breakout.close < rangeLow - atr * breakoutMinAtr &&
+      priorToBreakout.close >= rangeLow &&
+      breakoutBodyAtr >= minBreakoutBodyAtr &&
+      breakoutCloseLocation <= 0.42 &&
+      breakoutVolumeGate;
+
+    if (!(buyBreakout || sellBreakout)) continue;
+
+    const level = buyBreakout ? rangeHigh : rangeLow;
+    const tolerance = atr * toleranceAtr;
+    const latestRsiOkay = buyBreakout
+      ? rsiInBuyContinuationZone(f.m15.rsi14, buyRsiMin, buyRsiMax)
+      : rsiInSellContinuationZone(f.m15.rsi14, sellRsiMin, sellRsiMax);
+
+    const buyRetest =
+      buyBreakout &&
+      latest.low <= level + tolerance &&
+      latest.close > level &&
+      latest.close - level >= atr * 0.02 &&
+      latest.close > latest.open &&
+      latestBodyAtr >= minRetestBodyAtr &&
+      latestCloseLocation >= minRetestCloseLocation &&
+      latestRsiOkay &&
+      latestVolumeGate;
+
+    const sellRetest =
+      sellBreakout &&
+      latest.high >= level - tolerance &&
+      latest.close < level &&
+      level - latest.close >= atr * 0.02 &&
+      latest.close < latest.open &&
+      latestBodyAtr >= minRetestBodyAtr &&
+      latestCloseLocation <= 1 - minRetestCloseLocation &&
+      latestRsiOkay &&
+      latestVolumeGate;
+
+    if (!buyRetest && !sellRetest) continue;
+
+    const candidate = buyRetest ? 'BUY' : 'SELL';
+    const entry = candidate === 'BUY' ? f.ask : f.bid;
+    const stopLoss = candidate === 'BUY'
+      ? level - atr * 0.25
+      : level + atr * 0.25;
+    const stopDistance = Math.abs(entry - stopLoss);
+    const stopAtr = stopDistance / atr;
+    const takeProfit = candidate === 'BUY'
+      ? entry + stopDistance * 2
+      : entry - stopDistance * 2;
+    const spreadToTpPct = Math.abs(takeProfit - entry) > 0
+      ? (f.spread / Math.abs(takeProfit - entry)) * 100
+      : Infinity;
+
+    if (!(stopAtr >= Number(options.minStopAtr ?? process.env.EURUSD_MIN_STOP_ATR ?? 0.50)
+      && stopAtr <= Number(options.maxStopAtr ?? process.env.EURUSD_MAX_STOP_ATR ?? 1.50))) continue;
+    if (!(spreadToTpPct <= Number(options.maxSpreadToTpPct ?? process.env.EURUSD_MAX_SPREAD_TO_TP_PCT ?? 12))) continue;
+
+    return {
+      frequency_mode: String(options.frequencyMode ?? process.env.EURUSD_FREQUENCY_MODE ?? 'balanced-weekly').toLowerCase(),
+      target_trades_per_week: Math.max(0, Number(options.targetTradesPerWeek ?? process.env.EURUSD_TARGET_TRADES_PER_WEEK ?? 1)),
+      candidate,
+      quality_score: 95,
+      setup_type: 'BREAKOUT_RETEST',
+      trend,
+      entry,
+      stop_loss: stopLoss,
+      take_profit: takeProfit,
+      risk_reward: 2,
+      range_high: rangeHigh,
+      range_low: rangeLow,
+      range_width: rangeHigh - rangeLow,
+      range_width_atr: atr > 0 ? (rangeHigh - rangeLow) / atr : Infinity,
+      breakout_distance_atr: candidate === 'BUY'
+        ? (breakout.close - rangeHigh) / atr
+        : (rangeLow - breakout.close) / atr,
+      breakout_body_atr: breakoutBodyAtr,
+      breakout_close_location: breakoutCloseLocation,
+      volume_ratio: latestVolumeRatio,
+      volume_data_available: latestVolumeAvailable,
+      volume_confirmation: latestVolumeAvailable ? latestVolumeRatio >= minVolumeRatio : false,
+      volume_gate_passed: latestVolumeGate,
+      spread_pips: f.spread / 0.0001,
+      spread_atr_pct: atr > 0 ? (f.spread / atr) * 100 : Infinity,
+      spread_to_tp_pct: spreadToTpPct,
+      stop_atr: stopAtr,
+      retest_age_bars: age,
+      retest_level: level,
+      retest_tolerance_atr: toleranceAtr,
+      reasons: []
+    };
+  }
+  return null;
+}
+
+export function buildEurUsdSetupWithRetest(f, options = {}) {
+  const primary = buildEurUsdSetup(f, options);
+  if (primary.candidate !== 'WAIT') return primary;
+
+  const enabled = String(options.retestEnabled ?? process.env.EURUSD_RETEST_ENABLED ?? 'true').toLowerCase() !== 'false';
+  if (!enabled) return primary;
+
+  const bars = sortBarsAscending(f.recentM15);
+  const trend = eurUsdH1Trend(f);
+  const retest = buildRetestCandidate(f, bars, trend, options);
+  return retest || primary;
+}
+
 export function buildEurUsdSetup(f, options = {}) {
   const frequencyMode = String(options.frequencyMode ?? process.env.EURUSD_FREQUENCY_MODE ?? 'high-quality').toLowerCase();
   const targetTradesPerWeek = Math.max(0, Number(options.targetTradesPerWeek ?? process.env.EURUSD_TARGET_TRADES_PER_WEEK ?? 1));
