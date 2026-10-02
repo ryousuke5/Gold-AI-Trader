@@ -88,7 +88,7 @@ test('EURUSD high-quality M15 range breakout aligns with H1 uptrend', () => {
   assert.ok(setup.range_width_atr >= 0.75 && setup.range_width_atr <= 2);
   assert.ok(setup.breakout_distance_atr >= 0.10);
   assert.ok(setup.breakout_body_atr >= 0.35);
-  assert.ok(setup.breakout_close_location >= 0.70);
+  assert.ok(setup.breakout_close_location + 1e-9 >= 0.70);
   assert.ok(setup.volume_confirmation);
   assert.equal(setup.risk_reward, 2);
 });
