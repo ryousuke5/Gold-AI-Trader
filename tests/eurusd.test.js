@@ -33,7 +33,7 @@ function setupBarsSell() {
     { time: 1727003600, open: 1.10135, high: 1.10160, low: 1.10115, close: 1.10125, volume: 140 },
     { time: 1727004500, open: 1.10125, high: 1.10145, low: 1.10105, close: 1.10115, volume: 150 },
     { time: 1727005400, open: 1.10115, high: 1.10135, low: 1.10095, close: 1.10105, volume: 160 },
-    { time: 1727006300, open: 1.10112, high: 1.10118, low: 1.10050, close: 1.10075, volume: 220 }
+    { time: 1727006300, open: 1.10112, high: 1.10118, low: 1.10070, close: 1.10075, volume: 220 }
   ];
 }
 
