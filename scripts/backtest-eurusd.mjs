@@ -18,6 +18,8 @@ const CONFIG = {
   minRR: Math.max(1.0, Number(process.env.BACKTEST_MIN_RR || 1.80)),
   maxSpreadPips: Math.max(0.1, Number(process.env.BACKTEST_MAX_SPREAD_PIPS || 1.20)),
   maxSpreadToTpPct: Math.max(1, Number(process.env.BACKTEST_MAX_SPREAD_TO_TP_PCT || 12)),
+  maxDailyLossPct: Math.max(0.1, Number(process.env.BACKTEST_MAX_DAILY_LOSS_PCT || 2)),
+  maxDrawdownPct: Math.max(0.1, Number(process.env.BACKTEST_MAX_DRAWDOWN_PCT || 5)),
   frequencyMode: String(process.env.BACKTEST_FREQUENCY_MODE || 'high-quality'),
   targetTradesPerWeek: Math.max(0, Number(process.env.BACKTEST_TARGET_TRADES_PER_WEEK || 1)),
   rangeLookback: Math.max(4, Number(process.env.BACKTEST_RANGE_LOOKBACK || 6)),
@@ -513,6 +515,25 @@ function monthlyBreakdown(trades) {
   return [...map.values()].sort((a, b) => a.month.localeCompare(b.month));
 }
 
+export function backtestRiskGate(state, equity, timestamp, config) {
+  const dayKey = new Date(timestamp * 1000).toISOString().slice(0, 10);
+  if (state.dayKey !== dayKey) {
+    state.dayKey = dayKey;
+    state.dayStartEquity = equity;
+  }
+  state.peakEquity = Math.max(state.peakEquity, equity);
+  const dailyPnlPct = state.dayStartEquity > 0
+    ? (equity - state.dayStartEquity) / state.dayStartEquity * 100
+    : 0;
+  const drawdownPct = state.peakEquity > 0
+    ? (state.peakEquity - equity) / state.peakEquity * 100
+    : 0;
+  const reasons = [];
+  if (dailyPnlPct <= -Math.abs(config.maxDailyLossPct)) reasons.push('daily_loss_limit');
+  if (drawdownPct >= Math.abs(config.maxDrawdownPct)) reasons.push('drawdown_limit');
+  return { allowed: reasons.length === 0, reasons, dailyPnlPct, drawdownPct };
+}
+
 function dataQuality(bars, timeframeSeconds) {
   let invalid = 0;
   let gaps = 0;
@@ -593,6 +614,9 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
   let fundamentalTrades = [];
   let equity = config.initialEquity;
   let fundamentalEquity = config.initialEquity;
+  const technicalRiskState = { dayKey: null, dayStartEquity: config.initialEquity, peakEquity: config.initialEquity };
+  const fundamentalRiskState = { dayKey: null, dayStartEquity: config.initialEquity, peakEquity: config.initialEquity };
+  const riskGateBlocks = { technical: {}, fundamental: {} };
   let nextAvailableIndex = 0;
   let fundamentalNextAvailableIndex = 0;
   let technicalCandidates = 0;
@@ -667,7 +691,11 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
     technicalCandidates++;
 
     if (techEligible) {
-      const nextBar = m15Ind[i + 1];
+      const gate = backtestRiskGate(technicalRiskState, equity, signalBar.time, config);
+      if (!gate.allowed) {
+        for (const reason of gate.reasons) riskGateBlocks.technical[reason] = (riskGateBlocks.technical[reason] || 0) + 1;
+      } else {
+        const nextBar = m15Ind[i + 1];
       const futureBars = m15Ind.slice(i + 1);
       const trade = simulateTrade({
         signalBar,
@@ -679,15 +707,21 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
         slippagePips: config.slippagePips,
         riskPct: config.riskPct
       });
-      if (trade) {
-        trades.push(trade);
-        equity += trade.net_pnl;
-        nextAvailableIndex = m15Ind.findIndex((b) => b.time > trade.exit_time);
-        if (nextAvailableIndex < 0) nextAvailableIndex = m15Ind.length;
+        if (trade) {
+          trades.push(trade);
+          equity += trade.net_pnl;
+          nextAvailableIndex = m15Ind.findIndex((b) => b.time > trade.exit_time);
+          if (nextAvailableIndex < 0) nextAvailableIndex = m15Ind.length;
+        }
       }
     }
 
     if (fundamentalEligible) {
+      const fundamentalGateState = backtestRiskGate(fundamentalRiskState, fundamentalEquity, signalBar.time, config);
+      if (!fundamentalGateState.allowed) {
+        for (const reason of fundamentalGateState.reasons) riskGateBlocks.fundamental[reason] = (riskGateBlocks.fundamental[reason] || 0) + 1;
+        continue;
+      }
       const assessment = latestFundamentalAssessment(
         fundamentalMask,
         signalBar.time,
@@ -766,6 +800,11 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       m15: dataQuality(m15, 900),
       h1: dataQuality(h1, 3600)
     },
+    risk_limits: {
+      max_daily_loss_pct: config.maxDailyLossPct,
+      max_drawdown_pct: config.maxDrawdownPct
+    },
+    risk_gate_blocks: riskGateBlocks,
     summary,
     monthly: monthlyBreakdown(trades),
     fundamental_filtered_summary: fundamentalSummary,
