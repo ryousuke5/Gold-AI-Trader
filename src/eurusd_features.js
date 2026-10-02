@@ -230,7 +230,7 @@ export function buildEurUsdSetup(f, options = {}) {
     latest.close > rangeHigh + breakoutBuffer &&
     previous.close <= rangeHigh &&
     bodyAtr >= minBodyAtr &&
-    closeLocation >= minCloseLocation &&
+    closeLocation + 1e-9 >= minCloseLocation &&
     rangeCompressed &&
     spreadOkay &&
     volumeConfirmation;
@@ -242,7 +242,7 @@ export function buildEurUsdSetup(f, options = {}) {
     latest.close < rangeLow - breakoutBuffer &&
     previous.close >= rangeLow &&
     bodyAtr >= minBodyAtr &&
-    closeLocation <= (1 - minCloseLocation) &&
+    closeLocation - 1e-9 <= (1 - minCloseLocation) &&
     rangeCompressed &&
     spreadOkay &&
     volumeConfirmation;
@@ -279,8 +279,8 @@ export function buildEurUsdSetup(f, options = {}) {
   else reasons.push('breakout_body_too_small');
 
   const closeLocationOkay =
-    (trend === 'UP' && closeLocation >= minCloseLocation) ||
-    (trend === 'DOWN' && closeLocation <= 1 - minCloseLocation);
+    (trend === 'UP' && closeLocation + 1e-9 >= minCloseLocation) ||
+    (trend === 'DOWN' && closeLocation - 1e-9 <= 1 - minCloseLocation);
   if (closeLocationOkay) score += 5;
   else reasons.push('breakout_close_location_weak');
 
