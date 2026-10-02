@@ -140,7 +140,7 @@ export function registerEurUsdRoutes(app) {
           request_id: requestId,
           symbol,
           timeframe,
-          strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v2',
+          strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v3-balanced-weekly',
           setup,
           h1_trend: setup.trend,
           candidate: setup.candidate,
@@ -171,7 +171,7 @@ export function registerEurUsdRoutes(app) {
         request_id: requestId,
         symbol,
         timeframe,
-        strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v2',
+        strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v3-balanced-weekly',
         setup,
         h1_trend: setup.trend,
         candidate: setup.candidate,
@@ -209,7 +209,7 @@ export function registerEurUsdRoutes(app) {
       const featureErrors = validateEurUsdFeatures(features);
       if (featureErrors.length) return res.status(400).json({ ok: false, error: 'invalid_features', reasons: featureErrors, request_id: requestId });
 
-      const strategyVersion = process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v2';
+      const strategyVersion = process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v3-balanced-weekly';
       const barTimeIso = new Date(features.barTime * 1000).toISOString();
       const existing = await getSignalByKey({ symbol, timeframe, barTimeIso, strategyVersion });
       if (existing) {
@@ -368,10 +368,10 @@ export function registerEurUsdRoutes(app) {
       const state = await getState();
       res.json({
         ok: true,
-        service: 'eurusd-m15-h1-ai-environment-v2',
+        service: 'eurusd-m15-h1-ai-environment-v3-balanced-weekly',
         symbol: 'EURUSD',
         timeframe: 'M15',
-        strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v2',
+        strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v3-balanced-weekly',
         execution_enabled: executionEnabled(),
         risk_limits: getEurUsdRiskLimits(),
         state: state || null
