@@ -56,7 +56,7 @@ function buildDecision(setup, fundamentalAssessment, fundamentalResult) {
   const confirmation = buildEurUsdFundamentalDecision({
     candidate,
     assessment: fundamentalAssessment,
-    minFundamentalConfidence: getEurUsdRiskLimits().minFundamentalConfidence
+    minFundamentalConfidence: getEurUsdRiskLimits().minAiEnvironmentConfidence
   });
   const f = fundamentalAssessment?.fundamental || emptyFundamental();
   const decision = confirmation.decision;
