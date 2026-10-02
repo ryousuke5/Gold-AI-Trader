@@ -25,6 +25,7 @@ jobs:
             buy_rsi_max: "68"
             sell_rsi_min: "32"
             sell_rsi_max: "50"
+            pullback_enabled: "false"
           - name: balanced-weekly
             range_lookback: "5"
             min_range_atr: "0.50"
@@ -36,6 +37,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            pullback_enabled: "false"
           - name: frequent
             range_lookback: "4"
             min_range_atr: "0.50"
@@ -47,6 +49,7 @@ jobs:
             buy_rsi_max: "72"
             sell_rsi_min: "28"
             sell_rsi_max: "53"
+            pullback_enabled: "false"
           - name: compromise-lookback4
             range_lookback: "4"
             min_range_atr: "0.50"
@@ -58,6 +61,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            pullback_enabled: "false"
           - name: compromise-body20
             range_lookback: "5"
             min_range_atr: "0.50"
@@ -69,6 +73,19 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            pullback_enabled: "false"
+          - name: balanced-weekly-pullback
+            range_lookback: "5"
+            min_range_atr: "0.50"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.05"
+            breakout_min_body_atr: "0.25"
+            breakout_min_close_location: "0.60"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+            pullback_enabled: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -105,6 +122,18 @@ jobs:
           BACKTEST_BREAKOUT_BUY_RSI_MAX: ${{ matrix.buy_rsi_max }}
           BACKTEST_BREAKOUT_SELL_RSI_MIN: ${{ matrix.sell_rsi_min }}
           BACKTEST_BREAKOUT_SELL_RSI_MAX: ${{ matrix.sell_rsi_max }}
+          BACKTEST_PULLBACK_ENABLED: ${{ matrix.pullback_enabled }}
+          BACKTEST_PULLBACK_MAX_AGE_BARS: "5"
+          BACKTEST_PULLBACK_EMA_TOLERANCE_ATR: "0.20"
+          BACKTEST_PULLBACK_MIN_BODY_ATR: "0.15"
+          BACKTEST_PULLBACK_MIN_CLOSE_LOCATION: "0.60"
+          BACKTEST_PULLBACK_MIN_IMPULSE_BREAK_ATR: "0.04"
+          BACKTEST_PULLBACK_BUY_RSI_MIN: "48"
+          BACKTEST_PULLBACK_BUY_RSI_MAX: "66"
+          BACKTEST_PULLBACK_SELL_RSI_MIN: "34"
+          BACKTEST_PULLBACK_SELL_RSI_MAX: "52"
+          BACKTEST_PULLBACK_STOP_BUFFER_ATR: "0.15"
+          BACKTEST_PULLBACK_TAKE_PROFIT_R: "2"
           BACKTEST_OUTPUT_DIR: backtest-output
         run: node scripts/backtest-eurusd.mjs
       - name: Upload backtest artifacts
