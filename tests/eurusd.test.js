@@ -132,12 +132,14 @@ test('pullback without a range breakout is ignored', () => {
 });
 
 
-test('missing breakout volume blocks a high-quality setup when volume confirmation is required', () => {
+test('missing breakout volume does not invalidate a technically complete breakout', () => {
   const bars = setupBarsBuy().map((bar) => ({ ...bar, volume: 0 }));
   const f = baseFeatures({ recent_m15: bars });
   const setup = buildEurUsdSetup(f);
-  assert.equal(setup.candidate, 'WAIT');
-  assert.ok(setup.reasons.includes('breakout_volume_data_missing'));
+  assert.equal(setup.candidate, 'BUY');
+  assert.equal(setup.volume_data_available, false);
+  assert.equal(setup.volume_confirmation, false);
+  assert.equal(setup.volume_gate_passed, true);
 });
 
 test('wide spread blocks an otherwise valid breakout', () => {
