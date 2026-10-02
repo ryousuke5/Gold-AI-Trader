@@ -216,7 +216,8 @@ export function buildEurUsdSetup(f, options = {}) {
   const averagePriorVolume = average(priorVolumes);
   const volumeRatio = averagePriorVolume > 0 ? latest.volume / averagePriorVolume : 0;
   const volumeDataAvailable = latest.volume > 0 && averagePriorVolume > 0;
-  const volumeConfirmation = volumeDataAvailable ? volumeRatio >= minVolumeRatio : !requireVolume;
+  const volumeConfirmation = volumeDataAvailable ? volumeRatio >= minVolumeRatio : false;
+  const volumeGatePassed = !volumeDataAvailable ? true : (requireVolume ? volumeConfirmation : true);
 
   const m15Up = f.m15.ema20 > f.m15.ema50;
   const m15Down = f.m15.ema20 < f.m15.ema50;
@@ -284,8 +285,9 @@ export function buildEurUsdSetup(f, options = {}) {
   if (closeLocationOkay) score += 5;
   else reasons.push('breakout_close_location_weak');
 
-  if (volumeConfirmation) score += 5;
-  else reasons.push(volumeDataAvailable ? 'breakout_volume_confirmation_failed' : 'breakout_volume_data_missing');
+  if (volumeDataAvailable && volumeConfirmation) score += 5;
+  else if (volumeDataAvailable) reasons.push('breakout_volume_confirmation_failed');
+  else reasons.push('breakout_volume_data_unavailable_optional');
 
   if (buyBreakout) direction = 'BUY';
   if (sellBreakout) direction = 'SELL';
@@ -343,7 +345,9 @@ export function buildEurUsdSetup(f, options = {}) {
       breakout_body_atr: bodyAtr,
       breakout_close_location: closeLocation,
       volume_ratio: volumeRatio,
+      volume_data_available: volumeDataAvailable,
       volume_confirmation: volumeConfirmation,
+      volume_gate_passed: volumeGatePassed,
       spread_pips: spreadPips,
       spread_atr_pct: spreadAtrPct,
       spread_to_tp_pct: 0,
@@ -373,7 +377,9 @@ export function buildEurUsdSetup(f, options = {}) {
     breakout_body_atr: bodyAtr,
     breakout_close_location: closeLocation,
     volume_ratio: volumeRatio,
+    volume_data_available: volumeDataAvailable,
     volume_confirmation: volumeConfirmation,
+    volume_gate_passed: volumeGatePassed,
     spread_pips: spreadPips,
     spread_atr_pct: spreadAtrPct,
     spread_to_tp_pct: spreadToTpPct,
