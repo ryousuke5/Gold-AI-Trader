@@ -89,6 +89,8 @@ jobs:
           BACKTEST_MIN_RR: "1.80"
           BACKTEST_MAX_SPREAD_PIPS: "1.20"
           BACKTEST_MAX_SPREAD_TO_TP_PCT: "12"
+          BACKTEST_MAX_DAILY_LOSS_PCT: "2"
+          BACKTEST_MAX_DRAWDOWN_PCT: "5"
           BACKTEST_FREQUENCY_MODE: ${{ matrix.name }}
           BACKTEST_TARGET_TRADES_PER_WEEK: "1"
           BACKTEST_RANGE_LOOKBACK: ${{ matrix.range_lookback }}
