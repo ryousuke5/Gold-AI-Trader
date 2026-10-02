@@ -238,22 +238,6 @@ function aggregateM15ToH1(m15) {
   return [...buckets.values()].sort((a, b) => a.time - b.time);
 }
 
-function latestCompletedH1Index(h1WithIndicators, signalTime) {
-  const target = signalTime;
-  let lo = 0;
-  let hi = h1WithIndicators.length - 1;
-  let best = -1;
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    if (h1WithIndicators[mid].time <= target) {
-      best = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return best;
-}
 
 function sliceRecentBars(bars, index, count = 80) {
   return bars.slice(Math.max(0, index - count + 1), index + 1).map((b) => ({
@@ -591,14 +575,36 @@ export function tradesToCsv(trades) {
   return rows.join('\n') + '\n';
 }
 
+export function shiftBarsToCloseTime(bars, timeframeSeconds) {
+  const seconds = Math.max(1, Number(timeframeSeconds));
+  return bars.map((bar) => ({ ...bar, time: bar.time + seconds }));
+}
+
+export function latestCompletedH1Index(h1WithIndicators, signalTime) {
+  const target = signalTime;
+  let lo = 0;
+  let hi = h1WithIndicators.length - 1;
+  let best = -1;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (h1WithIndicators[mid].time <= target) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return best;
+}
+
 export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.h1, config = CONFIG } = {}) {
   const m15Text = await fetchText(m15Source);
   const rawM15Open = parseCsv(m15Text);
   const rawH1Open = h1Source === 'FROM_M15'
     ? aggregateM15ToH1(rawM15Open)
     : parseCsv(await fetchText(h1Source));
-  const rawM15 = rawM15Open.map((b) => ({ ...b, time: b.time + 15 * 60 }));
-  const rawH1 = rawH1Open.map((b) => ({ ...b, time: b.time + 60 * 60 }));
+  const rawM15 = shiftBarsToCloseTime(rawM15Open, 15 * 60);
+  const rawH1 = shiftBarsToCloseTime(rawH1Open, 60 * 60);
   if (rawM15.length < 500 || rawH1.length < 100) {
     throw new Error(`Insufficient downloaded data: M15=${rawM15.length}, H1=${rawH1.length}. Verify CSV schema/datetime format.`);
   }
