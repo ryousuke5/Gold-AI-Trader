@@ -37,6 +37,12 @@ The report then contains:
 
 A replay with no mask explicitly reports fundamental_backtest_status=NOT_RUN.
 
+## Candle timestamp convention
+
+EURUSD signal timing uses the **completed candle close timestamp** end-to-end. The backtest source data is documented as using bar-open timestamps, so the backtester adds one M15 bar (900 seconds) or one H1 bar (3600 seconds) before evaluating a completed signal. This keeps the live API expiry window and the historical replay on the same time basis.
+
+At an M15 signal close, the H1 filter uses the latest H1 candle whose close timestamp is less than or equal to that M15 close. The next M15 bar is the earliest simulated execution bar.
+
 ## Data provenance
 
 For the currently configured technical backtests, the project uses public EURUSD M15/H1 CSV sources in GitHub Actions. See the workflow files for exact source URLs and date windows.
