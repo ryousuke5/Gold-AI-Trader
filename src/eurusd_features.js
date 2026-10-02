@@ -183,7 +183,7 @@ export function buildEurUsdTrendPullbackSetup(f, options = {}) {
   const minCloseLocation = Math.min(0.95, Math.max(0.5, Number(options.pullbackMinCloseLocation ?? process.env.EURUSD_PULLBACK_MIN_CLOSE_LOCATION ?? 0.60)));
   const minImpulseBreakAtr = Math.max(0.02, Number(options.pullbackMinImpulseBreakAtr ?? process.env.EURUSD_PULLBACK_MIN_IMPULSE_BREAK_ATR ?? 0.04));
   const minVolumeRatio = Math.max(0.5, Number(options.minVolumeRatio ?? process.env.EURUSD_BREAKOUT_MIN_VOLUME_RATIO ?? 1.10));
-  const requireVolume = String(options.requireVolume ?? process.env.EURUSD_BREAKOUT_REQUIRE_VOLUME ?? 'true').toLowerCase() !== 'false');
+  const requireVolume = String(options.requireVolume ?? process.env.EURUSD_BREAKOUT_REQUIRE_VOLUME ?? 'true').toLowerCase() !== 'false';
   const buyRsiMin = Math.max(1, Number(options.pullbackBuyRsiMin ?? process.env.EURUSD_PULLBACK_BUY_RSI_MIN ?? 48));
   const buyRsiMax = Math.min(99, Number(options.pullbackBuyRsiMax ?? process.env.EURUSD_PULLBACK_BUY_RSI_MAX ?? 66));
   const sellRsiMin = Math.max(1, Number(options.pullbackSellRsiMin ?? process.env.EURUSD_PULLBACK_SELL_RSI_MIN ?? 34));
