@@ -132,10 +132,17 @@ test('EURUSD breakout-retest detects a controlled pullback after a confirmed bre
   const setup = buildEurUsdSetupWithRetest(f, {
     frequencyMode: 'balanced-weekly',
     retestEnabled: true,
-    retestMaxAgeBars: 4,
-    retestToleranceAtr: 0.25,
-    retestMinBodyAtr: 0.10,
-    retestMinCloseLocation: 0.55,
+    retestMaxAgeBars: 3,
+    retestToleranceAtr: 0.15,
+    retestMinBodyAtr: 0.20,
+    retestMinCloseLocation: 0.60,
+    retestMaxLevelPenetrationAtr: 0.10,
+    retestMinLevelSeparationAtr: 0.08,
+    retestMinWickAtr: 0.12,
+    retestMinWickShare: 0.25,
+    retestBreakoutMinAtr: 0.10,
+    retestBreakoutMinBodyAtr: 0.30,
+    retestBreakoutMinCloseLocation: 0.65,
     retestStopBufferAtr: 0.50,
     retestTakeProfitR: 2
   });
@@ -153,10 +160,10 @@ test('EURUSD breakout-retest passes the existing risk geometry and sizing gate',
   const f = baseFeatures({ recent_m15: setupBarsBuyRetest() });
   const setup = buildEurUsdSetupWithRetest(f, {
     retestEnabled: true,
-    retestMaxAgeBars: 4,
-    retestToleranceAtr: 0.25,
-    retestMinBodyAtr: 0.10,
-    retestMinCloseLocation: 0.55,
+    retestMaxAgeBars: 3,
+    retestToleranceAtr: 0.15,
+    retestMinBodyAtr: 0.20,
+    retestMinCloseLocation: 0.60,
     retestStopBufferAtr: 0.50,
     retestTakeProfitR: 2
   });
