@@ -505,8 +505,10 @@ function dataQuality(bars, timeframeSeconds) {
   let invalid = 0;
   let gaps = 0;
   let weekendGaps = 0;
+  let volumePositive = 0;
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i];
+    if (b.volume > 0) volumePositive++;
     if (!(b.high >= b.low && b.high >= b.open && b.high >= b.close && b.low <= b.open && b.low <= b.close && b.close > 0)) invalid++;
     if (i > 0) {
       const delta = bars[i].time - bars[i - 1].time;
@@ -517,7 +519,14 @@ function dataQuality(bars, timeframeSeconds) {
       }
     }
   }
-  return { rows: bars.length, invalid_ohlc: invalid, gaps_gt_1_5_period: gaps, weekend_gaps: weekendGaps };
+  return {
+    rows: bars.length,
+    invalid_ohlc: invalid,
+    gaps_gt_1_5_period: gaps,
+    weekend_gaps: weekendGaps,
+    volume_positive_rows: volumePositive,
+    volume_coverage_pct: bars.length ? volumePositive / bars.length * 100 : 0
+  };
 }
 
 function parseArgs() {
