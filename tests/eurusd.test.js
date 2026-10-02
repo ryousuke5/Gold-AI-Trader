@@ -82,7 +82,7 @@ test('EURUSD high-quality M15 range breakout aligns with H1 uptrend', () => {
   });
 
   assert.equal(setup.trend, 'UP');
-  assert.equal(setup.candidate, 'BUY');
+  assert.equal(setup.candidate, 'BUY', JSON.stringify(setup, null, 2));
   assert.equal(setup.setup_type, 'BREAKOUT');
   assert.ok(setup.quality_score >= 95);
   assert.ok(setup.range_width_atr >= 0.75 && setup.range_width_atr <= 2);
@@ -108,7 +108,7 @@ test('EURUSD high-quality M15 range breakout supports SELL in H1 downtrend', () 
   });
 
   assert.equal(setup.trend, 'DOWN');
-  assert.equal(setup.candidate, 'SELL');
+  assert.equal(setup.candidate, 'SELL', JSON.stringify(setup, null, 2));
   assert.equal(setup.setup_type, 'BREAKOUT');
   assert.ok(setup.quality_score >= 95);
 });
@@ -213,7 +213,7 @@ test('high-impact event blocks entry even with favorable AI label', () => {
 test('risk engine approves only when breakout, risk and AI environment align', () => {
   const f = baseFeatures();
   const setup = buildEurUsdSetup(f);
-  assert.equal(setup.candidate, 'BUY');
+  assert.equal(setup.candidate, 'BUY', JSON.stringify(setup, null, 2));
 
   const decision = {
     decision: 'BUY',
