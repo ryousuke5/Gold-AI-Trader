@@ -28,15 +28,16 @@ export function classifyFundamentalProxy(row){
   else if (d20 <= -THRESHOLDS.mildChange && level <= THRESHOLDS.maxLevelForBull) { bias='BULLISH_EURUSD'; confidence=0.68; }
   else if (d20 >= THRESHOLDS.strongChange) { bias='BEARISH_EURUSD'; confidence=0.75; }
   else if (d20 >= THRESHOLDS.mildChange && level >= THRESHOLDS.minLevelForBear) { bias='BEARISH_EURUSD'; confidence=0.68; }
-  return {bias,confidence};
+  const environment = bias === 'NEUTRAL' ? 'CAUTION' : confidence >= 0.68 ? 'FAVORABLE' : 'CAUTION';
+  return {bias,confidence,environment};
 }
 async function main(){
   const rows=parseCsv(await fs.readFile(input,'utf8'));
   if(rows.length<300) throw new Error('Not enough macro rows: '+rows.length);
-  const out=['timestamp,bias,confidence,freshness,event_risk_next_24h'];
+  const out=['timestamp,bias,environment,confidence,freshness,event_risk_next_24h'];
   for(const row of rows){
     const c=classifyFundamentalProxy(row);
-    out.push([row.timestamp,c.bias,c.confidence.toFixed(4),'CURRENT',row.event_risk_next_24h].join(','));
+    out.push([row.timestamp,c.bias,c.environment,c.confidence.toFixed(4),'CURRENT',row.event_risk_next_24h].join(','));
   }
   await fs.writeFile(output,out.join('\n')+'\n');
   console.log('Proxy fundamental rows:',rows.length);
