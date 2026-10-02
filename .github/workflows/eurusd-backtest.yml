@@ -77,6 +77,8 @@ jobs:
       - run: npm install --no-audit --no-fund
       - name: Run unit tests
         run: npm test
+      - name: Static validate EURUSD MT4 monitor
+        run: npm run test:mt4
       - name: Run 2-year technical backtest
         env:
           BACKTEST_LOOKBACK_DAYS: "1825"
