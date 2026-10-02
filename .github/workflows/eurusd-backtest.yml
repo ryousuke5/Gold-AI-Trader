@@ -25,6 +25,7 @@ jobs:
             buy_rsi_max: "68"
             sell_rsi_min: "32"
             sell_rsi_max: "50"
+            retest_enabled: "false"
           - name: balanced-weekly
             range_lookback: "5"
             min_range_atr: "0.50"
@@ -36,6 +37,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            retest_enabled: "false"
           - name: frequent
             range_lookback: "4"
             min_range_atr: "0.50"
@@ -47,6 +49,7 @@ jobs:
             buy_rsi_max: "72"
             sell_rsi_min: "28"
             sell_rsi_max: "53"
+            retest_enabled: "false"
           - name: compromise-lookback4
             range_lookback: "4"
             min_range_atr: "0.50"
@@ -58,6 +61,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            retest_enabled: "false"
           - name: compromise-body20
             range_lookback: "5"
             min_range_atr: "0.50"
@@ -69,6 +73,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            retest_enabled: "false"
           - name: balanced-weekly-retest
             range_lookback: "5"
             min_range_atr: "0.50"
@@ -118,10 +123,17 @@ jobs:
           BACKTEST_BREAKOUT_SELL_RSI_MIN: ${{ matrix.sell_rsi_min }}
           BACKTEST_BREAKOUT_SELL_RSI_MAX: ${{ matrix.sell_rsi_max }}
           BACKTEST_RETEST_ENABLED: ${{ matrix.retest_enabled }}
-          BACKTEST_RETEST_MAX_AGE_BARS: "4"
-          BACKTEST_RETEST_TOLERANCE_ATR: "0.25"
-          BACKTEST_RETEST_MIN_BODY_ATR: "0.10"
-          BACKTEST_RETEST_MIN_CLOSE_LOCATION: "0.55"
+          BACKTEST_RETEST_MAX_AGE_BARS: "3"
+          BACKTEST_RETEST_TOLERANCE_ATR: "0.15"
+          BACKTEST_RETEST_MAX_LEVEL_PENETRATION_ATR: "0.10"
+          BACKTEST_RETEST_MIN_LEVEL_SEPARATION_ATR: "0.08"
+          BACKTEST_RETEST_MIN_BODY_ATR: "0.20"
+          BACKTEST_RETEST_MIN_CLOSE_LOCATION: "0.60"
+          BACKTEST_RETEST_MIN_WICK_ATR: "0.12"
+          BACKTEST_RETEST_MIN_WICK_SHARE: "0.25"
+          BACKTEST_RETEST_BREAKOUT_MIN_ATR: "0.10"
+          BACKTEST_RETEST_BREAKOUT_MIN_BODY_ATR: "0.30"
+          BACKTEST_RETEST_BREAKOUT_MIN_CLOSE_LOCATION: "0.65"
           BACKTEST_RETEST_STOP_BUFFER_ATR: "0.50"
           BACKTEST_RETEST_TAKE_PROFIT_R: "2"
           BACKTEST_OUTPUT_DIR: backtest-output

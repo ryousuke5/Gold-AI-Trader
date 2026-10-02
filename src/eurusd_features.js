@@ -153,12 +153,17 @@ function rsiInSellContinuationZone(rsi, min, max) {
  * The AI layer is intentionally NOT used here; it is an environment filter downstream.
  */
 function buildRetestCandidate(f, bars, trend, options) {
-  const retestLookback = Math.max(2, Math.floor(Number(options.retestMaxAgeBars ?? process.env.EURUSD_RETEST_MAX_AGE_BARS ?? 4)));
-  const toleranceAtr = Math.max(0.05, Number(options.retestToleranceAtr ?? process.env.EURUSD_RETEST_TOLERANCE_ATR ?? 0.25));
-  const minRetestBodyAtr = Math.max(0.05, Number(options.retestMinBodyAtr ?? process.env.EURUSD_RETEST_MIN_BODY_ATR ?? 0.10));
-  const minRetestCloseLocation = Math.min(0.99, Math.max(0.5, Number(options.retestMinCloseLocation ?? process.env.EURUSD_RETEST_MIN_CLOSE_LOCATION ?? 0.55)));
-  const breakoutMinAtr = Math.max(0.02, Number(options.breakoutAtr ?? process.env.EURUSD_BREAKOUT_MIN_ATR ?? 0.05));
-  const minBreakoutBodyAtr = Math.max(0.05, Number(options.minBodyAtr ?? process.env.EURUSD_BREAKOUT_MIN_BODY_ATR ?? 0.25));
+  const retestLookback = Math.max(1, Math.floor(Number(options.retestMaxAgeBars ?? process.env.EURUSD_RETEST_MAX_AGE_BARS ?? 3)));
+  const toleranceAtr = Math.max(0.05, Number(options.retestToleranceAtr ?? process.env.EURUSD_RETEST_TOLERANCE_ATR ?? 0.15));
+  const maxLevelPenetrationAtr = Math.max(0.02, Number(options.retestMaxLevelPenetrationAtr ?? process.env.EURUSD_RETEST_MAX_LEVEL_PENETRATION_ATR ?? 0.10));
+  const minLevelSeparationAtr = Math.max(0.02, Number(options.retestMinLevelSeparationAtr ?? process.env.EURUSD_RETEST_MIN_LEVEL_SEPARATION_ATR ?? 0.08));
+  const minRetestBodyAtr = Math.max(0.05, Number(options.retestMinBodyAtr ?? process.env.EURUSD_RETEST_MIN_BODY_ATR ?? 0.20));
+  const minRetestCloseLocation = Math.min(0.99, Math.max(0.5, Number(options.retestMinCloseLocation ?? process.env.EURUSD_RETEST_MIN_CLOSE_LOCATION ?? 0.60)));
+  const minRetestWickAtr = Math.max(0.05, Number(options.retestMinWickAtr ?? process.env.EURUSD_RETEST_MIN_WICK_ATR ?? 0.12));
+  const minRetestWickShare = Math.min(0.9, Math.max(0.1, Number(options.retestMinWickShare ?? process.env.EURUSD_RETEST_MIN_WICK_SHARE ?? 0.25)));
+  const breakoutMinAtr = Math.max(0.02, Number(options.retestBreakoutMinAtr ?? process.env.EURUSD_RETEST_BREAKOUT_MIN_ATR ?? 0.10));
+  const minBreakoutBodyAtr = Math.max(0.05, Number(options.retestBreakoutMinBodyAtr ?? process.env.EURUSD_RETEST_BREAKOUT_MIN_BODY_ATR ?? 0.30));
+  const minBreakoutCloseLocation = Math.min(0.95, Math.max(0.55, Number(options.retestBreakoutMinCloseLocation ?? process.env.EURUSD_RETEST_BREAKOUT_MIN_CLOSE_LOCATION ?? 0.65)));
   const minVolumeRatio = Math.max(0.5, Number(options.minVolumeRatio ?? process.env.EURUSD_BREAKOUT_MIN_VOLUME_RATIO ?? 1.10));
   const requireVolume = String(options.requireVolume ?? process.env.EURUSD_BREAKOUT_REQUIRE_VOLUME ?? 'true').toLowerCase() !== 'false';
   const buyRsiMin = Math.max(1, Number(options.buyRsiMin ?? process.env.EURUSD_BREAKOUT_BUY_RSI_MIN ?? 48));
@@ -208,7 +213,7 @@ function buildRetestCandidate(f, bars, trend, options) {
       breakout.close > rangeHigh + atr * breakoutMinAtr &&
       priorToBreakout.close <= rangeHigh &&
       breakoutBodyAtr >= minBreakoutBodyAtr &&
-      breakoutCloseLocation >= 0.58 &&
+      breakoutCloseLocation >= minBreakoutCloseLocation &&
       breakoutVolumeGate;
 
     const sellBreakout =
@@ -217,36 +222,52 @@ function buildRetestCandidate(f, bars, trend, options) {
       breakout.close < rangeLow - atr * breakoutMinAtr &&
       priorToBreakout.close >= rangeLow &&
       breakoutBodyAtr >= minBreakoutBodyAtr &&
-      breakoutCloseLocation <= 0.42 &&
+      breakoutCloseLocation <= 1 - minBreakoutCloseLocation &&
       breakoutVolumeGate;
 
     if (!(buyBreakout || sellBreakout)) continue;
 
     const level = buyBreakout ? rangeHigh : rangeLow;
     const tolerance = atr * toleranceAtr;
+    const maxLevelPenetration = atr * maxLevelPenetrationAtr;
+    const minLevelSeparation = atr * minLevelSeparationAtr;
+    const latestLowerWick = Math.max(0, Math.min(latest.open, latest.close) - latest.low);
+    const latestUpperWick = Math.max(0, latest.high - Math.max(latest.open, latest.close));
+    const latestLowerWickShare = latestRange > 0 ? latestLowerWick / latestRange : 0;
+    const latestUpperWickShare = latestRange > 0 ? latestUpperWick / latestRange : 0;
     const latestRsiOkay = buyBreakout
       ? rsiInBuyContinuationZone(f.m15.rsi14, buyRsiMin, buyRsiMax)
       : rsiInSellContinuationZone(f.m15.rsi14, sellRsiMin, sellRsiMax);
+    const betweenBars = bars.slice(breakoutIndex + 1, bars.length - 1);
+    const intermediateLevelHeld = buyBreakout
+      ? betweenBars.every((bar) => bar.close >= level)
+      : betweenBars.every((bar) => bar.close <= level);
 
     const buyRetest =
       buyBreakout &&
+      intermediateLevelHeld &&
       latest.low <= level + tolerance &&
-      latest.close > level &&
-      latest.close - level >= atr * 0.02 &&
+      latest.low >= level - maxLevelPenetration &&
+      latest.close >= level + minLevelSeparation &&
       latest.close > latest.open &&
       latestBodyAtr >= minRetestBodyAtr &&
       latestCloseLocation >= minRetestCloseLocation &&
+      latestLowerWick >= atr * minRetestWickAtr &&
+      latestLowerWickShare >= minRetestWickShare &&
       latestRsiOkay &&
       latestVolumeGate;
 
     const sellRetest =
       sellBreakout &&
+      intermediateLevelHeld &&
       latest.high >= level - tolerance &&
-      latest.close < level &&
-      level - latest.close >= atr * 0.02 &&
+      latest.high <= level + maxLevelPenetration &&
+      latest.close <= level - minLevelSeparation &&
       latest.close < latest.open &&
       latestBodyAtr >= minRetestBodyAtr &&
       latestCloseLocation <= 1 - minRetestCloseLocation &&
+      latestUpperWick >= atr * minRetestWickAtr &&
+      latestUpperWickShare >= minRetestWickShare &&
       latestRsiOkay &&
       latestVolumeGate;
 
