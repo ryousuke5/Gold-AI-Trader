@@ -129,7 +129,7 @@ function isPrimaryOrReuters(url) {
     'fred.stlouisfed.org',
     'reuters.com',
     'cmegroup.com'
-  ].some((allowed) => host === allowed || host.endsWith('.' + allowed) || host.endsWith(allowed));
+  ].some((allowed) => host === allowed || host.endsWith('.' + allowed));
 }
 
 /**
