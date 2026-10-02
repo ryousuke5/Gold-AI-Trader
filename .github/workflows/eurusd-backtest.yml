@@ -25,6 +25,7 @@ jobs:
             buy_rsi_max: "68"
             sell_rsi_min: "32"
             sell_rsi_max: "50"
+            retest_enabled: "false"
           - name: balanced-weekly
             range_lookback: "5"
             min_range_atr: "0.50"
@@ -36,6 +37,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            retest_enabled: "false"
           - name: frequent
             range_lookback: "4"
             min_range_atr: "0.50"
@@ -47,6 +49,7 @@ jobs:
             buy_rsi_max: "72"
             sell_rsi_min: "28"
             sell_rsi_max: "53"
+            retest_enabled: "false"
           - name: compromise-lookback4
             range_lookback: "4"
             min_range_atr: "0.50"
@@ -58,6 +61,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            retest_enabled: "false"
           - name: compromise-body20
             range_lookback: "5"
             min_range_atr: "0.50"
@@ -69,6 +73,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            retest_enabled: "false"
           - name: balanced-weekly-retest
             range_lookback: "5"
             min_range_atr: "0.50"
