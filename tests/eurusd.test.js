@@ -27,13 +27,13 @@ function setupBarsBuy() {
 function setupBarsSell() {
   return [
     { time: 1727000000, open: 1.10200, high: 1.10220, low: 1.10175, close: 1.10190, volume: 100 },
-    { time: 1727000900, open: 1.10190, high: 1.10200, low: 1.10160, close: 1.10175, volume: 110 },
-    { time: 1727001800, open: 1.10175, high: 1.10185, low: 1.10140, close: 1.10155, volume: 120 },
-    { time: 1727002700, open: 1.10155, high: 1.10170, low: 1.10135, close: 1.10142, volume: 130 },
-    { time: 1727003600, open: 1.10142, high: 1.10160, low: 1.10125, close: 1.10130, volume: 140 },
-    { time: 1727004500, open: 1.10130, high: 1.10150, low: 1.10110, close: 1.10118, volume: 150 },
-    { time: 1727005400, open: 1.10118, high: 1.10140, low: 1.10095, close: 1.10105, volume: 160 },
-    { time: 1727006300, open: 1.10055, high: 1.10070, low: 1.10010, close: 1.10020, volume: 220 }
+    { time: 1727000900, open: 1.10190, high: 1.10155, low: 1.10145, close: 1.10150, volume: 110 },
+    { time: 1727001800, open: 1.10150, high: 1.10155, low: 1.10130, close: 1.10140, volume: 120 },
+    { time: 1727002700, open: 1.10140, high: 1.10150, low: 1.10125, close: 1.10135, volume: 130 },
+    { time: 1727003600, open: 1.10135, high: 1.10160, low: 1.10115, close: 1.10125, volume: 140 },
+    { time: 1727004500, open: 1.10125, high: 1.10145, low: 1.10105, close: 1.10115, volume: 150 },
+    { time: 1727005400, open: 1.10115, high: 1.10135, low: 1.10095, close: 1.10105, volume: 160 },
+    { time: 1727006300, open: 1.10112, high: 1.10118, low: 1.10050, close: 1.10075, volume: 220 }
   ];
 }
 
@@ -95,8 +95,8 @@ test('EURUSD high-quality M15 range breakout aligns with H1 uptrend', () => {
 
 test('EURUSD high-quality M15 range breakout supports SELL in H1 downtrend', () => {
   const f = baseFeatures({
-    bid: 1.10012,
-    ask: 1.10020,
+    bid: 1.10069,
+    ask: 1.10077,
     m15: { ema20: 1.10100, ema50: 1.10130, rsi14: 42, atr14: 0.00080 },
     h1: { close: 1.10060, ema20: 1.10180, ema50: 1.10210, ema200: 1.10270, rsi14: 44, atr14: 0.00250 },
     recent_m15: setupBarsSell()
