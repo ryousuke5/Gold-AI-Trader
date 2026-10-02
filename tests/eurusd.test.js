@@ -132,6 +132,29 @@ test('pullback without a range breakout is ignored', () => {
 });
 
 
+test('recent M15 bars are normalized newest-last even when input arrives newest-first', () => {
+  const newestFirst = [...setupBarsBuy()].reverse();
+  const f = baseFeatures({ recent_m15: newestFirst });
+  const setup = buildEurUsdSetup(f);
+  assert.equal(f.recentM15[f.recentM15.length - 1].time, f.barTime);
+  assert.equal(setup.candidate, 'BUY');
+});
+
+test('missing H1 close is rejected instead of inferring a trend', () => {
+  const f = baseFeatures({ h1: { close: 0, ema20: 1.10080, ema50: 1.10040, ema200: 1.09980, rsi14: 56, atr14: 0.00250 } });
+  assert.ok(validateEurUsdFeatures(f).includes('invalid_h1.close'));
+  assert.equal(buildEurUsdSetup(f).candidate, 'WAIT');
+});
+
+test('non-contiguous latest M15 setup bars are rejected', () => {
+  const bars = setupBarsBuy();
+  bars[6] = { ...bars[6], time: bars[6].time - 1800 };
+  const f = baseFeatures({ recent_m15: bars });
+  const setup = buildEurUsdSetup(f);
+  assert.equal(setup.candidate, 'WAIT');
+  assert.ok(setup.reasons.includes('recent_m15_setup_bars_not_contiguous'));
+});
+
 test('missing breakout volume does not invalidate a technically complete breakout', () => {
   const bars = setupBarsBuy().map((bar) => ({ ...bar, volume: 0 }));
   const f = baseFeatures({ recent_m15: bars });
