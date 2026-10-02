@@ -18,6 +18,8 @@ const CONFIG = {
   minRR: Math.max(1.0, Number(process.env.BACKTEST_MIN_RR || 1.80)),
   maxSpreadPips: Math.max(0.1, Number(process.env.BACKTEST_MAX_SPREAD_PIPS || 1.20)),
   maxSpreadToTpPct: Math.max(1, Number(process.env.BACKTEST_MAX_SPREAD_TO_TP_PCT || 12)),
+  frequencyMode: String(process.env.BACKTEST_FREQUENCY_MODE || 'high-quality'),
+  targetTradesPerWeek: Math.max(0, Number(process.env.BACKTEST_TARGET_TRADES_PER_WEEK || 1)),
   rangeLookback: Math.max(4, Number(process.env.BACKTEST_RANGE_LOOKBACK || 6)),
   minRangeAtr: Math.max(0.1, Number(process.env.BACKTEST_MIN_RANGE_ATR || 0.75)),
   maxRangeAtr: Math.max(0.2, Number(process.env.BACKTEST_MAX_RANGE_ATR || 2.00)),
@@ -656,7 +658,9 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       buyRsiMin: config.breakoutBuyRsiMin,
       buyRsiMax: config.breakoutBuyRsiMax,
       sellRsiMin: config.breakoutSellRsiMin,
-      sellRsiMax: config.breakoutSellRsiMax
+      sellRsiMax: config.breakoutSellRsiMax,
+      frequencyMode: config.frequencyMode,
+      targetTradesPerWeek: config.targetTradesPerWeek
     });
     if (setup.candidate === 'WAIT') continue;
 
@@ -734,6 +738,11 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
     test_period: {
       start: new Date(startTime * 1000).toISOString(),
       end: new Date(endTime * 1000).toISOString()
+    },
+    frequency_target: {
+      mode: config.frequencyMode,
+      target_trades_per_week: config.targetTradesPerWeek,
+      target_is_monitoring_only: true
     },
     assumptions: {
       initial_equity: config.initialEquity,
