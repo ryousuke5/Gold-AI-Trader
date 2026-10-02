@@ -131,6 +131,15 @@ test('pullback without a range breakout is ignored', () => {
   assert.ok(setup.reasons.includes('breakout_penetration_too_small'));
 });
 
+
+test('missing breakout volume blocks a high-quality setup when volume confirmation is required', () => {
+  const bars = setupBarsBuy().map((bar) => ({ ...bar, volume: 0 }));
+  const f = baseFeatures({ recent_m15: bars });
+  const setup = buildEurUsdSetup(f);
+  assert.equal(setup.candidate, 'WAIT');
+  assert.ok(setup.reasons.includes('breakout_volume_data_missing'));
+});
+
 test('wide spread blocks an otherwise valid breakout', () => {
   const f = baseFeatures({
     spread: 0.00015,
@@ -159,6 +168,7 @@ test('AI environment validation requires fresh evidence and multiple sources', (
   assert.equal(checked.ok, true);
   assert.equal(checked.environment, 'FAVORABLE');
   assert.equal(checked.primary_or_reuters_source_count, 2);
+  assert.equal(checked.independent_source_host_count, 2);
 });
 
 test('AI environment is the gate, not the technical direction', () => {
