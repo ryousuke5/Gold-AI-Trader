@@ -69,6 +69,18 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+          - name: balanced-weekly-retest
+            range_lookback: "5"
+            min_range_atr: "0.50"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.05"
+            breakout_min_body_atr: "0.25"
+            breakout_min_close_location: "0.60"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+            retest_enabled: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -105,6 +117,13 @@ jobs:
           BACKTEST_BREAKOUT_BUY_RSI_MAX: ${{ matrix.buy_rsi_max }}
           BACKTEST_BREAKOUT_SELL_RSI_MIN: ${{ matrix.sell_rsi_min }}
           BACKTEST_BREAKOUT_SELL_RSI_MAX: ${{ matrix.sell_rsi_max }}
+          BACKTEST_RETEST_ENABLED: ${{ matrix.retest_enabled }}
+          BACKTEST_RETEST_MAX_AGE_BARS: "4"
+          BACKTEST_RETEST_TOLERANCE_ATR: "0.25"
+          BACKTEST_RETEST_MIN_BODY_ATR: "0.10"
+          BACKTEST_RETEST_MIN_CLOSE_LOCATION: "0.55"
+          BACKTEST_RETEST_STOP_BUFFER_ATR: "0.50"
+          BACKTEST_RETEST_TAKE_PROFIT_R: "2"
           BACKTEST_OUTPUT_DIR: backtest-output
         run: node scripts/backtest-eurusd.mjs
       - name: Upload backtest artifacts
