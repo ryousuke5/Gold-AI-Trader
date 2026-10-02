@@ -149,6 +149,59 @@ test('EURUSD breakout-retest detects a controlled pullback after a confirmed bre
   assert.equal(setup.risk_reward, 2);
 });
 
+test('EURUSD breakout-retest passes the existing risk geometry and sizing gate', () => {
+  const f = baseFeatures({ recent_m15: setupBarsBuyRetest() });
+  const setup = buildEurUsdSetupWithRetest(f, {
+    retestEnabled: true,
+    retestMaxAgeBars: 4,
+    retestToleranceAtr: 0.25,
+    retestMinBodyAtr: 0.10,
+    retestMinCloseLocation: 0.55,
+    retestStopBufferAtr: 0.50,
+    retestTakeProfitR: 2
+  });
+  assert.equal(setup.setup_type, 'BREAKOUT_RETEST');
+
+  const decision = {
+    decision: 'BUY',
+    candidate: 'BUY',
+    confidence: setup.quality_score / 100,
+    risk_reward: setup.risk_reward,
+    entry: setup.entry,
+    stop_loss: setup.stop_loss,
+    take_profit: setup.take_profit,
+    ai_environment: { status: 'FAVORABLE', confidence: 0.80 }
+  };
+
+  const risk = evaluateEurUsdRisk({
+    decision,
+    setup,
+    features: f,
+    account: {
+      equity: 100000,
+      open_positions: 0,
+      daily_pnl_pct: 0,
+      drawdown_pct: 0,
+      risk_data_ready: true,
+      trade_allowed: 1,
+      tick_size: 0.00001,
+      tick_value: 1,
+      min_lot: 0.01,
+      max_lot: 100,
+      lot_step: 0.01,
+      point: 0.00001,
+      stop_level_points: 0
+    },
+    signalCreatedAt: 1727006300000,
+    now: 1727006300000,
+    fundamentalAssessment: favorableAiAssessment()
+  });
+
+  assert.equal(risk.approved, true, JSON.stringify(risk, null, 2));
+  assert.ok(risk.lots > 0);
+  assert.equal(risk.actualRR, 2);
+});
+
 test('EURUSD breakout-retest is disabled without changing the primary breakout engine', () => {
   const f = baseFeatures({ recent_m15: setupBarsBuyRetest() });
   const setup = buildEurUsdSetupWithRetest(f, { retestEnabled: false });
