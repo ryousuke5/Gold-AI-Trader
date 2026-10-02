@@ -23,6 +23,16 @@ function sortBarsAscending(bars) {
   return [...bars].sort((a, b) => a.time - b.time);
 }
 
+function emaLast(values, period) {
+  const alpha = 2 / (period + 1);
+  let prev = null;
+  for (const value of values) {
+    if (!Number.isFinite(value)) continue;
+    prev = prev === null ? value : alpha * value + (1 - alpha) * prev;
+  }
+  return prev;
+}
+
 function maxHigh(bars) {
   return bars.reduce((max, b) => Math.max(max, b.high), -Infinity);
 }
