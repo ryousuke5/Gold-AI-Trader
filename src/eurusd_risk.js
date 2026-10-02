@@ -127,6 +127,31 @@ export function evaluateEurUsdRisk({
       if (direction === 'BUY' && !(sl < entry && tp > entry)) reasons.push('buy_price_geometry_invalid');
       if (direction === 'SELL' && !(sl > entry && tp < entry)) reasons.push('sell_price_geometry_invalid');
 
+      const point = Number(a.point || features.point || 0);
+      const stopLevelPoints = Math.max(0, Number(a.stop_level_points || 0));
+      const freezeLevelPoints = Math.max(0, Number(a.freeze_level_points || 0));
+      const marketReference = direction === 'BUY' ? Number(features.ask) : Number(features.bid);
+      if (point > 0 && marketReference > 0) {
+        const brokerStopDistance = stopLevelPoints * point;
+        if (brokerStopDistance > 0) {
+          if (Math.abs(marketReference - sl) < brokerStopDistance - 1e-12) {
+            reasons.push('broker_stop_level_violation');
+          }
+          if (Math.abs(tp - marketReference) < brokerStopDistance - 1e-12) {
+            reasons.push('broker_tp_stop_level_violation');
+          }
+        }
+        const brokerFreezeDistance = freezeLevelPoints * point;
+        if (brokerFreezeDistance > 0) {
+          if (Math.abs(marketReference - sl) < brokerFreezeDistance - 1e-12) {
+            reasons.push('broker_stop_freeze_level_violation');
+          }
+          if (Math.abs(tp - marketReference) < brokerFreezeDistance - 1e-12) {
+            reasons.push('broker_tp_freeze_level_violation');
+          }
+        }
+      }
+
       if (Number(a.tick_size) > 0 && Number(a.tick_value) > 0) {
         const sizing = calculateLots({
           equity: Number(a.equity),
@@ -169,6 +194,6 @@ export function evaluateEurUsdRisk({
     riskCash: 0,
     actualRR: 0,
     stopAtr: 0,
-    spreadPips: features.point > 0 ? Number(features.spread) / (features.point * 10) : 0
+    spreadPips: Number(features.spread) > 0 ? Number(features.spread) / 0.0001 : Infinity
   };
 }
