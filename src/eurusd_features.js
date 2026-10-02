@@ -234,7 +234,7 @@ export function buildEurUsdSetup(f, options = {}) {
     closeLocation + 1e-9 >= minCloseLocation &&
     rangeCompressed &&
     spreadOkay &&
-    volumeConfirmation;
+    volumeGatePassed;
 
   const sellBreakout =
     trend === 'DOWN' &&
@@ -246,7 +246,7 @@ export function buildEurUsdSetup(f, options = {}) {
     closeLocation - 1e-9 <= (1 - minCloseLocation) &&
     rangeCompressed &&
     spreadOkay &&
-    volumeConfirmation;
+    volumeGatePassed;
 
   let direction = 'WAIT';
   const reasons = [];
