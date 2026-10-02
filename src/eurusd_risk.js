@@ -53,6 +53,14 @@ export function evaluateEurUsdRisk({
   if (direction !== 'WAIT' && candidate !== direction) reasons.push('candidate_direction_mismatch');
 
   if (direction !== 'WAIT') {
+    if (setup?.setup_type !== 'BREAKOUT') reasons.push('unsupported_setup_type');
+    for (const field of ['entry', 'stop_loss', 'take_profit', 'risk_reward']) {
+      const decisionValue = Number(d[field]);
+      const setupValue = Number(setup?.[field]);
+      if (Number.isFinite(decisionValue) && Number.isFinite(setupValue) && Math.abs(decisionValue - setupValue) > 1e-10) {
+        reasons.push('technical_' + field + '_mismatch');
+      }
+    }
     if (!(Number(d.confidence) >= limits.minConfidence && Number(d.confidence) <= 1)) {
       reasons.push('setup_confidence_below_threshold');
     }
