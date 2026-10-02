@@ -38,27 +38,27 @@ test('EURUSD risk lot sizing floors to broker lot step', () => {
 
 test('fundamental replay selects latest non-future assessment only', () => {
   const rows = parseFundamentalCsv([
-    'timestamp,bias,confidence,freshness,event_risk_next_24h',
-    '2026-09-25T08:00:00Z,BULLISH_EURUSD,0.78,CURRENT,LOW',
-    '2026-09-25T10:00:00Z,BEARISH_EURUSD,0.82,CURRENT,LOW'
+    'timestamp,environment,confidence,freshness,event_risk_next_24h',
+    '2026-09-25T08:00:00Z,FAVORABLE,0.78,CURRENT,LOW',
+    '2026-09-25T10:00:00Z,CAUTION,0.82,CURRENT,LOW'
   ].join('\n'));
   assert.equal(rows.length, 2);
   const selected = latestFundamentalAssessment(rows, Date.parse('2026-09-25T09:00:00Z') / 1000, 48);
-  assert.equal(selected.bias, 'BULLISH_EURUSD');
+  assert.equal(selected.environment, 'FAVORABLE');
 });
 
 test('fundamental replay blocks stale, conflicting and high-event assessments', () => {
   const setup = { candidate: 'BUY' };
-  const cfg = { minFundamentalConfidence: 0.65 };
+  const cfg = { minAiEnvironmentConfidence: 0.65 };
   assert.equal(fundamentalGate(setup, null, cfg).allowed, false);
   assert.equal(fundamentalGate(setup, {
-    bias: 'BULLISH_EURUSD', confidence: 0.80, freshness: 'STALE', event_risk_next_24h: 'LOW'
-  }, cfg).reason, 'fundamental_not_current');
+    environment: 'FAVORABLE', confidence: 0.80, freshness: 'STALE', event_risk_next_24h: 'LOW'
+  }, cfg).reason, 'ai_environment_not_current');
   assert.equal(fundamentalGate(setup, {
-    bias: 'BEARISH_EURUSD', confidence: 0.80, freshness: 'CURRENT', event_risk_next_24h: 'LOW'
-  }, cfg).reason, 'fundamental_direction_mismatch');
+    environment: 'CAUTION', confidence: 0.80, freshness: 'CURRENT', event_risk_next_24h: 'LOW'
+  }, cfg).reason, 'ai_environment_not_favorable');
   assert.equal(fundamentalGate(setup, {
-    bias: 'BULLISH_EURUSD', confidence: 0.80, freshness: 'CURRENT', event_risk_next_24h: 'HIGH'
+    environment: 'FAVORABLE', confidence: 0.80, freshness: 'CURRENT', event_risk_next_24h: 'HIGH'
   }, cfg).reason, 'high_impact_event_next_24h');
 });
 
@@ -95,15 +95,15 @@ test('fundamental proxy is causal and conservative', () => {
   assert.deepEqual(classifyFundamentalProxy({
     policy_diff_change_20d: '-0.30',
     usd_minus_eur_policy_rate: '1.00'
-  }), { bias: 'BULLISH_EURUSD', confidence: 0.75 });
+  }), { bias: 'BULLISH_EURUSD', confidence: 0.75, environment: 'FAVORABLE' });
   assert.deepEqual(classifyFundamentalProxy({
     policy_diff_change_20d: '0.30',
     usd_minus_eur_policy_rate: '2.50'
-  }), { bias: 'BEARISH_EURUSD', confidence: 0.75 });
+  }), { bias: 'BEARISH_EURUSD', confidence: 0.75, environment: 'FAVORABLE' });
   assert.deepEqual(classifyFundamentalProxy({
     policy_diff_change_20d: '0.04',
     usd_minus_eur_policy_rate: '1.00'
-  }), { bias: 'NEUTRAL', confidence: 0.60 });
+  }), { bias: 'NEUTRAL', confidence: 0.60, environment: 'CAUTION' });
 });
 
 
@@ -119,4 +119,6 @@ test('fundamental proxy thresholds are directionally consistent', async () => {
   });
   assert.equal(strong.bias, 'BULLISH_EURUSD');
   assert.equal(neutral.bias, 'NEUTRAL');
+  assert.equal(strong.environment, 'FAVORABLE');
+  assert.equal(neutral.environment, 'CAUTION');
 });

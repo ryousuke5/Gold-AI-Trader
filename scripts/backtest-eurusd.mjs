@@ -19,7 +19,7 @@ const CONFIG = {
   maxSpreadPips: Math.max(0.1, Number(process.env.BACKTEST_MAX_SPREAD_PIPS || 1.20)),
   maxSpreadToTpPct: Math.max(1, Number(process.env.BACKTEST_MAX_SPREAD_TO_TP_PCT || 12)),
   fundamentalSource: process.env.BACKTEST_FUNDAMENTAL_SOURCE || '',
-  minFundamentalConfidence: Math.min(1, Math.max(0.5, Number(process.env.BACKTEST_MIN_FUNDAMENTAL_CONFIDENCE || 0.65))),
+  minAiEnvironmentConfidence: Math.min(1, Math.max(0.5, Number(process.env.BACKTEST_MIN_AI_ENVIRONMENT_CONFIDENCE || process.env.BACKTEST_MIN_FUNDAMENTAL_CONFIDENCE || 0.65))),
   maxFundamentalAgeHours: Math.max(1, Number(process.env.BACKTEST_MAX_FUNDAMENTAL_AGE_HOURS || 48)),
   minLot: 0.01,
   maxLot: 100,
@@ -258,9 +258,9 @@ export function parseFundamentalCsv(text) {
   const header = splitCsvLine(lines[0]).map((x) => x.trim().replace(/^"|"$/g, '').toLowerCase());
   const idx = Object.fromEntries(header.map((h, i) => [h, i]));
   const timeKey = ['timestamp', 'datetime', 'date', 'time'].find((key) => idx[key] !== undefined);
-  const required = [timeKey, 'bias', 'confidence', 'freshness', 'event_risk_next_24h'];
+  const required = [timeKey, 'environment', 'confidence', 'freshness', 'event_risk_next_24h'];
   if (!timeKey || required.some((key) => idx[key] === undefined)) {
-    throw new Error('Fundamental CSV requires timestamp,bias,confidence,freshness,event_risk_next_24h columns');
+    throw new Error('AI environment CSV requires timestamp,environment,confidence,freshness,event_risk_next_24h columns');
   }
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
@@ -270,7 +270,7 @@ export function parseFundamentalCsv(text) {
     if (!Number.isFinite(t) || !Number.isFinite(confidence)) continue;
     rows.push({
       time: Math.floor(t / 1000),
-      bias: String(cells[idx.bias] || '').trim().toUpperCase(),
+      environment: String(cells[idx.environment] || '').trim().toUpperCase(),
       confidence,
       freshness: String(cells[idx.freshness] || '').trim().toUpperCase(),
       event_risk_next_24h: String(cells[idx.event_risk_next_24h] || '').trim().toUpperCase()
@@ -301,14 +301,23 @@ export function latestFundamentalAssessment(mask, signalTime, maxAgeHours = 48) 
 
 export function fundamentalGate(setup, assessment, config) {
   if (setup.candidate === 'WAIT') return { allowed: false, reason: 'technical_wait' };
-  if (!assessment) return { allowed: false, reason: 'fundamental_missing_or_stale' };
-  const expectedBias = setup.candidate === 'BUY' ? 'BULLISH_EURUSD' : 'BEARISH_EURUSD';
-  if (assessment.confidence < config.minFundamentalConfidence) return { allowed: false, reason: 'fundamental_confidence_below_threshold' };
-  if (!['CURRENT', 'MIXED'].includes(assessment.freshness)) return { allowed: false, reason: 'fundamental_not_current' };
-  if (assessment.event_risk_next_24h === 'HIGH') return { allowed: false, reason: 'high_impact_event_next_24h' };
-  if (assessment.event_risk_next_24h === 'UNKNOWN') return { allowed: false, reason: 'event_risk_unknown' };
-  if (assessment.bias !== expectedBias) return { allowed: false, reason: 'fundamental_direction_mismatch' };
-  return { allowed: true, reason: 'fundamental_confirmed' };
+  if (!assessment) return { allowed: false, reason: 'ai_environment_missing_or_stale' };
+  if (assessment.confidence < config.minAiEnvironmentConfidence) {
+    return { allowed: false, reason: 'ai_environment_confidence_below_threshold' };
+  }
+  if (!['CURRENT', 'MIXED'].includes(assessment.freshness)) {
+    return { allowed: false, reason: 'ai_environment_not_current' };
+  }
+  if (assessment.event_risk_next_24h === 'HIGH') {
+    return { allowed: false, reason: 'high_impact_event_next_24h' };
+  }
+  if (assessment.event_risk_next_24h === 'UNKNOWN') {
+    return { allowed: false, reason: 'event_risk_unknown' };
+  }
+  if (assessment.environment !== 'FAVORABLE') {
+    return { allowed: false, reason: 'ai_environment_not_favorable' };
+  }
+  return { allowed: true, reason: 'ai_environment_confirmed' };
 }
 
 function floorLot(raw, minLot = 0.01, maxLot = 100, lotStep = 0.01) {
@@ -496,8 +505,10 @@ function dataQuality(bars, timeframeSeconds) {
   let invalid = 0;
   let gaps = 0;
   let weekendGaps = 0;
+  let volumePositive = 0;
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i];
+    if (b.volume > 0) volumePositive++;
     if (!(b.high >= b.low && b.high >= b.open && b.high >= b.close && b.low <= b.open && b.low <= b.close && b.close > 0)) invalid++;
     if (i > 0) {
       const delta = bars[i].time - bars[i - 1].time;
@@ -508,7 +519,14 @@ function dataQuality(bars, timeframeSeconds) {
       }
     }
   }
-  return { rows: bars.length, invalid_ohlc: invalid, gaps_gt_1_5_period: gaps, weekend_gaps: weekendGaps };
+  return {
+    rows: bars.length,
+    invalid_ohlc: invalid,
+    gaps_gt_1_5_period: gaps,
+    weekend_gaps: weekendGaps,
+    volume_positive_rows: volumePositive,
+    volume_coverage_pct: bars.length ? volumePositive / bars.length * 100 : 0
+  };
 }
 
 function parseArgs() {
@@ -681,7 +699,7 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
   const summary = summarizeTrades(trades, config.initialEquity);
   const fundamentalSummary = fundamentalMask ? summarizeTrades(fundamentalTrades, config.initialEquity) : null;
   const report = {
-    strategy: 'EURUSD M15 setup + H1 trend (technical core)',
+    strategy: 'EURUSD M15 high-quality range breakout + H1 trend (technical core)',
     fundamental_backtest_status: fundamentalMask ? 'RUN' : 'NOT_RUN',
     fundamental_backtest_note: fundamentalMask
       ? 'A timestamped historical fundamental mask was applied causally at or before each signal. Verify that the mask was created without lookahead.'
@@ -705,9 +723,15 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       execution: 'next M15 bar open',
       same_bar_conflict: 'stop first',
       tp_multiple_r: 2,
-      fundamental_filter: fundamentalMask
-        ? { source: config.fundamentalSource, min_confidence: config.minFundamentalConfidence, max_age_hours: config.maxFundamentalAgeHours, high_event_blocked: true }
-        : 'excluded from historical performance due lack of historical AI/news labels'
+      ai_environment_filter: fundamentalMask
+        ? {
+            source: config.fundamentalSource,
+            min_confidence: config.minAiEnvironmentConfidence,
+            max_age_hours: config.maxFundamentalAgeHours,
+            allowed_environment: 'FAVORABLE',
+            high_event_blocked: true
+          }
+        : 'excluded from historical performance due lack of point-in-time AI environment labels'
     },
     data_quality: {
       m15: dataQuality(m15, 900),

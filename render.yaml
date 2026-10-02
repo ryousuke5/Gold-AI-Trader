@@ -36,7 +36,7 @@ services:
       - key: MAX_RISK_PER_TRADE_PCT
         value: "2"
       - key: EURUSD_STRATEGY_VERSION
-        value: eurusd-m15-h1-fundamental-v1
+        value: eurusd-m15-h1-ai-environment-v2
       - key: EURUSD_OPENAI_WEB_SEARCH_CONTEXT_SIZE
         value: medium
       - key: EURUSD_FUNDAMENTAL_LOOKBACK_HOURS
@@ -53,6 +53,34 @@ services:
         value: "0.95"
       - key: EURUSD_MIN_FUNDAMENTAL_CONFIDENCE
         value: "0.65"
+      - key: EURUSD_MIN_AI_ENVIRONMENT_CONFIDENCE
+        value: "0.65"
+      - key: EURUSD_AI_ENVIRONMENT_REQUIRED
+        value: "true"
+      - key: EURUSD_RANGE_LOOKBACK
+        value: "6"
+      - key: EURUSD_MIN_RANGE_ATR
+        value: "0.75"
+      - key: EURUSD_MAX_RANGE_ATR
+        value: "2.00"
+      - key: EURUSD_BREAKOUT_MIN_ATR
+        value: "0.10"
+      - key: EURUSD_BREAKOUT_MIN_BODY_ATR
+        value: "0.35"
+      - key: EURUSD_BREAKOUT_MIN_CLOSE_LOCATION
+        value: "0.70"
+      - key: EURUSD_BREAKOUT_MIN_VOLUME_RATIO
+        value: "1.10"
+      - key: EURUSD_BREAKOUT_REQUIRE_VOLUME
+        value: "true"
+      - key: EURUSD_BREAKOUT_BUY_RSI_MIN
+        value: "50"
+      - key: EURUSD_BREAKOUT_BUY_RSI_MAX
+        value: "68"
+      - key: EURUSD_BREAKOUT_SELL_RSI_MIN
+        value: "32"
+      - key: EURUSD_BREAKOUT_SELL_RSI_MAX
+        value: "50"
       - key: EURUSD_MIN_STOP_ATR
         value: "0.50"
       - key: EURUSD_MAX_STOP_ATR

@@ -71,10 +71,21 @@ function buildDecision(setup, fundamentalAssessment, fundamentalResult) {
     risk_reward: decision === 'WAIT' ? 0 : Number(setup.risk_reward),
     reason: confirmation.reason,
     invalid_reasons: confirmation.invalid_reasons,
+    ai_environment: {
+      status: String(confirmation.environment || 'INSUFFICIENT').toUpperCase(),
+      confidence: Number.isFinite(Number(fundamentalAssessment?.confidence)) ? Number(fundamentalAssessment.confidence) : 0,
+      freshness: String(fundamentalAssessment?.freshness || 'INSUFFICIENT').toUpperCase(),
+      event_risk_next_24h: String(fundamentalAssessment?.event_risk_next_24h || 'UNKNOWN').toUpperCase(),
+      event_summary: String(fundamentalAssessment?.event_summary || '')
+    },
     fundamental: {
       bias: String(f.bias || 'INSUFFICIENT').toUpperCase(),
-      confidence: Number.isFinite(Number(f.confidence)) ? Number(f.confidence) : 0,
-      freshness: String(f.freshness || 'INSUFFICIENT').toUpperCase(),
+      confidence: Number.isFinite(Number(f.confidence))
+        ? Number(f.confidence)
+        : Number.isFinite(Number(fundamentalAssessment?.confidence))
+          ? Number(fundamentalAssessment.confidence)
+          : 0,
+      freshness: String(fundamentalAssessment?.freshness || f.freshness || 'INSUFFICIENT').toUpperCase(),
       summary: String(f.summary || ''),
       drivers: Array.isArray(f.drivers) ? f.drivers.map(String) : [],
       risks: Array.isArray(f.risks) ? f.risks.map(String) : [],
@@ -129,7 +140,7 @@ export function registerEurUsdRoutes(app) {
           request_id: requestId,
           symbol,
           timeframe,
-          strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-fundamental-v1',
+          strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v2',
           setup,
           h1_trend: setup.trend,
           candidate: setup.candidate,
@@ -160,7 +171,7 @@ export function registerEurUsdRoutes(app) {
         request_id: requestId,
         symbol,
         timeframe,
-        strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-fundamental-v1',
+        strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v2',
         setup,
         h1_trend: setup.trend,
         candidate: setup.candidate,
@@ -198,7 +209,7 @@ export function registerEurUsdRoutes(app) {
       const featureErrors = validateEurUsdFeatures(features);
       if (featureErrors.length) return res.status(400).json({ ok: false, error: 'invalid_features', reasons: featureErrors, request_id: requestId });
 
-      const strategyVersion = process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-fundamental-v1';
+      const strategyVersion = process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v2';
       const barTimeIso = new Date(features.barTime * 1000).toISOString();
       const existing = await getSignalByKey({ symbol, timeframe, barTimeIso, strategyVersion });
       if (existing) {
@@ -357,10 +368,10 @@ export function registerEurUsdRoutes(app) {
       const state = await getState();
       res.json({
         ok: true,
-        service: 'eurusd-m15-h1-fundamental-v1',
+        service: 'eurusd-m15-h1-ai-environment-v2',
         symbol: 'EURUSD',
         timeframe: 'M15',
-        strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-fundamental-v1',
+        strategy_version: process.env.EURUSD_STRATEGY_VERSION || 'eurusd-m15-h1-ai-environment-v2',
         execution_enabled: executionEnabled(),
         risk_limits: getEurUsdRiskLimits(),
         state: state || null

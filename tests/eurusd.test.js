@@ -1,190 +1,258 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeEurUsdFeatures, validateEurUsdFeatures, buildEurUsdSetup } from '../src/eurusd_features.js';
-import { buildEurUsdFundamentalDecision, validateEurUsdFundamentalAssessment } from '../src/eurusd_ai.js';
+import {
+  normalizeEurUsdFeatures,
+  validateEurUsdFeatures,
+  buildEurUsdSetup
+} from '../src/eurusd_features.js';
+import {
+  buildEurUsdFundamentalDecision,
+  validateEurUsdFundamentalAssessment
+} from '../src/eurusd_ai.js';
 import { evaluateEurUsdRisk } from '../src/eurusd_risk.js';
-
-function bars({direction='up', count=8, base=1.1000, step=0.00015, atr=0.0008}={}) {
-  const out = [];
-  for (let i = 0; i < count; i += 1) {
-    const close = direction === 'up' ? base + i * step : base - i * step;
-    const open = close - (direction === 'up' ? 0.00010 : -0.00010);
-    out.push({
-      time: 1727000000 + i * 900,
-      open,
-      high: Math.max(open, close) + atr * 0.08,
-      low: Math.min(open, close) - atr * 0.08,
-      close,
-      volume: 100 + i
-    });
-  }
-  return out;
-}
 
 function setupBarsBuy() {
   return [
-    { time: 1727000000, open: 1.09960, high: 1.09995, low: 1.09950, close: 1.09985, volume: 100 },
-    { time: 1727000900, open: 1.09985, high: 1.10015, low: 1.09975, close: 1.10005, volume: 110 },
+    { time: 1727000000, open: 1.09990, high: 1.10005, low: 1.09980, close: 1.09995, volume: 100 },
+    { time: 1727000900, open: 1.09995, high: 1.10015, low: 1.09975, close: 1.10005, volume: 110 },
     { time: 1727001800, open: 1.10005, high: 1.10030, low: 1.09990, close: 1.10020, volume: 120 },
     { time: 1727002700, open: 1.10020, high: 1.10038, low: 1.10012, close: 1.10018, volume: 130 },
-    { time: 1727003600, open: 1.10018, high: 1.10035, low: 1.10010, close: 1.10010, volume: 140 },
+    { time: 1727003600, open: 1.10018, high: 1.10035, low: 1.10005, close: 1.10010, volume: 140 },
     { time: 1727004500, open: 1.10010, high: 1.10028, low: 1.10005, close: 1.10008, volume: 150 },
     { time: 1727005400, open: 1.10008, high: 1.10020, low: 1.10000, close: 1.10000, volume: 160 },
-    { time: 1727006300, open: 1.10072, high: 1.10120, low: 1.10065, close: 1.10105, volume: 220 }
+    { time: 1727006300, open: 1.10025, high: 1.10070, low: 1.10020, close: 1.10055, volume: 220 }
   ];
 }
 
 function setupBarsSell() {
   return [
     { time: 1727000000, open: 1.10200, high: 1.10220, low: 1.10175, close: 1.10190, volume: 100 },
-    { time: 1727000900, open: 1.10190, high: 1.10200, low: 1.10160, close: 1.10175, volume: 110 },
-    { time: 1727001800, open: 1.10175, high: 1.10185, low: 1.10140, close: 1.10155, volume: 120 },
-    { time: 1727002700, open: 1.10155, high: 1.10170, low: 1.10135, close: 1.10142, volume: 130 },
-    { time: 1727003600, open: 1.10142, high: 1.10160, low: 1.10125, close: 1.10130, volume: 140 },
-    { time: 1727004500, open: 1.10130, high: 1.10150, low: 1.10110, close: 1.10118, volume: 150 },
-    { time: 1727005400, open: 1.10118, high: 1.10140, low: 1.10095, close: 1.10105, volume: 160 },
-    { time: 1727006300, open: 1.10055, high: 1.10090, low: 1.10010, close: 1.10035, volume: 220 }
+    { time: 1727000900, open: 1.10190, high: 1.10155, low: 1.10145, close: 1.10150, volume: 110 },
+    { time: 1727001800, open: 1.10150, high: 1.10155, low: 1.10130, close: 1.10140, volume: 120 },
+    { time: 1727002700, open: 1.10140, high: 1.10150, low: 1.10125, close: 1.10135, volume: 130 },
+    { time: 1727003600, open: 1.10135, high: 1.10160, low: 1.10115, close: 1.10125, volume: 140 },
+    { time: 1727004500, open: 1.10125, high: 1.10145, low: 1.10105, close: 1.10115, volume: 150 },
+    { time: 1727005400, open: 1.10115, high: 1.10135, low: 1.10095, close: 1.10105, volume: 160 },
+    { time: 1727006300, open: 1.10112, high: 1.10118, low: 1.10070, close: 1.10075, volume: 220 }
   ];
 }
 
 function baseFeatures(overrides = {}) {
   return normalizeEurUsdFeatures({
-    bid: 1.10100,
-    ask: 1.10108,
+    bid: 1.10050,
+    ask: 1.10058,
     point: 0.00001,
     bar_time: 1727006300,
-    m15: { ema20: 1.10060, ema50: 1.10030, rsi14: 55, atr14: 0.00080 },
+    m15: { ema20: 1.10040, ema50: 1.10020, rsi14: 58, atr14: 0.00080 },
     h1: { close: 1.10100, ema20: 1.10080, ema50: 1.10040, ema200: 1.09980, rsi14: 56, atr14: 0.00250 },
-    recent_m15: bars({direction:'up', base:1.09970, step:0.00018, atr:0.00080}),
+    recent_m15: setupBarsBuy(),
     ...overrides
   });
 }
 
-test('EURUSD M15 breakout candidate aligns with H1 trend', () => {
-  const f = baseFeatures({ recent_m15: setupBarsBuy() });
-  const errors = validateEurUsdFeatures(f);
-  assert.deepEqual(errors, []);
-  const setup = buildEurUsdSetup(f, { maxSpreadPips: 1.0, maxSpreadToTpPct: 20 });
-  assert.equal(setup.trend, 'UP');
-  assert.equal(setup.candidate, 'BUY');
-  assert.ok(['PULLBACK_RECLAIM', 'BREAKOUT'].includes(setup.setup_type));
-  assert.ok(setup.risk_reward >= 1.9);
-  assert.ok(setup.spread_pips < 1);
-});
-
-test('EURUSD M15 breakout candidate supports SELL in H1 downtrend', () => {
-  const f = baseFeatures({
-    bid: 1.10092,
-    ask: 1.10100,
-    m15: { ema20: 1.10100, ema50: 1.10130, rsi14: 45, atr14: 0.00080 },
-    h1: { close: 1.10060, ema20: 1.10180, ema50: 1.10210, ema200: 1.10270, rsi14: 44, atr14: 0.00250 },
-    recent_m15: setupBarsSell()
-  });
-  const setup = buildEurUsdSetup(f, { maxSpreadPips: 1.0, maxSpreadToTpPct: 20 });
-  assert.equal(setup.trend, 'DOWN');
-  assert.equal(setup.candidate, 'SELL');
-  assert.equal(setup.setup_type, 'PULLBACK_RECLAIM');
-  assert.ok(setup.risk_reward >= 1.9);
-});
-
-test('wide spread blocks entry even when technical direction is correct', () => {
-  const f = baseFeatures({ bid: 1.10100, ask: 1.10125, spread: 0.00025 });
-  const setup = buildEurUsdSetup(f, { maxSpreadPips: 1.0 });
-  assert.equal(setup.candidate, 'WAIT');
-  assert.ok(setup.reasons.includes('spread_filter_failed'));
-});
-
-test('range H1 blocks the M15 setup', () => {
-  const f = baseFeatures({
-    h1: { close: 1.1006, ema20: 1.1004, ema50: 1.1005, ema200: 1.0998, rsi14: 52, atr14: 0.0025 }
-  });
-  const setup = buildEurUsdSetup(f);
-  assert.equal(setup.trend, 'RANGE');
-  assert.equal(setup.candidate, 'WAIT');
-});
-
-test('fundamental assessment requires current evidence and multiple sources', () => {
-  const assessment = {
+function favorableAiAssessment(overrides = {}) {
+  return {
+    environment: 'FAVORABLE',
+    confidence: 0.80,
+    freshness: 'CURRENT',
     fundamental: {
-      bias: 'BULLISH_EURUSD',
-      confidence: 0.78,
-      freshness: 'CURRENT',
-      summary: 'Current macro evidence supports EURUSD higher.',
-      drivers: ['ECB expectations', 'relative rate outlook'],
-      risks: [],
-      source_urls: ['https://www.ecb.europa.eu/x', 'https://www.reuters.com/x']
+      bias: 'BEARISH_EURUSD',
+      summary: 'Macro bias is mixed-to-bearish, but no near-term event risk is identified.',
+      drivers: ['relative rate expectations'],
+      risks: ['policy uncertainty'],
+      source_urls: ['https://www.ecb.europa.eu/', 'https://www.reuters.com/']
     },
     event_risk_next_24h: 'LOW',
     event_summary: '',
     sources: [
-      { title: 'ECB', url: 'https://www.ecb.europa.eu/x' },
-      { title: 'Reuters', url: 'https://www.reuters.com/x' }
-    ]
+      { title: 'ECB', url: 'https://www.ecb.europa.eu/' },
+      { title: 'Reuters', url: 'https://www.reuters.com/' }
+    ],
+    ...overrides
   };
-  const checked = validateEurUsdFundamentalAssessment(assessment, new Date('2026-10-02T00:00:00Z'));
-  assert.equal(checked.ok, true);
+}
+
+test('EURUSD high-quality M15 range breakout aligns with H1 uptrend', () => {
+  const f = baseFeatures();
+  assert.deepEqual(validateEurUsdFeatures(f), []);
+
+  const setup = buildEurUsdSetup(f, {
+    maxSpreadPips: 1.0,
+    maxSpreadToTpPct: 20
+  });
+
+  assert.equal(setup.trend, 'UP');
+  assert.equal(setup.candidate, 'BUY', JSON.stringify(setup, null, 2));
+  assert.equal(setup.setup_type, 'BREAKOUT');
+  assert.ok(setup.quality_score >= 95);
+  assert.ok(setup.range_width_atr >= 0.75 && setup.range_width_atr <= 2);
+  assert.ok(setup.breakout_distance_atr >= 0.10);
+  assert.ok(setup.breakout_body_atr >= 0.35);
+  assert.ok(setup.breakout_close_location + 1e-9 >= 0.70);
+  assert.ok(setup.volume_confirmation);
+  assert.equal(setup.risk_reward, 2);
 });
 
-test('fundamental conflict forces WAIT', () => {
+test('EURUSD high-quality M15 range breakout supports SELL in H1 downtrend', () => {
+  const f = baseFeatures({
+    bid: 1.10069,
+    ask: 1.10077,
+    m15: { ema20: 1.10100, ema50: 1.10130, rsi14: 42, atr14: 0.00080 },
+    h1: { close: 1.10060, ema20: 1.10180, ema50: 1.10210, ema200: 1.10270, rsi14: 44, atr14: 0.00250 },
+    recent_m15: setupBarsSell()
+  });
+
+  const setup = buildEurUsdSetup(f, {
+    maxSpreadPips: 1.0,
+    maxSpreadToTpPct: 20
+  });
+
+  assert.equal(setup.trend, 'DOWN');
+  assert.equal(setup.candidate, 'SELL', JSON.stringify(setup, null, 2));
+  assert.equal(setup.setup_type, 'BREAKOUT');
+  assert.ok(setup.quality_score >= 95);
+});
+
+test('pullback without a range breakout is ignored', () => {
+  const bars = setupBarsBuy().slice();
+  bars[7] = {
+    time: 1727006300,
+    open: 1.10025,
+    high: 1.10055,
+    low: 1.10015,
+    close: 1.10040,
+    volume: 220
+  };
+
+  const f = baseFeatures({ recent_m15: bars });
+  const setup = buildEurUsdSetup(f);
+
+  assert.equal(setup.candidate, 'WAIT');
+  assert.ok(setup.reasons.includes('breakout_penetration_too_small'));
+});
+
+
+test('missing breakout volume does not invalidate a technically complete breakout', () => {
+  const bars = setupBarsBuy().map((bar) => ({ ...bar, volume: 0 }));
+  const f = baseFeatures({ recent_m15: bars });
+  const setup = buildEurUsdSetup(f);
+  assert.equal(setup.candidate, 'BUY');
+  assert.equal(setup.volume_data_available, false);
+  assert.equal(setup.volume_confirmation, false);
+  assert.equal(setup.volume_gate_passed, true);
+});
+
+test('wide spread blocks an otherwise valid breakout', () => {
+  const f = baseFeatures({
+    spread: 0.00015,
+    ask: 1.10065
+  });
+  const setup = buildEurUsdSetup(f, { maxSpreadPips: 1.0 });
+
+  assert.equal(setup.candidate, 'WAIT');
+  assert.ok(setup.reasons.includes('spread_filter_failed'));
+});
+
+test('H1 range blocks the M15 breakout', () => {
+  const f = baseFeatures({
+    h1: { close: 1.10060, ema20: 1.10040, ema50: 1.10050, ema200: 1.09980, rsi14: 52, atr14: 0.00250 }
+  });
+
+  const setup = buildEurUsdSetup(f);
+
+  assert.equal(setup.trend, 'RANGE');
+  assert.equal(setup.candidate, 'WAIT');
+  assert.ok(setup.reasons.includes('h1_trend_not_clear'));
+});
+
+test('AI environment validation requires fresh evidence and multiple sources', () => {
+  const checked = validateEurUsdFundamentalAssessment(favorableAiAssessment());
+  assert.equal(checked.ok, true);
+  assert.equal(checked.environment, 'FAVORABLE');
+  assert.equal(checked.primary_or_reuters_source_count, 2);
+  assert.equal(checked.independent_source_host_count, 2);
+});
+
+test('AI environment is the gate, not the technical direction', () => {
   const confirmation = buildEurUsdFundamentalDecision({
     candidate: 'BUY',
-    assessment: {
+    assessment: favorableAiAssessment({
       fundamental: {
         bias: 'BEARISH_EURUSD',
-        confidence: 0.80,
-        freshness: 'CURRENT',
-        summary: 'conflict',
+        summary: 'Opposite macro bias is retained as context.',
         drivers: [],
         risks: [],
-        source_urls: []
-      },
-      event_risk_next_24h: 'LOW',
-      event_summary: '',
-      sources: [
-        { title: 'ECB', url: 'https://www.ecb.europa.eu/x' },
-        { title: 'Reuters', url: 'https://www.reuters.com/x' }
-      ]
-    }
+        source_urls: ['https://www.ecb.europa.eu/', 'https://www.reuters.com/']
+      }
+    })
   });
-  assert.equal(confirmation.decision, 'WAIT');
-  assert.ok(confirmation.invalid_reasons.includes('fundamental_conflict'));
+
+  assert.equal(confirmation.decision, 'BUY');
+  assert.equal(confirmation.environment, 'FAVORABLE');
 });
 
-
-test('EURUSD risk engine approves only when technical and fundamental filters align', () => {
-  const f = normalizeEurUsdFeatures({
-    bid: 1.10100,
-    ask: 1.10108,
-    point: 0.00001,
-    spread: 0.00008,
-    bar_time: 1727006300,
-    m15: { ema20: 1.10060, ema50: 1.10030, rsi14: 55, atr14: 0.00080 },
-    h1: { close: 1.10100, ema20: 1.10080, ema50: 1.10040, ema200: 1.09980, rsi14: 56, atr14: 0.00250 },
-    recent_m15: setupBarsBuy()
+test('AI caution blocks entry', () => {
+  const confirmation = buildEurUsdFundamentalDecision({
+    candidate: 'BUY',
+    assessment: favorableAiAssessment({ environment: 'CAUTION' })
   });
-  const setup = buildEurUsdSetup(f, { maxSpreadPips: 1.0, maxSpreadToTpPct: 20 });
+
+  assert.equal(confirmation.decision, 'WAIT');
+  assert.ok(confirmation.invalid_reasons.includes('ai_environment_not_favorable'));
+});
+
+test('high-impact event blocks entry even with favorable AI label', () => {
+  const assessment = favorableAiAssessment({ event_risk_next_24h: 'HIGH' });
+  const checked = validateEurUsdFundamentalAssessment(assessment);
+
+  assert.equal(checked.ok, false);
+  assert.ok(checked.reasons.includes('high_impact_event_next_24h'));
+
+  const confirmation = buildEurUsdFundamentalDecision({ candidate: 'BUY', assessment });
+  assert.equal(confirmation.decision, 'WAIT');
+});
+
+test('risk engine approves only when breakout, risk and AI environment align', () => {
+  const f = baseFeatures();
+  const setup = buildEurUsdSetup(f);
+  assert.equal(setup.candidate, 'BUY', JSON.stringify(setup, null, 2));
+
   const decision = {
     decision: 'BUY',
     candidate: 'BUY',
-    confidence: 1,
-    risk_reward: 2,
+    confidence: setup.quality_score / 100,
+    risk_reward: setup.risk_reward,
     entry: setup.entry,
     stop_loss: setup.stop_loss,
-    take_profit: setup.take_profit
+    take_profit: setup.take_profit,
+    ai_environment: {
+      status: 'FAVORABLE',
+      confidence: 0.80
+    }
   };
-  const fundamentalAssessment = {
-    fundamental: { bias: 'BULLISH_EURUSD', confidence: 0.80, freshness: 'CURRENT' },
-    event_risk_next_24h: 'LOW'
-  };
+
   const risk = evaluateEurUsdRisk({
     decision,
     setup,
     features: f,
-    account: { equity: 100000, open_positions: 0, daily_pnl_pct: 0, drawdown_pct: 0, risk_data_ready: true, trade_allowed: 1, tick_size: 0.00001, tick_value: 1, min_lot: 0.01, max_lot: 100, lot_step: 0.01 },
+    account: {
+      equity: 100000,
+      open_positions: 0,
+      daily_pnl_pct: 0,
+      drawdown_pct: 0,
+      risk_data_ready: true,
+      trade_allowed: 1,
+      tick_size: 0.00001,
+      tick_value: 1,
+      min_lot: 0.01,
+      max_lot: 100,
+      lot_step: 0.01
+    },
     signalCreatedAt: 1727006300000,
     now: 1727006300000,
-    fundamentalAssessment
+    fundamentalAssessment: favorableAiAssessment()
   });
+
   assert.equal(risk.approved, true);
   assert.ok(risk.lots > 0);
 });
