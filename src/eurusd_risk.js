@@ -53,7 +53,7 @@ export function evaluateEurUsdRisk({
   if (direction !== 'WAIT' && candidate !== direction) reasons.push('candidate_direction_mismatch');
 
   if (direction !== 'WAIT') {
-    if (setup?.setup_type !== 'BREAKOUT') reasons.push('unsupported_setup_type');
+    if (!['BREAKOUT', 'BREAKOUT_RETEST'].includes(String(setup?.setup_type || ''))) reasons.push('unsupported_setup_type');
     for (const field of ['entry', 'stop_loss', 'take_profit', 'risk_reward']) {
       const decisionValue = Number(d[field]);
       const setupValue = Number(setup?.[field]);
