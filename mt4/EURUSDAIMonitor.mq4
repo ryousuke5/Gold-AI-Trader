@@ -54,7 +54,7 @@ string NormalizeBaseUrl()
 string JsonEscape(string value)
 {
    StringReplace(value, "\\", "\\\\");
-   StringReplace(value, """, "\"");
+   StringReplace(value, "\"", "\\\"");
    StringReplace(value, "\r", "\\r");
    StringReplace(value, "\n", "\\n");
    StringReplace(value, "\t", "\\t");
