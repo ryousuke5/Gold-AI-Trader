@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   normalizeEurUsdFeatures,
   validateEurUsdFeatures,
-  buildEurUsdSetup
+  buildEurUsdSetup,
+  buildEurUsdSetupWithRetest
 } from '../src/eurusd_features.js';
 import {
   buildEurUsdFundamentalDecision,
@@ -111,6 +112,48 @@ test('EURUSD high-quality M15 range breakout supports SELL in H1 downtrend', () 
   assert.equal(setup.candidate, 'SELL', JSON.stringify(setup, null, 2));
   assert.equal(setup.setup_type, 'BREAKOUT');
   assert.ok(setup.quality_score >= 95);
+});
+
+function setupBarsBuyRetest() {
+  return [
+    { time: 1727000000, open: 1.10000, high: 1.10020, low: 1.09990, close: 1.10010, volume: 100 },
+    { time: 1727000900, open: 1.10010, high: 1.10030, low: 1.10000, close: 1.10020, volume: 110 },
+    { time: 1727001800, open: 1.10020, high: 1.10038, low: 1.10012, close: 1.10018, volume: 120 },
+    { time: 1727002700, open: 1.10018, high: 1.10035, low: 1.10005, close: 1.10010, volume: 130 },
+    { time: 1727003600, open: 1.10010, high: 1.10028, low: 1.10005, close: 1.10008, volume: 140 },
+    { time: 1727004500, open: 1.10008, high: 1.10028, low: 1.10005, close: 1.10000, volume: 150 },
+    { time: 1727005400, open: 1.10025, high: 1.10095, low: 1.10020, close: 1.10082, volume: 220 },
+    { time: 1727006300, open: 1.10045, high: 1.10075, low: 1.10030, close: 1.10070, volume: 180 }
+  ];
+}
+
+test('EURUSD breakout-retest detects a controlled pullback after a confirmed breakout', () => {
+  const f = baseFeatures({ recent_m15: setupBarsBuyRetest() });
+  const setup = buildEurUsdSetupWithRetest(f, {
+    frequencyMode: 'balanced-weekly',
+    retestEnabled: true,
+    retestMaxAgeBars: 4,
+    retestToleranceAtr: 0.25,
+    retestMinBodyAtr: 0.10,
+    retestMinCloseLocation: 0.55,
+    retestStopBufferAtr: 0.50,
+    retestTakeProfitR: 2
+  });
+
+  assert.equal(setup.trend, 'UP');
+  assert.equal(setup.candidate, 'BUY', JSON.stringify(setup, null, 2));
+  assert.equal(setup.setup_type, 'BREAKOUT_RETEST');
+  assert.equal(setup.retest_age_bars, 1);
+  assert.ok(setup.retest_level > 1.10030 && setup.retest_level < 1.10045);
+  assert.ok(setup.stop_atr >= 0.50 && setup.stop_atr <= 1.50);
+  assert.equal(setup.risk_reward, 2);
+});
+
+test('EURUSD breakout-retest is disabled without changing the primary breakout engine', () => {
+  const f = baseFeatures({ recent_m15: setupBarsBuyRetest() });
+  const setup = buildEurUsdSetupWithRetest(f, { retestEnabled: false });
+  assert.equal(setup.candidate, 'WAIT');
+  assert.notEqual(setup.setup_type, 'BREAKOUT_RETEST');
 });
 
 test('pullback without a range breakout is ignored', () => {
