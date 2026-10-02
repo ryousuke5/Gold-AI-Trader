@@ -143,6 +143,8 @@ function rsiInSellContinuationZone(rsi, min, max) {
  * The AI layer is intentionally NOT used here; it is an environment filter downstream.
  */
 export function buildEurUsdSetup(f, options = {}) {
+  const frequencyMode = String(options.frequencyMode ?? process.env.EURUSD_FREQUENCY_MODE ?? 'high-quality').toLowerCase();
+  const targetTradesPerWeek = Math.max(0, Number(options.targetTradesPerWeek ?? process.env.EURUSD_TARGET_TRADES_PER_WEEK ?? 1));
   const rangeLookback = Math.max(4, Math.floor(Number(options.rangeLookback ?? process.env.EURUSD_RANGE_LOOKBACK ?? 6)));
   const minRangeAtr = Math.max(0.1, Number(options.minRangeAtr ?? process.env.EURUSD_MIN_RANGE_ATR ?? 0.75));
   const maxRangeAtr = Math.max(minRangeAtr, Number(options.maxRangeAtr ?? process.env.EURUSD_MAX_RANGE_ATR ?? 2.00));
@@ -166,6 +168,8 @@ export function buildEurUsdSetup(f, options = {}) {
   const bars = sortBarsAscending(f.recentM15);
   if (bars.length < rangeLookback + 1) {
     return {
+      frequency_mode: frequencyMode,
+      target_trades_per_week: targetTradesPerWeek,
       candidate: 'WAIT',
       quality_score: 0,
       setup_type: 'NONE',
@@ -359,6 +363,8 @@ export function buildEurUsdSetup(f, options = {}) {
   const stopDistance = Math.abs(entry - stopLoss);
   const tpDistance = Math.abs(takeProfit - entry);
   return {
+    frequency_mode: frequencyMode,
+    target_trades_per_week: targetTradesPerWeek,
     candidate: finalCandidate,
     quality_score: Math.min(100, Math.max(0, score)),
     setup_type: 'BREAKOUT',
