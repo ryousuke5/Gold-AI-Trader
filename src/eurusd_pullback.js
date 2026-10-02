@@ -30,7 +30,9 @@ function emaLast(values, period) {
  * It is purely deterministic and remains behind the existing risk/AI gates.
  */
 export function buildEurUsdTrendPullbackSetup(features, options = {}) {
-  const f = normalizeEurUsdFeatures(features);
+  const f = features?.recentM15
+    ? features
+    : normalizeEurUsdFeatures(features);
   const primary = buildEurUsdSetup(f, options);
   if (primary.candidate !== 'WAIT') return primary;
 
