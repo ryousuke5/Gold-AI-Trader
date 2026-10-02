@@ -158,7 +158,7 @@ function buildRetestCandidate(f, bars, trend, options) {
   const maxLevelPenetrationAtr = Math.max(0.02, Number(options.retestMaxLevelPenetrationAtr ?? process.env.EURUSD_RETEST_MAX_LEVEL_PENETRATION_ATR ?? 0.10));
   const minLevelSeparationAtr = Math.max(0.02, Number(options.retestMinLevelSeparationAtr ?? process.env.EURUSD_RETEST_MIN_LEVEL_SEPARATION_ATR ?? 0.08));
   const minRetestBodyAtr = Math.max(0.05, Number(options.retestMinBodyAtr ?? process.env.EURUSD_RETEST_MIN_BODY_ATR ?? 0.20));
-  const minRetestCloseLocation = Math.min(0.99, Math.max(0.5, Number(options.retestMinCloseLocation ?? process.env.EURUSD_RETEST_MIN_CLOSE_LOCATION ?? 0.60));
+  const minRetestCloseLocation = Math.min(0.99, Math.max(0.5, Number(options.retestMinCloseLocation ?? process.env.EURUSD_RETEST_MIN_CLOSE_LOCATION ?? 0.60)));
   const minRetestWickAtr = Math.max(0.05, Number(options.retestMinWickAtr ?? process.env.EURUSD_RETEST_MIN_WICK_ATR ?? 0.12));
   const minRetestWickShare = Math.min(0.9, Math.max(0.1, Number(options.retestMinWickShare ?? process.env.EURUSD_RETEST_MIN_WICK_SHARE ?? 0.25)));
   const breakoutMinAtr = Math.max(0.02, Number(options.retestBreakoutMinAtr ?? process.env.EURUSD_RETEST_BREAKOUT_MIN_ATR ?? 0.10));
