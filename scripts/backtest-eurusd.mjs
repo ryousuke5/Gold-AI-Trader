@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildEurUsdSetup } from '../src/eurusd_features.js';
+import { buildEurUsdSetupWithPullback } from '../src/eurusd_features.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +22,18 @@ const CONFIG = {
   maxDrawdownPct: Math.max(0.1, Number(process.env.BACKTEST_MAX_DRAWDOWN_PCT || 5)),
   frequencyMode: String(process.env.BACKTEST_FREQUENCY_MODE || 'high-quality'),
   targetTradesPerWeek: Math.max(0, Number(process.env.BACKTEST_TARGET_TRADES_PER_WEEK || 1)),
+  pullbackEnabled: String(process.env.BACKTEST_PULLBACK_ENABLED ?? 'false').toLowerCase() !== 'false',
+  pullbackMaxAgeBars: Math.max(2, Number(process.env.BACKTEST_PULLBACK_MAX_AGE_BARS || 5)),
+  pullbackEmaToleranceAtr: Math.max(0.05, Number(process.env.BACKTEST_PULLBACK_EMA_TOLERANCE_ATR || 0.20)),
+  pullbackMinBodyAtr: Math.max(0.05, Number(process.env.BACKTEST_PULLBACK_MIN_BODY_ATR || 0.15)),
+  pullbackMinCloseLocation: Math.min(0.95, Math.max(0.5, Number(process.env.BACKTEST_PULLBACK_MIN_CLOSE_LOCATION || 0.60))),
+  pullbackMinImpulseBreakAtr: Math.max(0.02, Number(process.env.BACKTEST_PULLBACK_MIN_IMPULSE_BREAK_ATR || 0.04)),
+  pullbackBuyRsiMin: Math.max(1, Number(process.env.BACKTEST_PULLBACK_BUY_RSI_MIN || 48)),
+  pullbackBuyRsiMax: Math.min(99, Number(process.env.BACKTEST_PULLBACK_BUY_RSI_MAX || 66)),
+  pullbackSellRsiMin: Math.max(1, Number(process.env.BACKTEST_PULLBACK_SELL_RSI_MIN || 34)),
+  pullbackSellRsiMax: Math.min(99, Number(process.env.BACKTEST_PULLBACK_SELL_RSI_MAX || 52)),
+  pullbackStopBufferAtr: Math.max(0.1, Number(process.env.BACKTEST_PULLBACK_STOP_BUFFER_ATR || 0.15)),
+  pullbackTakeProfitR: Math.max(1.2, Number(process.env.BACKTEST_PULLBACK_TAKE_PROFIT_R || 2)),
   rangeLookback: Math.max(4, Number(process.env.BACKTEST_RANGE_LOOKBACK || 6)),
   minRangeAtr: Math.max(0.1, Number(process.env.BACKTEST_MIN_RANGE_ATR || 0.75)),
   maxRangeAtr: Math.max(0.2, Number(process.env.BACKTEST_MAX_RANGE_ATR || 2.00)),
@@ -678,7 +690,7 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       recentH1: sliceRecentBars(h1Ind, h1Index, 80)
     };
 
-    const setup = buildEurUsdSetup(features, {
+    const setup = buildEurUsdSetupWithPullback(features, {
       maxSpreadPips: config.maxSpreadPips,
       maxSpreadAtrPct: 15,
       minStopAtr: config.minStopAtr,
@@ -696,7 +708,19 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       sellRsiMin: config.breakoutSellRsiMin,
       sellRsiMax: config.breakoutSellRsiMax,
       frequencyMode: config.frequencyMode,
-      targetTradesPerWeek: config.targetTradesPerWeek
+      targetTradesPerWeek: config.targetTradesPerWeek,
+      pullbackEnabled: config.pullbackEnabled,
+      pullbackMaxAgeBars: config.pullbackMaxAgeBars,
+      pullbackEmaToleranceAtr: config.pullbackEmaToleranceAtr,
+      pullbackMinBodyAtr: config.pullbackMinBodyAtr,
+      pullbackMinCloseLocation: config.pullbackMinCloseLocation,
+      pullbackMinImpulseBreakAtr: config.pullbackMinImpulseBreakAtr,
+      pullbackBuyRsiMin: config.pullbackBuyRsiMin,
+      pullbackBuyRsiMax: config.pullbackBuyRsiMax,
+      pullbackSellRsiMin: config.pullbackSellRsiMin,
+      pullbackSellRsiMax: config.pullbackSellRsiMax,
+      pullbackStopBufferAtr: config.pullbackStopBufferAtr,
+      pullbackTakeProfitR: config.pullbackTakeProfitR
     });
     if (setup.candidate === 'WAIT') continue;
 
