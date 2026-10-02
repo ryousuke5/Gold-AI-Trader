@@ -25,6 +25,7 @@ jobs:
             buy_rsi_max: "68"
             sell_rsi_min: "32"
             sell_rsi_max: "50"
+            min_volume_ratio: "1.10"
           - name: balanced-weekly
             range_lookback: "5"
             min_range_atr: "0.50"
@@ -36,6 +37,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            min_volume_ratio: "1.10"
           - name: frequent
             range_lookback: "4"
             min_range_atr: "0.50"
@@ -47,6 +49,7 @@ jobs:
             buy_rsi_max: "72"
             sell_rsi_min: "28"
             sell_rsi_max: "53"
+            min_volume_ratio: "1.10"
           - name: compromise-lookback4
             range_lookback: "4"
             min_range_atr: "0.50"
@@ -58,6 +61,7 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            min_volume_ratio: "1.10"
           - name: compromise-body20
             range_lookback: "5"
             min_range_atr: "0.50"
@@ -69,6 +73,91 @@ jobs:
             buy_rsi_max: "70"
             sell_rsi_min: "30"
             sell_rsi_max: "52"
+            min_volume_ratio: "1.10"
+          - name: expanded-range
+            range_lookback: "4"
+            min_range_atr: "0.35"
+            max_range_atr: "3.00"
+            breakout_min_atr: "0.03"
+            breakout_min_body_atr: "0.20"
+            breakout_min_close_location: "0.58"
+            buy_rsi_min: "47"
+            buy_rsi_max: "72"
+            sell_rsi_min: "28"
+            sell_rsi_max: "53"
+            min_volume_ratio: "1.10"
+          - name: expanded-range-strongvol
+            range_lookback: "4"
+            min_range_atr: "0.35"
+            max_range_atr: "3.00"
+            breakout_min_atr: "0.03"
+            breakout_min_body_atr: "0.20"
+            breakout_min_close_location: "0.58"
+            buy_rsi_min: "47"
+            buy_rsi_max: "72"
+            sell_rsi_min: "28"
+            sell_rsi_max: "53"
+            min_volume_ratio: "1.20"
+          - name: range40-body20
+            range_lookback: "4"
+            min_range_atr: "0.40"
+            max_range_atr: "2.75"
+            breakout_min_atr: "0.04"
+            breakout_min_body_atr: "0.20"
+            breakout_min_close_location: "0.58"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+            min_volume_ratio: "1.10"
+          - name: range40-body20-strongvol
+            range_lookback: "4"
+            min_range_atr: "0.40"
+            max_range_atr: "2.75"
+            breakout_min_atr: "0.04"
+            breakout_min_body_atr: "0.20"
+            breakout_min_close_location: "0.58"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+            min_volume_ratio: "1.20"
+          - name: lookback4-body18
+            range_lookback: "4"
+            min_range_atr: "0.50"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.05"
+            breakout_min_body_atr: "0.18"
+            breakout_min_close_location: "0.58"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+            min_volume_ratio: "1.10"
+          - name: lookback4-close60-body20
+            range_lookback: "4"
+            min_range_atr: "0.50"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.05"
+            breakout_min_body_atr: "0.20"
+            breakout_min_close_location: "0.60"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+            min_volume_ratio: "1.10"
+          - name: lookback4-tightrsi
+            range_lookback: "4"
+            min_range_atr: "0.50"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.05"
+            breakout_min_body_atr: "0.20"
+            breakout_min_close_location: "0.58"
+            buy_rsi_min: "49"
+            buy_rsi_max: "69"
+            sell_rsi_min: "31"
+            sell_rsi_max: "51"
+            min_volume_ratio: "1.10"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -101,6 +190,7 @@ jobs:
           BACKTEST_BREAKOUT_MIN_ATR: ${{ matrix.breakout_min_atr }}
           BACKTEST_BREAKOUT_MIN_BODY_ATR: ${{ matrix.breakout_min_body_atr }}
           BACKTEST_BREAKOUT_MIN_CLOSE_LOCATION: ${{ matrix.breakout_min_close_location }}
+          BACKTEST_MIN_VOLUME_RATIO: ${{ matrix.min_volume_ratio || '1.10' }}
           BACKTEST_BREAKOUT_BUY_RSI_MIN: ${{ matrix.buy_rsi_min }}
           BACKTEST_BREAKOUT_BUY_RSI_MAX: ${{ matrix.buy_rsi_max }}
           BACKTEST_BREAKOUT_SELL_RSI_MIN: ${{ matrix.sell_rsi_min }}
