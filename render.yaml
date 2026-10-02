@@ -36,7 +36,7 @@ services:
       - key: MAX_RISK_PER_TRADE_PCT
         value: "2"
       - key: EURUSD_STRATEGY_VERSION
-        value: eurusd-m15-h1-ai-environment-v2
+        value: eurusd-m15-h1-ai-environment-v3-balanced-weekly
       - key: EURUSD_FREQUENCY_MODE
         value: balanced-weekly
       - key: EURUSD_TARGET_TRADES_PER_WEEK
