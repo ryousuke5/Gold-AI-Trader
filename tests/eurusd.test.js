@@ -129,6 +129,63 @@ test('EURUSD trend-pullback detects EMA20 touch and re-acceleration without chan
   assert.equal(setup.risk_reward, 2);
 });
 
+test('EURUSD trend-pullback integrates with the existing risk gate', () => {
+  const bars = trendPullbackBarsBuy();
+  const f = baseFeatures({
+    bid: 1.10202,
+    ask: 1.10210,
+    bar_time: bars[bars.length - 1].time,
+    m15: { ema20: 1.10190, ema50: 1.10155, rsi14: 60, atr14: 0.00080 },
+    recent_m15: bars
+  });
+  const setup = buildEurUsdTrendPullbackSetup(f, {
+    pullbackEnabled: true,
+    rangeLookback: 10,
+    minRangeAtr: 5,
+    maxRangeAtr: 6
+  });
+  assert.equal(setup.setup_type, 'TREND_PULLBACK');
+
+  const decision = {
+    decision: setup.candidate,
+    candidate: setup.candidate,
+    confidence: setup.quality_score / 100,
+    risk_reward: setup.risk_reward,
+    entry: setup.entry,
+    stop_loss: setup.stop_loss,
+    take_profit: setup.take_profit,
+    ai_environment: { status: 'FAVORABLE', confidence: 0.80 }
+  };
+
+  const risk = evaluateEurUsdRisk({
+    decision,
+    setup,
+    features: f,
+    account: {
+      equity: 100000,
+      open_positions: 0,
+      daily_pnl_pct: 0,
+      drawdown_pct: 0,
+      risk_data_ready: true,
+      trade_allowed: 1,
+      tick_size: 0.00001,
+      tick_value: 1,
+      min_lot: 0.01,
+      max_lot: 100,
+      lot_step: 0.01,
+      point: 0.00001,
+      stop_level_points: 0
+    },
+    signalCreatedAt: 1727000000000,
+    now: 1727000000000,
+    fundamentalAssessment: favorableAiAssessment()
+  });
+
+  assert.equal(risk.approved, true, JSON.stringify(risk, null, 2));
+  assert.ok(risk.lots > 0);
+  assert.equal(risk.actualRR, 2);
+});
+
 test('EURUSD trend-pullback is disabled by default and primary breakout result is unchanged', () => {
   const f = baseFeatures();
   const primary = buildEurUsdSetup(f);
