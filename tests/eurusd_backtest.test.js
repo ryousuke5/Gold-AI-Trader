@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFundamentalCsv, latestFundamentalAssessment, fundamentalGate, tradesToCsv, backtestRiskGate, shiftBarsToCloseTime, latestCompletedH1Index } from '../scripts/backtest-eurusd.mjs';
+import { parseCsv, parseFundamentalCsv, latestFundamentalAssessment, fundamentalGate, tradesToCsv, backtestRiskGate, shiftBarsToCloseTime, latestCompletedH1Index } from '../scripts/backtest-eurusd.mjs';
 import { classifyFundamentalProxy } from '../scripts/build-eurusd-fundamental-proxy.mjs';
 
 function ema(values, period) {
@@ -34,6 +34,25 @@ test('EURUSD risk lot sizing floors to broker lot step', () => {
   const rawLots = riskCash / (stopDistance * 100000);
   assert.equal(floorLot(rawLots, 0.01, 100, 0.01), 2.5);
   assert.equal(floorLot(0.004, 0.01, 100, 0.01), 0);
+});
+
+test('historical EURUSD parser reads tick_volume as volume', () => {
+  const rows = parseCsv([
+    'Date,Open,High,Low,Close,tick_volume',
+    '2024-01-02 00:00:00,1.10000,1.10100,1.09950,1.10050,123',
+    '2024-01-02 00:15:00,1.10050,1.10150,1.10000,1.10100,250'
+  ].join('\n'));
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].volume, 123);
+  assert.equal(rows[1].volume, 250);
+});
+
+test('volume column takes precedence over tick_volume when both exist', () => {
+  const rows = parseCsv([
+    'datetime,open,high,low,close,volume,tick_volume',
+    '2024-01-02T00:00:00Z,1.10000,1.10100,1.09950,1.10050,7,123'
+  ].join('\n'));
+  assert.equal(rows[0].volume, 7);
 });
 
 test('backtest canonicalizes open timestamps to candle-close timestamps', () => {

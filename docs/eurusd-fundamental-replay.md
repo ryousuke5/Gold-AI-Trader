@@ -45,7 +45,7 @@ At an M15 signal close, the H1 filter uses the latest H1 candle whose close time
 
 ## Data provenance
 
-For the currently configured technical backtests, the project uses public EURUSD M15/H1 CSV sources in GitHub Actions. See the workflow files for exact source URLs and date windows.
+For the currently configured technical backtests, the project uses public EURUSD M15/H1 CSV sources in GitHub Actions. See the workflow files for exact source URLs and date windows. The CSV parser accepts `volume`, `tick_volume`, and `real_volume`; when multiple are present it prefers `volume`. MT4 monitoring uses `iVolume`, so `tick_volume` is the matching historical proxy when that is the source column.
 
 ## Deterministic macro proxy
 

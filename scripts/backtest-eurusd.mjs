@@ -67,12 +67,13 @@ function splitCsvLine(line) {
   return line.split(',');
 }
 
-function parseCsv(text) {
+export function parseCsv(text) {
   const lines = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
   if (lines.length < 2) return [];
   const header = splitCsvLine(lines[0]).map((x) => x.trim().replace(/^"|"$/g, '').toLowerCase());
   let idx = Object.fromEntries(header.map((h, i) => [h, i]));
   let dateKey = ['datetime', 'date', 'time', 'timestamp', 'timestamp_utc'].find((key) => idx[key] !== undefined) || header[0];
+  let volumeKey = ['volume', 'tick_volume', 'real_volume'].find((key) => idx[key] !== undefined) || null;
   let startLine = 1;
 
   const headerLooksLikeData =
@@ -83,6 +84,7 @@ function parseCsv(text) {
   if (headerLooksLikeData) {
     idx = { datetime: 0, open: 1, high: 2, low: 3, close: 4, volume: 5 };
     dateKey = 'datetime';
+    volumeKey = 'volume';
     startLine = 0;
   }
 
@@ -115,7 +117,7 @@ function parseCsv(text) {
       high,
       low,
       close,
-      volume: idx.volume !== undefined ? Number(cells[idx.volume]) || 0 : 0
+      volume: volumeKey !== null ? Number(cells[idx[volumeKey]]) || 0 : 0
     });
   }
   rows.sort((a, b) => a.time - b.time);
