@@ -80,7 +80,11 @@ function buildDecision(setup, fundamentalAssessment, fundamentalResult) {
     },
     fundamental: {
       bias: String(f.bias || 'INSUFFICIENT').toUpperCase(),
-      confidence: Number.isFinite(Number(f.confidence)) ? Number(f.confidence) : 0,
+      confidence: Number.isFinite(Number(f.confidence))
+        ? Number(f.confidence)
+        : Number.isFinite(Number(fundamentalAssessment?.confidence))
+          ? Number(fundamentalAssessment.confidence)
+          : 0,
       freshness: String(fundamentalAssessment?.freshness || f.freshness || 'INSUFFICIENT').toUpperCase(),
       summary: String(f.summary || ''),
       drivers: Array.isArray(f.drivers) ? f.drivers.map(String) : [],
