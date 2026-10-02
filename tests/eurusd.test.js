@@ -256,3 +256,26 @@ test('risk engine approves only when breakout, risk and AI environment align', (
   assert.equal(risk.approved, true);
   assert.ok(risk.lots > 0);
 });
+
+
+test('balanced-weekly mode uses the frequency-tuned technical parameters', () => {
+  const f = baseFeatures();
+  const setup = buildEurUsdSetup(f, {
+    frequencyMode: 'balanced-weekly',
+    targetTradesPerWeek: 1,
+    rangeLookback: 5,
+    minRangeAtr: 0.50,
+    maxRangeAtr: 2.50,
+    breakoutAtr: 0.05,
+    minBodyAtr: 0.25,
+    minCloseLocation: 0.60,
+    buyRsiMin: 48,
+    buyRsiMax: 70,
+    sellRsiMin: 30,
+    sellRsiMax: 52
+  });
+  assert.equal(setup.frequency_mode, 'balanced-weekly');
+  assert.equal(setup.target_trades_per_week, 1);
+  assert.equal(setup.candidate, 'BUY');
+  assert.equal(setup.setup_type, 'BREAKOUT');
+});
