@@ -11,9 +11,9 @@ const requiredTokens = [
   'PostJson',
   'PERIOD_M15',
   'PERIOD_H1',
-  '"bar_time"',
-  '"recent_m15"',
-  '"recent_h1"',
+  'bar_time',
+  'recent_m15',
+  'recent_h1',
   'X-Gold-API-Key'
 ];
 
