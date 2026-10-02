@@ -25,7 +25,7 @@ const CONFIG = {
   maxRangeAtr: Math.max(0.2, Number(process.env.BACKTEST_MAX_RANGE_ATR || 2.00)),
   breakoutMinAtr: Math.max(0.02, Number(process.env.BACKTEST_BREAKOUT_MIN_ATR || 0.10)),
   breakoutMinBodyAtr: Math.max(0.05, Number(process.env.BACKTEST_BREAKOUT_MIN_BODY_ATR || 0.35)),
-  breakoutMinCloseLocation: Math.min(0.99, Math.max(0.5, Number(process.env.BACKTEST_MIN_CLOSE_LOCATION || 0.70))),
+  breakoutMinCloseLocation: Math.min(0.99, Math.max(0.5, Number(process.env.BACKTEST_BREAKOUT_MIN_CLOSE_LOCATION || 0.70))),
   breakoutBuyRsiMin: Math.max(1, Number(process.env.BACKTEST_BREAKOUT_BUY_RSI_MIN || 50)),
   breakoutBuyRsiMax: Math.min(99, Number(process.env.BACKTEST_BREAKOUT_BUY_RSI_MAX || 68)),
   breakoutSellRsiMin: Math.max(1, Number(process.env.BACKTEST_BREAKOUT_SELL_RSI_MIN || 32)),
