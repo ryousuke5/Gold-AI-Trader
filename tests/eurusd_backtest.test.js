@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFundamentalCsv, latestFundamentalAssessment, fundamentalGate, tradesToCsv, backtestRiskGate } from '../scripts/backtest-eurusd.mjs';
+import { parseFundamentalCsv, latestFundamentalAssessment, fundamentalGate, tradesToCsv, backtestRiskGate, shiftBarsToCloseTime, latestCompletedH1Index } from '../scripts/backtest-eurusd.mjs';
 import { classifyFundamentalProxy } from '../scripts/build-eurusd-fundamental-proxy.mjs';
 
 function ema(values, period) {
@@ -34,6 +34,21 @@ test('EURUSD risk lot sizing floors to broker lot step', () => {
   const rawLots = riskCash / (stopDistance * 100000);
   assert.equal(floorLot(rawLots, 0.01, 100, 0.01), 2.5);
   assert.equal(floorLot(0.004, 0.01, 100, 0.01), 0);
+});
+
+test('backtest canonicalizes open timestamps to candle-close timestamps', () => {
+  const bars = [{ time: Date.parse('2026-09-25T14:45:00Z') / 1000 }];
+  const shifted = shiftBarsToCloseTime(bars, 900);
+  assert.equal(new Date(shifted[0].time * 1000).toISOString(), '2026-09-25T15:00:00.000Z');
+});
+
+test('completed H1 lookup uses the latest H1 candle closed at signal time', () => {
+  const h1 = [
+    { time: Date.parse('2026-09-25T13:00:00Z') / 1000 },
+    { time: Date.parse('2026-09-25T14:00:00Z') / 1000 },
+    { time: Date.parse('2026-09-25T15:00:00Z') / 1000 }
+  ];
+  assert.equal(latestCompletedH1Index(h1, Date.parse('2026-09-25T15:00:00Z') / 1000), 2);
 });
 
 test('fundamental replay selects latest non-future assessment only', () => {
