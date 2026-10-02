@@ -254,14 +254,16 @@ function buildRetestCandidate(f, bars, trend, options) {
 
     const candidate = buyRetest ? 'BUY' : 'SELL';
     const entry = candidate === 'BUY' ? f.ask : f.bid;
+    const stopBufferAtr = Math.max(0.50, Number(options.retestStopBufferAtr ?? process.env.EURUSD_RETEST_STOP_BUFFER_ATR ?? 0.50));
     const stopLoss = candidate === 'BUY'
-      ? level - atr * 0.25
-      : level + atr * 0.25;
+      ? level - atr * stopBufferAtr
+      : level + atr * stopBufferAtr;
     const stopDistance = Math.abs(entry - stopLoss);
     const stopAtr = stopDistance / atr;
+    const takeProfitR = Math.max(1.2, Number(options.retestTakeProfitR ?? process.env.EURUSD_RETEST_TAKE_PROFIT_R ?? 2));
     const takeProfit = candidate === 'BUY'
-      ? entry + stopDistance * 2
-      : entry - stopDistance * 2;
+      ? entry + stopDistance * takeProfitR
+      : entry - stopDistance * takeProfitR;
     const spreadToTpPct = Math.abs(takeProfit - entry) > 0
       ? (f.spread / Math.abs(takeProfit - entry)) * 100
       : Infinity;
@@ -280,7 +282,7 @@ function buildRetestCandidate(f, bars, trend, options) {
       entry,
       stop_loss: stopLoss,
       take_profit: takeProfit,
-      risk_reward: 2,
+      risk_reward: takeProfitR,
       range_high: rangeHigh,
       range_low: rangeLow,
       range_width: rangeHigh - rangeLow,
@@ -301,6 +303,8 @@ function buildRetestCandidate(f, bars, trend, options) {
       retest_age_bars: age,
       retest_level: level,
       retest_tolerance_atr: toleranceAtr,
+      retest_stop_buffer_atr: stopBufferAtr,
+      retest_take_profit_r: takeProfitR,
       reasons: []
     };
   }
