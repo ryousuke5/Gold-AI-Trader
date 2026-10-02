@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   normalizeEurUsdFeatures,
   validateEurUsdFeatures,
-  buildEurUsdSetup
+  buildEurUsdSetup,
+  buildEurUsdSetupWithPullback
 } from '../src/eurusd_features.js';
 import {
   buildEurUsdFundamentalDecision,
@@ -71,6 +72,73 @@ function favorableAiAssessment(overrides = {}) {
     ...overrides
   };
 }
+
+function trendPullbackBarsBuy() {
+  const bars = [];
+  for (let i = 0; i < 25; i++) {
+    const close = 1.10000 + i * 0.00008;
+    bars.push({
+      time: 1727000000 + i * 900,
+      open: close - 0.00002,
+      high: close + 0.00005,
+      low: close - 0.00003,
+      close,
+      volume: 100 + i
+    });
+  }
+  bars.push(
+    { time: 1727000000 + 25 * 900, open: 1.10192, high: 1.10200, low: 1.10155, close: 1.10165, volume: 140 },
+    { time: 1727000000 + 26 * 900, open: 1.10165, high: 1.10185, low: 1.10150, close: 1.10170, volume: 150 },
+    { time: 1727000000 + 27 * 900, open: 1.10170, high: 1.10180, low: 1.10155, close: 1.10162, volume: 155 },
+    { time: 1727000000 + 28 * 900, open: 1.10162, high: 1.10175, low: 1.10148, close: 1.10165, volume: 165 },
+    { time: 1727000000 + 29 * 900, open: 1.10165, high: 1.10215, low: 1.10160, close: 1.10210, volume: 240 }
+  );
+  return bars;
+}
+
+test('EURUSD trend-pullback detects EMA20 touch followed by re-acceleration', () => {
+  const bars = trendPullbackBarsBuy();
+  const f = baseFeatures({
+    bid: 1.10202,
+    ask: 1.10210,
+    bar_time: bars[bars.length - 1].time,
+    m15: { ema20: 1.10190, ema50: 1.10155, rsi14: 60, atr14: 0.00080 },
+    recent_m15: bars
+  });
+  const setup = buildEurUsdSetupWithPullback(f, {
+    pullbackEnabled: true,
+    rangeLookback: 10,
+    minRangeAtr: 5,
+    maxRangeAtr: 6,
+    pullbackMaxAgeBars: 5,
+    pullbackEmaToleranceAtr: 0.20,
+    pullbackMinBodyAtr: 0.15,
+    pullbackMinCloseLocation: 0.60,
+    pullbackMinImpulseBreakAtr: 0.04,
+    pullbackBuyRsiMin: 48,
+    pullbackBuyRsiMax: 66,
+    pullbackStopBufferAtr: 0.15,
+    pullbackTakeProfitR: 2
+  });
+  assert.equal(setup.candidate, 'BUY', JSON.stringify(setup, null, 2));
+  assert.equal(setup.setup_type, 'TREND_PULLBACK');
+  assert.ok(setup.pullback_bars >= 1 && setup.pullback_bars <= 5);
+  assert.ok(setup.stop_atr >= 0.50 && setup.stop_atr <= 1.50);
+  assert.equal(setup.risk_reward, 2);
+});
+
+test('EURUSD trend-pullback can be disabled without changing primary breakout behavior', () => {
+  const bars = trendPullbackBarsBuy();
+  const f = baseFeatures({ recent_m15: bars });
+  const setup = buildEurUsdSetupWithPullback(f, {
+    pullbackEnabled: false,
+    rangeLookback: 10,
+    minRangeAtr: 5,
+    maxRangeAtr: 6
+  });
+  assert.equal(setup.candidate, 'WAIT');
+  assert.notEqual(setup.setup_type, 'TREND_PULLBACK');
+});
 
 test('EURUSD high-quality M15 range breakout aligns with H1 uptrend', () => {
   const f = baseFeatures();
