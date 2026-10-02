@@ -47,6 +47,28 @@ jobs:
             buy_rsi_max: "72"
             sell_rsi_min: "28"
             sell_rsi_max: "53"
+          - name: compromise-lookback4
+            range_lookback: "4"
+            min_range_atr: "0.50"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.05"
+            breakout_min_body_atr: "0.25"
+            breakout_min_close_location: "0.60"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+          - name: compromise-body20
+            range_lookback: "5"
+            min_range_atr: "0.50"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.05"
+            breakout_min_body_atr: "0.20"
+            breakout_min_close_location: "0.60"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -67,6 +89,8 @@ jobs:
           BACKTEST_MIN_RR: "1.80"
           BACKTEST_MAX_SPREAD_PIPS: "1.20"
           BACKTEST_MAX_SPREAD_TO_TP_PCT: "12"
+          BACKTEST_FREQUENCY_MODE: ${{ matrix.name }}
+          BACKTEST_TARGET_TRADES_PER_WEEK: "1"
           BACKTEST_RANGE_LOOKBACK: ${{ matrix.range_lookback }}
           BACKTEST_MIN_RANGE_ATR: ${{ matrix.min_range_atr }}
           BACKTEST_MAX_RANGE_ATR: ${{ matrix.max_range_atr }}
