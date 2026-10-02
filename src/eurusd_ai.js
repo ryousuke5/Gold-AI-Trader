@@ -162,6 +162,10 @@ export function validateEurUsdFundamentalAssessment(result, now = new Date()) {
   if (sources.length < 2) {
     reasons.push('insufficient_fundamental_sources');
   }
+  const uniqueSourceHosts = new Set(sources.map((source) => hostname(source.url)).filter(Boolean));
+  if (uniqueSourceHosts.size < 2) {
+    reasons.push('insufficient_independent_source_hosts');
+  }
   if (!sources.some((source) => isPrimaryOrReuters(source.url))) {
     reasons.push('no_primary_or_reuters_source');
   }
@@ -180,6 +184,7 @@ export function validateEurUsdFundamentalAssessment(result, now = new Date()) {
     reasons,
     environment,
     source_count: sources.length,
+    independent_source_host_count: new Set(sources.map((source) => hostname(source.url)).filter(Boolean)).size,
     primary_or_reuters_source_count: sources.filter((source) => isPrimaryOrReuters(source.url)).length,
     freshness,
     checked_at: now.toISOString()
