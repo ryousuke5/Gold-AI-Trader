@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFundamentalCsv, latestFundamentalAssessment, fundamentalGate, tradesToCsv } from '../scripts/backtest-eurusd.mjs';
+import { parseFundamentalCsv, latestFundamentalAssessment, fundamentalGate, tradesToCsv, backtestRiskGate } from '../scripts/backtest-eurusd.mjs';
 import { classifyFundamentalProxy } from '../scripts/build-eurusd-fundamental-proxy.mjs';
 
 function ema(values, period) {
@@ -90,6 +90,25 @@ test('trade CSV uses real line breaks', () => {
   assert.equal(csv.split('\n').length, 3);
 });
 
+
+test('backtest risk gate matches runtime daily-loss and drawdown boundaries', () => {
+  const state = { dayKey: null, dayStartEquity: 100000, peakEquity: 100000 };
+  const config = { maxDailyLossPct: 2, maxDrawdownPct: 5 };
+
+  const ok = backtestRiskGate(state, 100000, Date.parse('2026-09-28T00:00:00Z') / 1000, config);
+  assert.equal(ok.allowed, true);
+
+  const dailyBlocked = backtestRiskGate(state, 98000, Date.parse('2026-09-28T12:00:00Z') / 1000, config);
+  assert.equal(dailyBlocked.allowed, false);
+  assert.ok(dailyBlocked.reasons.includes('daily_loss_limit'));
+
+  const newDay = backtestRiskGate(state, 98000, Date.parse('2026-09-29T00:00:00Z') / 1000, config);
+  assert.equal(newDay.allowed, true);
+
+  const drawdownBlocked = backtestRiskGate(state, 93100, Date.parse('2026-09-29T12:00:00Z') / 1000, config);
+  assert.equal(drawdownBlocked.allowed, false);
+  assert.ok(drawdownBlocked.reasons.includes('drawdown_limit'));
+});
 
 test('fundamental proxy is causal and conservative', () => {
   assert.deepEqual(classifyFundamentalProxy({
