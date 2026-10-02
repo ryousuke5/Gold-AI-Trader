@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildEurUsdSetup } from '../src/eurusd_features.js';
+import { buildEurUsdSetupWithRetest } from '../src/eurusd_features.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +22,13 @@ const CONFIG = {
   maxDrawdownPct: Math.max(0.1, Number(process.env.BACKTEST_MAX_DRAWDOWN_PCT || 5)),
   frequencyMode: String(process.env.BACKTEST_FREQUENCY_MODE || 'high-quality'),
   targetTradesPerWeek: Math.max(0, Number(process.env.BACKTEST_TARGET_TRADES_PER_WEEK || 1)),
+  retestEnabled: String(process.env.BACKTEST_RETEST_ENABLED ?? 'true').toLowerCase() !== 'false',
+  retestMaxAgeBars: Math.max(1, Number(process.env.BACKTEST_RETEST_MAX_AGE_BARS || 4)),
+  retestToleranceAtr: Math.max(0.05, Number(process.env.BACKTEST_RETEST_TOLERANCE_ATR || 0.25)),
+  retestMinBodyAtr: Math.max(0.05, Number(process.env.BACKTEST_RETEST_MIN_BODY_ATR || 0.10)),
+  retestMinCloseLocation: Math.min(0.99, Math.max(0.5, Number(process.env.BACKTEST_RETEST_MIN_CLOSE_LOCATION || 0.55))),
+  retestStopBufferAtr: Math.max(0.50, Number(process.env.BACKTEST_RETEST_STOP_BUFFER_ATR || 0.50)),
+  retestTakeProfitR: Math.max(1.2, Number(process.env.BACKTEST_RETEST_TAKE_PROFIT_R || 2)),
   rangeLookback: Math.max(4, Number(process.env.BACKTEST_RANGE_LOOKBACK || 6)),
   minRangeAtr: Math.max(0.1, Number(process.env.BACKTEST_MIN_RANGE_ATR || 0.75)),
   maxRangeAtr: Math.max(0.2, Number(process.env.BACKTEST_MAX_RANGE_ATR || 2.00)),
@@ -678,7 +685,7 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       recentH1: sliceRecentBars(h1Ind, h1Index, 80)
     };
 
-    const setup = buildEurUsdSetup(features, {
+    const setup = buildEurUsdSetupWithRetest(features, {
       maxSpreadPips: config.maxSpreadPips,
       maxSpreadAtrPct: 15,
       minStopAtr: config.minStopAtr,
@@ -696,7 +703,14 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       sellRsiMin: config.breakoutSellRsiMin,
       sellRsiMax: config.breakoutSellRsiMax,
       frequencyMode: config.frequencyMode,
-      targetTradesPerWeek: config.targetTradesPerWeek
+      targetTradesPerWeek: config.targetTradesPerWeek,
+      retestEnabled: config.retestEnabled,
+      retestMaxAgeBars: config.retestMaxAgeBars,
+      retestToleranceAtr: config.retestToleranceAtr,
+      retestMinBodyAtr: config.retestMinBodyAtr,
+      retestMinCloseLocation: config.retestMinCloseLocation,
+      retestStopBufferAtr: config.retestStopBufferAtr,
+      retestTakeProfitR: config.retestTakeProfitR
     });
     if (setup.candidate === 'WAIT') continue;
 
