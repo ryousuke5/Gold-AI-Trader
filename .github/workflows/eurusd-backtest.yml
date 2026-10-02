@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   backtest:
@@ -14,6 +16,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - name: Run unit tests
+        run: npm test
       - name: Run 2-year technical backtest
         env:
           BACKTEST_LOOKBACK_DAYS: "730"
