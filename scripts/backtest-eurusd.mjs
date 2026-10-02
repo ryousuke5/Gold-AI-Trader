@@ -18,6 +18,16 @@ const CONFIG = {
   minRR: Math.max(1.0, Number(process.env.BACKTEST_MIN_RR || 1.80)),
   maxSpreadPips: Math.max(0.1, Number(process.env.BACKTEST_MAX_SPREAD_PIPS || 1.20)),
   maxSpreadToTpPct: Math.max(1, Number(process.env.BACKTEST_MAX_SPREAD_TO_TP_PCT || 12)),
+  rangeLookback: Math.max(4, Number(process.env.BACKTEST_RANGE_LOOKBACK || 6)),
+  minRangeAtr: Math.max(0.1, Number(process.env.BACKTEST_MIN_RANGE_ATR || 0.75)),
+  maxRangeAtr: Math.max(0.2, Number(process.env.BACKTEST_MAX_RANGE_ATR || 2.00)),
+  breakoutMinAtr: Math.max(0.02, Number(process.env.BACKTEST_BREAKOUT_MIN_ATR || 0.10)),
+  breakoutMinBodyAtr: Math.max(0.05, Number(process.env.BACKTEST_BREAKOUT_MIN_BODY_ATR || 0.35)),
+  breakoutMinCloseLocation: Math.min(0.99, Math.max(0.5, Number(process.env.BACKTEST_MIN_CLOSE_LOCATION || 0.70))),
+  breakoutBuyRsiMin: Math.max(1, Number(process.env.BACKTEST_BREAKOUT_BUY_RSI_MIN || 50)),
+  breakoutBuyRsiMax: Math.min(99, Number(process.env.BACKTEST_BREAKOUT_BUY_RSI_MAX || 68)),
+  breakoutSellRsiMin: Math.max(1, Number(process.env.BACKTEST_BREAKOUT_SELL_RSI_MIN || 32)),
+  breakoutSellRsiMax: Math.min(99, Number(process.env.BACKTEST_BREAKOUT_SELL_RSI_MAX || 50)),
   fundamentalSource: process.env.BACKTEST_FUNDAMENTAL_SOURCE || '',
   minAiEnvironmentConfidence: Math.min(1, Math.max(0.5, Number(process.env.BACKTEST_MIN_AI_ENVIRONMENT_CONFIDENCE || process.env.BACKTEST_MIN_FUNDAMENTAL_CONFIDENCE || 0.65))),
   maxFundamentalAgeHours: Math.max(1, Number(process.env.BACKTEST_MAX_FUNDAMENTAL_AGE_HOURS || 48)),
@@ -636,7 +646,17 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       minStopAtr: config.minStopAtr,
       maxStopAtr: config.maxStopAtr,
       takeProfitR: 2,
-      maxSpreadToTpPct: config.maxSpreadToTpPct
+      maxSpreadToTpPct: config.maxSpreadToTpPct,
+      rangeLookback: config.rangeLookback,
+      minRangeAtr: config.minRangeAtr,
+      maxRangeAtr: config.maxRangeAtr,
+      breakoutAtr: config.breakoutMinAtr,
+      minBodyAtr: config.breakoutMinBodyAtr,
+      minCloseLocation: config.breakoutMinCloseLocation,
+      buyRsiMin: config.breakoutBuyRsiMin,
+      buyRsiMax: config.breakoutBuyRsiMax,
+      sellRsiMin: config.breakoutSellRsiMin,
+      sellRsiMax: config.breakoutSellRsiMax
     });
     if (setup.candidate === 'WAIT') continue;
 
