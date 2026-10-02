@@ -30,6 +30,11 @@ function minLow(bars) {
   return bars.reduce((min, b) => Math.min(min, b.low), Infinity);
 }
 
+function average(values) {
+  const valid = values.filter((v) => Number.isFinite(v));
+  return valid.length ? valid.reduce((sum, v) => sum + v, 0) / valid.length : 0;
+}
+
 export function normalizeEurUsdFeatures(input = {}) {
   const bid = num(input.bid);
   const ask = num(input.ask);
@@ -40,7 +45,10 @@ export function normalizeEurUsdFeatures(input = {}) {
     ask,
     point: num(input.point),
     spread,
-    spreadPoints: num(input.spread_points, input.spread_points === undefined && num(input.point) > 0 ? spread / num(input.point) : 0),
+    spreadPoints: num(
+      input.spread_points,
+      input.spread_points === undefined && num(input.point) > 0 ? spread / num(input.point) : 0
+    ),
     barTime: num(input.bar_time),
     m15: {
       ema20: num(input.m15?.ema20),
@@ -87,17 +95,15 @@ export function validateEurUsdFeatures(f) {
   if (f.m15.rsi14 < 0 || f.m15.rsi14 > 100) errors.push('invalid_m15_rsi');
   if (f.h1.rsi14 < 0 || f.h1.rsi14 > 100) errors.push('invalid_h1_rsi');
 
-  if (f.recentM15.length < 6) errors.push('insufficient_recent_m15_bars');
-  if (f.recentH1.length > 0) {
-    for (const [i, b] of f.recentH1.entries()) {
-      if (!(b.high >= b.low && b.high >= b.open && b.high >= b.close && b.low <= b.open && b.low <= b.close)) {
-        errors.push(`invalid_recent_h1_bar_${i}`);
-      }
-    }
-  }
+  if (f.recentM15.length < 7) errors.push('insufficient_recent_m15_bars');
   for (const [i, b] of f.recentM15.entries()) {
     if (!(b.high >= b.low && b.high >= b.open && b.high >= b.close && b.low <= b.open && b.low <= b.close)) {
       errors.push(`invalid_recent_m15_bar_${i}`);
+    }
+  }
+  for (const [i, b] of f.recentH1.entries()) {
+    if (!(b.high >= b.low && b.high >= b.open && b.high >= b.close && b.low <= b.open && b.low <= b.close)) {
+      errors.push(`invalid_recent_h1_bar_${i}`);
     }
   }
   if (f.ask > 0 && f.bid > 0 && f.spread > 0) {
@@ -116,25 +122,49 @@ export function eurUsdH1Trend(f) {
   return 'RANGE';
 }
 
-function rsiInBuyContinuationZone(rsi) {
-  return rsi >= 48 && rsi <= 68;
+function rsiInBuyContinuationZone(rsi, min, max) {
+  return rsi >= min && rsi <= max;
 }
 
-function rsiInSellContinuationZone(rsi) {
-  return rsi >= 32 && rsi <= 52;
+function rsiInSellContinuationZone(rsi, min, max) {
+  return rsi >= min && rsi <= max;
 }
 
+/**
+ * High-quality EURUSD M15 range-breakout setup.
+ *
+ * The technical engine is deliberately deterministic:
+ * - H1 EMA20/50/200 must establish a clear trend.
+ * - The latest completed M15 candle must break a compact recent range.
+ * - Breakout penetration, candle body, close location and (when available) tick volume
+ *   must confirm that this is more than a one-tick/one-pip probe.
+ * - Spread, stop distance and spread-to-target economics must remain acceptable.
+ *
+ * The AI layer is intentionally NOT used here; it is an environment filter downstream.
+ */
 export function buildEurUsdSetup(f, options = {}) {
+  const rangeLookback = Math.max(4, Math.floor(Number(options.rangeLookback ?? process.env.EURUSD_RANGE_LOOKBACK ?? 6)));
+  const minRangeAtr = Math.max(0.1, Number(options.minRangeAtr ?? process.env.EURUSD_MIN_RANGE_ATR ?? 0.75));
+  const maxRangeAtr = Math.max(minRangeAtr, Number(options.maxRangeAtr ?? process.env.EURUSD_MAX_RANGE_ATR ?? 2.00));
+  const breakoutAtr = Math.max(0.02, Number(options.breakoutAtr ?? process.env.EURUSD_BREAKOUT_MIN_ATR ?? 0.10));
+  const minBodyAtr = Math.max(0.05, Number(options.minBodyAtr ?? process.env.EURUSD_BREAKOUT_MIN_BODY_ATR ?? 0.35));
+  const minCloseLocation = Math.min(0.99, Math.max(0.5, Number(options.minCloseLocation ?? process.env.EURUSD_BREAKOUT_MIN_CLOSE_LOCATION ?? 0.70)));
+  const minVolumeRatio = Math.max(0.5, Number(options.minVolumeRatio ?? process.env.EURUSD_BREAKOUT_MIN_VOLUME_RATIO ?? 1.10));
+  const requireVolume = String(options.requireVolume ?? process.env.EURUSD_BREAKOUT_REQUIRE_VOLUME ?? 'true').toLowerCase() !== 'false';
   const maxSpreadPips = Math.max(0.1, Number(options.maxSpreadPips ?? process.env.EURUSD_MAX_SPREAD_PIPS ?? 1.20));
   const maxSpreadAtrPct = Math.max(1, Number(options.maxSpreadAtrPct ?? process.env.EURUSD_MAX_SPREAD_ATR_PCT ?? 15));
   const minStopAtr = Math.max(0.1, Number(options.minStopAtr ?? process.env.EURUSD_MIN_STOP_ATR ?? 0.50));
   const maxStopAtr = Math.max(minStopAtr, Number(options.maxStopAtr ?? process.env.EURUSD_MAX_STOP_ATR ?? 1.50));
   const tpR = Math.max(1.2, Number(options.takeProfitR ?? process.env.EURUSD_TAKE_PROFIT_R ?? 2.00));
   const spreadToTpPctMax = Math.max(1, Number(options.maxSpreadToTpPct ?? process.env.EURUSD_MAX_SPREAD_TO_TP_PCT ?? 12));
+  const buyRsiMin = Math.max(1, Number(options.buyRsiMin ?? process.env.EURUSD_BREAKOUT_BUY_RSI_MIN ?? 50));
+  const buyRsiMax = Math.min(99, Number(options.buyRsiMax ?? process.env.EURUSD_BREAKOUT_BUY_RSI_MAX ?? 68));
+  const sellRsiMin = Math.max(1, Number(options.sellRsiMin ?? process.env.EURUSD_BREAKOUT_SELL_RSI_MIN ?? 32));
+  const sellRsiMax = Math.min(99, Number(options.sellRsiMax ?? process.env.EURUSD_BREAKOUT_SELL_RSI_MAX ?? 50));
 
   const trend = eurUsdH1Trend(f);
   const bars = sortBarsAscending(f.recentM15);
-  if (bars.length < 6) {
+  if (bars.length < rangeLookback + 1) {
     return {
       candidate: 'WAIT',
       quality_score: 0,
@@ -144,6 +174,15 @@ export function buildEurUsdSetup(f, options = {}) {
       stop_loss: 0,
       take_profit: 0,
       risk_reward: 0,
+      range_high: 0,
+      range_low: 0,
+      range_width: 0,
+      range_width_atr: 0,
+      breakout_distance_atr: 0,
+      breakout_body_atr: 0,
+      breakout_close_location: 0,
+      volume_ratio: 0,
+      volume_confirmation: false,
       spread_pips: 0,
       spread_atr_pct: 0,
       spread_to_tp_pct: 0,
@@ -152,124 +191,137 @@ export function buildEurUsdSetup(f, options = {}) {
   }
 
   const latest = bars[bars.length - 1];
+  const prior = bars.slice(-(rangeLookback + 1), -1);
   const previous = bars[bars.length - 2];
-  const prior4 = bars.slice(-6, -2);
-  const recent5 = bars.slice(-5, -1);
-  const prior4High = maxHigh(prior4);
-  const prior4Low = minLow(prior4);
-  const structureLow = minLow(recent5);
-  const structureHigh = maxHigh(recent5);
 
-  const pipSize = f.point >= 0.0001 ? 0.0001 : f.point * 10;
-  const spreadPips = pipSize > 0 ? f.spread / pipSize : 999;
-  const spreadAtrPct = f.m15.atr14 > 0 ? (f.spread / f.m15.atr14) * 100 : 999;
+  const rangeHigh = maxHigh(prior);
+  const rangeLow = minLow(prior);
+  const rangeWidth = rangeHigh - rangeLow;
+  const atr = f.m15.atr14;
+  const rangeWidthAtr = atr > 0 ? rangeWidth / atr : Infinity;
+
+  const pipSize = 0.0001;
+  const spreadPips = f.spread / pipSize;
+  const spreadAtrPct = atr > 0 ? (f.spread / atr) * 100 : Infinity;
   const spreadOkay = spreadPips <= maxSpreadPips && spreadAtrPct <= maxSpreadAtrPct;
+
+  const candleRange = Math.max(0, latest.high - latest.low);
+  const candleBody = Math.abs(latest.close - latest.open);
+  const bodyAtr = atr > 0 ? candleBody / atr : 0;
+  const closeLocation = candleRange > 0
+    ? (latest.close - latest.low) / candleRange
+    : 0;
+
+  const priorVolumes = prior.map((b) => b.volume).filter((v) => v > 0);
+  const averagePriorVolume = average(priorVolumes);
+  const volumeRatio = averagePriorVolume > 0 ? latest.volume / averagePriorVolume : 0;
+  const volumeDataAvailable = latest.volume > 0 && averagePriorVolume > 0;
+  const volumeConfirmation = volumeDataAvailable ? volumeRatio >= minVolumeRatio : !requireVolume;
 
   const m15Up = f.m15.ema20 > f.m15.ema50;
   const m15Down = f.m15.ema20 < f.m15.ema50;
-  const buyPullback =
-    m15Up &&
-    previous.close <= f.m15.ema20 &&
-    latest.close > f.m15.ema20 &&
-    latest.close > previous.high;
-  const sellPullback =
-    m15Down &&
-    previous.close >= f.m15.ema20 &&
-    latest.close < f.m15.ema20 &&
-    latest.close < previous.low;
+  const rangeCompressed = rangeWidthAtr >= minRangeAtr && rangeWidthAtr <= maxRangeAtr;
+  const breakoutBuffer = atr * breakoutAtr;
+
   const buyBreakout =
+    trend === 'UP' &&
     m15Up &&
-    latest.close > prior4High &&
-    latest.close > f.m15.ema20 &&
-    Math.abs(latest.close - latest.open) >= f.m15.atr14 * 0.25;
+    rsiInBuyContinuationZone(f.m15.rsi14, buyRsiMin, buyRsiMax) &&
+    latest.close > rangeHigh + breakoutBuffer &&
+    previous.close <= rangeHigh &&
+    bodyAtr >= minBodyAtr &&
+    closeLocation >= minCloseLocation &&
+    rangeCompressed &&
+    spreadOkay &&
+    volumeConfirmation;
+
   const sellBreakout =
+    trend === 'DOWN' &&
     m15Down &&
-    latest.close < prior4Low &&
-    latest.close < f.m15.ema20 &&
-    Math.abs(latest.close - latest.open) >= f.m15.atr14 * 0.25;
+    rsiInSellContinuationZone(f.m15.rsi14, sellRsiMin, sellRsiMax) &&
+    latest.close < rangeLow - breakoutBuffer &&
+    previous.close >= rangeLow &&
+    bodyAtr >= minBodyAtr &&
+    closeLocation <= (1 - minCloseLocation) &&
+    rangeCompressed &&
+    spreadOkay &&
+    volumeConfirmation;
 
   let direction = 'WAIT';
-  let setupType = 'NONE';
+  const reasons = [];
   let score = 0;
+
+  if (trend === 'UP' || trend === 'DOWN') score += 25;
+  else reasons.push('h1_trend_not_clear');
+
+  if ((trend === 'UP' && m15Up) || (trend === 'DOWN' && m15Down)) score += 15;
+  else reasons.push('m15_ema_not_aligned');
+
+  const rsiOkay =
+    (trend === 'UP' && rsiInBuyContinuationZone(f.m15.rsi14, buyRsiMin, buyRsiMax)) ||
+    (trend === 'DOWN' && rsiInSellContinuationZone(f.m15.rsi14, sellRsiMin, sellRsiMax));
+  if (rsiOkay) score += 10;
+  else reasons.push('m15_rsi_out_of_breakout_zone');
+
+  if (rangeCompressed) score += 15;
+  else reasons.push('range_width_outside_atr_band');
+
+  if (spreadOkay) score += 5;
+  else reasons.push('spread_filter_failed');
+
+  const penetrationOkay =
+    (trend === 'UP' && latest.close > rangeHigh + breakoutBuffer) ||
+    (trend === 'DOWN' && latest.close < rangeLow - breakoutBuffer);
+  if (penetrationOkay) score += 10;
+  else reasons.push('breakout_penetration_too_small');
+
+  if (bodyAtr >= minBodyAtr) score += 10;
+  else reasons.push('breakout_body_too_small');
+
+  const closeLocationOkay =
+    (trend === 'UP' && closeLocation >= minCloseLocation) ||
+    (trend === 'DOWN' && closeLocation <= 1 - minCloseLocation);
+  if (closeLocationOkay) score += 5;
+  else reasons.push('breakout_close_location_weak');
+
+  if (volumeConfirmation) score += 5;
+  else reasons.push(volumeDataAvailable ? 'breakout_volume_confirmation_failed' : 'breakout_volume_data_missing');
+
+  if (buyBreakout) direction = 'BUY';
+  if (sellBreakout) direction = 'SELL';
+
   let entry = 0;
   let stopLoss = 0;
   let takeProfit = 0;
-  const reasons = [];
-
-  if (trend === 'UP') {
-    score += 30;
-    if (m15Up) score += 20; else reasons.push('m15_ema_not_aligned');
-    if (rsiInBuyContinuationZone(f.m15.rsi14)) score += 10; else reasons.push('m15_rsi_out_of_buy_zone');
-    if (buyPullback) {
-      score += 30;
-      direction = 'BUY';
-      setupType = 'PULLBACK_RECLAIM';
-    } else if (buyBreakout) {
-      score += 25;
-      direction = 'BUY';
-      setupType = 'BREAKOUT';
-    } else {
-      reasons.push('no_buy_setup');
-    }
-    if (h1CloseAboveTrend(f)) score += 5;
-  } else if (trend === 'DOWN') {
-    score += 30;
-    if (m15Down) score += 20; else reasons.push('m15_ema_not_aligned');
-    if (rsiInSellContinuationZone(f.m15.rsi14)) score += 10; else reasons.push('m15_rsi_out_of_sell_zone');
-    if (sellPullback) {
-      score += 30;
-      direction = 'SELL';
-      setupType = 'PULLBACK_RECLAIM';
-    } else if (sellBreakout) {
-      score += 25;
-      direction = 'SELL';
-      setupType = 'BREAKOUT';
-    } else {
-      reasons.push('no_sell_setup');
-    }
-    if (h1CloseBelowTrend(f)) score += 5;
-  } else {
-    reasons.push('h1_trend_not_clear');
-  }
-
-  if (spreadOkay) score += 15;
-  else reasons.push('spread_filter_failed');
 
   if (direction === 'BUY') {
     entry = f.ask;
-    stopLoss = structureLow - (f.m15.atr14 * 0.15);
+    stopLoss = rangeLow - atr * 0.15;
   } else if (direction === 'SELL') {
     entry = f.bid;
-    stopLoss = structureHigh + (f.m15.atr14 * 0.15);
+    stopLoss = rangeHigh + atr * 0.15;
   }
 
+  let spreadToTpPct = 0;
+  let stopAtr = 0;
   if (direction !== 'WAIT') {
     const stopDistance = Math.abs(entry - stopLoss);
-    const stopAtr = f.m15.atr14 > 0 ? stopDistance / f.m15.atr14 : Infinity;
+    stopAtr = atr > 0 ? stopDistance / atr : Infinity;
     if (!(stopAtr >= minStopAtr && stopAtr <= maxStopAtr)) {
       reasons.push('stop_distance_outside_atr_band');
       direction = 'WAIT';
-      setupType = 'NONE';
-      entry = 0;
-      stopLoss = 0;
-      takeProfit = 0;
     } else {
       takeProfit = direction === 'BUY' ? entry + stopDistance * tpR : entry - stopDistance * tpR;
       const tpDistance = Math.abs(takeProfit - entry);
-      const spreadToTpPct = tpDistance > 0 ? (f.spread / tpDistance) * 100 : 999;
+      spreadToTpPct = tpDistance > 0 ? (f.spread / tpDistance) * 100 : Infinity;
       if (spreadToTpPct > spreadToTpPctMax) {
         reasons.push('spread_too_large_vs_target');
         direction = 'WAIT';
-        setupType = 'NONE';
-        entry = 0;
-        stopLoss = 0;
-        takeProfit = 0;
       }
     }
   }
 
-  const finalCandidate = direction !== 'WAIT' && score >= 95 ? direction : 'WAIT';
-  if (direction !== 'WAIT' && finalCandidate === 'WAIT') reasons.push('setup_quality_below_threshold');
+  const finalCandidate = direction === 'BUY' || direction === 'SELL' ? direction : 'WAIT';
 
   if (finalCandidate === 'WAIT') {
     return {
@@ -281,9 +333,21 @@ export function buildEurUsdSetup(f, options = {}) {
       stop_loss: 0,
       take_profit: 0,
       risk_reward: 0,
+      range_high: rangeHigh,
+      range_low: rangeLow,
+      range_width: rangeWidth,
+      range_width_atr: rangeWidthAtr,
+      breakout_distance_atr: atr > 0
+        ? (trend === 'UP' ? (latest.close - rangeHigh) : (rangeLow - latest.close)) / atr
+        : 0,
+      breakout_body_atr: bodyAtr,
+      breakout_close_location: closeLocation,
+      volume_ratio: volumeRatio,
+      volume_confirmation: volumeConfirmation,
       spread_pips: spreadPips,
       spread_atr_pct: spreadAtrPct,
       spread_to_tp_pct: 0,
+      stop_atr: stopAtr,
       reasons: [...new Set(reasons)]
     };
   }
@@ -293,23 +357,27 @@ export function buildEurUsdSetup(f, options = {}) {
   return {
     candidate: finalCandidate,
     quality_score: Math.min(100, Math.max(0, score)),
-    setup_type: setupType,
+    setup_type: 'BREAKOUT',
     trend,
     entry,
     stop_loss: stopLoss,
     take_profit: takeProfit,
     risk_reward: stopDistance > 0 ? tpDistance / stopDistance : 0,
+    range_high: rangeHigh,
+    range_low: rangeLow,
+    range_width: rangeWidth,
+    range_width_atr: rangeWidthAtr,
+    breakout_distance_atr: atr > 0
+      ? (finalCandidate === 'BUY' ? (latest.close - rangeHigh) : (rangeLow - latest.close)) / atr
+      : 0,
+    breakout_body_atr: bodyAtr,
+    breakout_close_location: closeLocation,
+    volume_ratio: volumeRatio,
+    volume_confirmation: volumeConfirmation,
     spread_pips: spreadPips,
     spread_atr_pct: spreadAtrPct,
-    spread_to_tp_pct: tpDistance > 0 ? (f.spread / tpDistance) * 100 : 999,
+    spread_to_tp_pct: spreadToTpPct,
+    stop_atr: stopAtr,
     reasons: []
   };
-}
-
-function h1CloseAboveTrend(f) {
-  return !(f.h1.close > 0) || f.h1.close >= f.h1.ema20;
-}
-
-function h1CloseBelowTrend(f) {
-  return !(f.h1.close > 0) || f.h1.close <= f.h1.ema20;
 }
