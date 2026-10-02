@@ -53,6 +53,14 @@ export function evaluateEurUsdRisk({
   if (direction !== 'WAIT' && candidate !== direction) reasons.push('candidate_direction_mismatch');
 
   if (direction !== 'WAIT') {
+    if (setup?.setup_type !== 'BREAKOUT') reasons.push('unsupported_setup_type');
+    for (const field of ['entry', 'stop_loss', 'take_profit', 'risk_reward']) {
+      const decisionValue = Number(d[field]);
+      const setupValue = Number(setup?.[field]);
+      if (Number.isFinite(decisionValue) && Number.isFinite(setupValue) && Math.abs(decisionValue - setupValue) > 1e-10) {
+        reasons.push('technical_' + field + '_mismatch');
+      }
+    }
     if (!(Number(d.confidence) >= limits.minConfidence && Number(d.confidence) <= 1)) {
       reasons.push('setup_confidence_below_threshold');
     }
@@ -127,6 +135,19 @@ export function evaluateEurUsdRisk({
       if (direction === 'BUY' && !(sl < entry && tp > entry)) reasons.push('buy_price_geometry_invalid');
       if (direction === 'SELL' && !(sl > entry && tp < entry)) reasons.push('sell_price_geometry_invalid');
 
+      const point = Number(a.point || features.point || 0);
+      const stopLevelPoints = Math.max(0, Number(a.stop_level_points || 0));
+      const marketReference = direction === 'BUY' ? Number(features.ask) : Number(features.bid);
+      if (point > 0 && marketReference > 0 && stopLevelPoints > 0) {
+        const brokerStopDistance = stopLevelPoints * point;
+        if (Math.abs(marketReference - sl) < brokerStopDistance - 1e-12) {
+          reasons.push('broker_stop_level_violation');
+        }
+        if (Math.abs(tp - marketReference) < brokerStopDistance - 1e-12) {
+          reasons.push('broker_tp_stop_level_violation');
+        }
+      }
+
       if (Number(a.tick_size) > 0 && Number(a.tick_value) > 0) {
         const sizing = calculateLots({
           equity: Number(a.equity),
@@ -169,6 +190,6 @@ export function evaluateEurUsdRisk({
     riskCash: 0,
     actualRR: 0,
     stopAtr: 0,
-    spreadPips: features.point > 0 ? Number(features.spread) / (features.point * 10) : 0
+    spreadPips: Number(features.spread) > 0 ? Number(features.spread) / 0.0001 : Infinity
   };
 }

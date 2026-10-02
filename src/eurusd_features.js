@@ -6,7 +6,6 @@ function num(v, fallback = 0) {
 function normalizeBars(input) {
   if (!Array.isArray(input)) return [];
   return input
-    .slice(0, 80)
     .map((b) => ({
       time: num(b?.time),
       open: num(b?.open),
@@ -15,7 +14,9 @@ function normalizeBars(input) {
       close: num(b?.close),
       volume: num(b?.volume)
     }))
-    .filter((b) => b.time > 0);
+    .filter((b) => b.time > 0)
+    .sort((a, b) => a.time - b.time)
+    .slice(-80);
 }
 
 function sortBarsAscending(bars) {
@@ -83,6 +84,7 @@ export function validateEurUsdFeatures(f) {
     ['m15.ema50', f.m15?.ema50],
     ['m15.rsi14', f.m15?.rsi14],
     ['m15.atr14', f.m15?.atr14],
+    ['h1.close', f.h1?.close],
     ['h1.ema20', f.h1?.ema20],
     ['h1.ema50', f.h1?.ema50],
     ['h1.ema200', f.h1?.ema200],
@@ -96,6 +98,14 @@ export function validateEurUsdFeatures(f) {
   if (f.h1.rsi14 < 0 || f.h1.rsi14 > 100) errors.push('invalid_h1_rsi');
 
   if (f.recentM15.length < 7) errors.push('insufficient_recent_m15_bars');
+  if (f.recentM15.length > 0) {
+    const latestM15 = f.recentM15[f.recentM15.length - 1];
+    if (latestM15.time !== f.barTime) errors.push('m15_bar_time_mismatch');
+    if (f.recentM15.length > 1) {
+      const latestDelta = latestM15.time - f.recentM15[f.recentM15.length - 2].time;
+      if (latestDelta !== 900) errors.push('latest_m15_bars_not_15_minutes_apart');
+    }
+  }
   for (const [i, b] of f.recentM15.entries()) {
     if (!(b.high >= b.low && b.high >= b.open && b.high >= b.close && b.low <= b.open && b.low <= b.close)) {
       errors.push(`invalid_recent_m15_bar_${i}`);
@@ -115,8 +125,8 @@ export function validateEurUsdFeatures(f) {
 
 export function eurUsdH1Trend(f) {
   const h = f.h1;
-  const up = h.ema20 > h.ema50 && h.ema50 > h.ema200 && (!h.close || h.close >= h.ema20);
-  const down = h.ema20 < h.ema50 && h.ema50 < h.ema200 && (!h.close || h.close <= h.ema20);
+  const up = h.close > 0 && h.ema20 > h.ema50 && h.ema50 > h.ema200 && h.close >= h.ema20;
+  const down = h.close > 0 && h.ema20 < h.ema50 && h.ema50 < h.ema200 && h.close <= h.ema20;
   if (up) return 'UP';
   if (down) return 'DOWN';
   return 'RANGE';
@@ -195,6 +205,67 @@ export function buildEurUsdSetup(f, options = {}) {
   }
 
   const latest = bars[bars.length - 1];
+  if (f.barTime > 0 && latest.time !== f.barTime) {
+    return {
+      frequency_mode: frequencyMode,
+      target_trades_per_week: targetTradesPerWeek,
+      candidate: 'WAIT',
+      quality_score: 0,
+      setup_type: 'NONE',
+      trend,
+      entry: 0,
+      stop_loss: 0,
+      take_profit: 0,
+      risk_reward: 0,
+      range_high: 0,
+      range_low: 0,
+      range_width: 0,
+      range_width_atr: 0,
+      breakout_distance_atr: 0,
+      breakout_body_atr: 0,
+      breakout_close_location: 0,
+      volume_ratio: 0,
+      volume_data_available: false,
+      volume_confirmation: false,
+      volume_gate_passed: false,
+      spread_pips: 0,
+      spread_atr_pct: 0,
+      spread_to_tp_pct: 0,
+      stop_atr: 0,
+      reasons: ['m15_bar_time_mismatch']
+    };
+  }
+  const setupBars = bars.slice(-(rangeLookback + 1));
+  if (setupBars.length < rangeLookback + 1 || setupBars.slice(1).some((bar, index) => bar.time - setupBars[index].time !== 900)) {
+    return {
+      frequency_mode: frequencyMode,
+      target_trades_per_week: targetTradesPerWeek,
+      candidate: 'WAIT',
+      quality_score: 0,
+      setup_type: 'NONE',
+      trend,
+      entry: 0,
+      stop_loss: 0,
+      take_profit: 0,
+      risk_reward: 0,
+      range_high: 0,
+      range_low: 0,
+      range_width: 0,
+      range_width_atr: 0,
+      breakout_distance_atr: 0,
+      breakout_body_atr: 0,
+      breakout_close_location: 0,
+      volume_ratio: 0,
+      volume_data_available: false,
+      volume_confirmation: false,
+      volume_gate_passed: false,
+      spread_pips: 0,
+      spread_atr_pct: 0,
+      spread_to_tp_pct: 0,
+      stop_atr: 0,
+      reasons: ['recent_m15_setup_bars_not_contiguous']
+    };
+  }
   const prior = bars.slice(-(rangeLookback + 1), -1);
   const previous = bars[bars.length - 2];
 

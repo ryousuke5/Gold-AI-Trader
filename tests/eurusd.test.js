@@ -132,6 +132,29 @@ test('pullback without a range breakout is ignored', () => {
 });
 
 
+test('recent M15 bars are normalized newest-last even when input arrives newest-first', () => {
+  const newestFirst = [...setupBarsBuy()].reverse();
+  const f = baseFeatures({ recent_m15: newestFirst });
+  const setup = buildEurUsdSetup(f);
+  assert.equal(f.recentM15[f.recentM15.length - 1].time, f.barTime);
+  assert.equal(setup.candidate, 'BUY');
+});
+
+test('missing H1 close is rejected instead of inferring a trend', () => {
+  const f = baseFeatures({ h1: { close: 0, ema20: 1.10080, ema50: 1.10040, ema200: 1.09980, rsi14: 56, atr14: 0.00250 } });
+  assert.ok(validateEurUsdFeatures(f).includes('invalid_h1.close'));
+  assert.equal(buildEurUsdSetup(f).candidate, 'WAIT');
+});
+
+test('non-contiguous latest M15 setup bars are rejected', () => {
+  const bars = setupBarsBuy();
+  bars[6] = { ...bars[6], time: bars[6].time - 1800 };
+  const f = baseFeatures({ recent_m15: bars });
+  const setup = buildEurUsdSetup(f);
+  assert.equal(setup.candidate, 'WAIT');
+  assert.ok(setup.reasons.includes('recent_m15_setup_bars_not_contiguous'));
+});
+
 test('missing breakout volume does not invalidate a technically complete breakout', () => {
   const bars = setupBarsBuy().map((bar) => ({ ...bar, volume: 0 }));
   const f = baseFeatures({ recent_m15: bars });
@@ -257,6 +280,88 @@ test('risk engine approves only when breakout, risk and AI environment align', (
   assert.ok(risk.lots > 0);
 });
 
+
+test('risk engine rejects technical prices changed after AI confirmation', () => {
+  const f = baseFeatures();
+  const setup = buildEurUsdSetup(f);
+  const decision = {
+    decision: 'BUY',
+    candidate: 'BUY',
+    confidence: 1,
+    risk_reward: setup.risk_reward,
+    entry: setup.entry + 0.00010,
+    stop_loss: setup.stop_loss,
+    take_profit: setup.take_profit,
+    ai_environment: { status: 'FAVORABLE', confidence: 0.80 }
+  };
+  const risk = evaluateEurUsdRisk({
+    decision,
+    setup,
+    features: f,
+    account: {
+      equity: 100000,
+      open_positions: 0,
+      daily_pnl_pct: 0,
+      drawdown_pct: 0,
+      risk_data_ready: true,
+      trade_allowed: 1,
+      tick_size: 0.00001,
+      tick_value: 1,
+      min_lot: 0.01,
+      max_lot: 100,
+      lot_step: 0.01,
+      point: 0.00001,
+      stop_level_points: 0,
+      freeze_level_points: 0
+    },
+    signalCreatedAt: Date.now(),
+    now: Date.now(),
+    fundamentalAssessment: favorableAiAssessment()
+  });
+  assert.equal(risk.approved, false);
+  assert.ok(risk.reasons.includes('technical_entry_mismatch'));
+});
+
+test('risk engine rejects broker stop-level violations', () => {
+  const f = baseFeatures();
+  const setup = buildEurUsdSetup(f);
+  const decision = {
+    decision: 'BUY',
+    candidate: 'BUY',
+    confidence: 1,
+    risk_reward: setup.risk_reward,
+    entry: setup.entry,
+    stop_loss: setup.stop_loss,
+    take_profit: setup.take_profit,
+    ai_environment: { status: 'FAVORABLE', confidence: 0.80 }
+  };
+  const risk = evaluateEurUsdRisk({
+    decision,
+    setup,
+    features: f,
+    account: {
+      equity: 100000,
+      open_positions: 0,
+      daily_pnl_pct: 0,
+      drawdown_pct: 0,
+      risk_data_ready: true,
+      trade_allowed: 1,
+      tick_size: 0.00001,
+      tick_value: 1,
+      min_lot: 0.01,
+      max_lot: 100,
+      lot_step: 0.01,
+      point: 0.00001,
+      stop_level_points: 100000,
+      freeze_level_points: 0
+    },
+    signalCreatedAt: Date.now(),
+    now: Date.now(),
+    fundamentalAssessment: favorableAiAssessment()
+  });
+  assert.equal(risk.approved, false);
+  assert.ok(risk.reasons.includes('broker_stop_level_violation'));
+});
 
 test('balanced-weekly mode uses the frequency-tuned technical parameters', () => {
   const f = baseFeatures();
