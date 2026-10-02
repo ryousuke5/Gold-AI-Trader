@@ -281,6 +281,88 @@ test('risk engine approves only when breakout, risk and AI environment align', (
 });
 
 
+test('risk engine rejects technical prices changed after AI confirmation', () => {
+  const f = baseFeatures();
+  const setup = buildEurUsdSetup(f);
+  const decision = {
+    decision: 'BUY',
+    candidate: 'BUY',
+    confidence: 1,
+    risk_reward: setup.risk_reward,
+    entry: setup.entry + 0.00010,
+    stop_loss: setup.stop_loss,
+    take_profit: setup.take_profit,
+    ai_environment: { status: 'FAVORABLE', confidence: 0.80 }
+  };
+  const risk = evaluateEurUsdRisk({
+    decision,
+    setup,
+    features: f,
+    account: {
+      equity: 100000,
+      open_positions: 0,
+      daily_pnl_pct: 0,
+      drawdown_pct: 0,
+      risk_data_ready: true,
+      trade_allowed: 1,
+      tick_size: 0.00001,
+      tick_value: 1,
+      min_lot: 0.01,
+      max_lot: 100,
+      lot_step: 0.01,
+      point: 0.00001,
+      stop_level_points: 0,
+      freeze_level_points: 0
+    },
+    signalCreatedAt: Date.now(),
+    now: Date.now(),
+    fundamentalAssessment: favorableAiAssessment()
+  });
+  assert.equal(risk.approved, false);
+  assert.ok(risk.reasons.includes('technical_entry_mismatch'));
+});
+
+test('risk engine rejects broker stop-level violations', () => {
+  const f = baseFeatures();
+  const setup = buildEurUsdSetup(f);
+  const decision = {
+    decision: 'BUY',
+    candidate: 'BUY',
+    confidence: 1,
+    risk_reward: setup.risk_reward,
+    entry: setup.entry,
+    stop_loss: setup.stop_loss,
+    take_profit: setup.take_profit,
+    ai_environment: { status: 'FAVORABLE', confidence: 0.80 }
+  };
+  const risk = evaluateEurUsdRisk({
+    decision,
+    setup,
+    features: f,
+    account: {
+      equity: 100000,
+      open_positions: 0,
+      daily_pnl_pct: 0,
+      drawdown_pct: 0,
+      risk_data_ready: true,
+      trade_allowed: 1,
+      tick_size: 0.00001,
+      tick_value: 1,
+      min_lot: 0.01,
+      max_lot: 100,
+      lot_step: 0.01,
+      point: 0.00001,
+      stop_level_points: 100000,
+      freeze_level_points: 0
+    },
+    signalCreatedAt: Date.now(),
+    now: Date.now(),
+    fundamentalAssessment: favorableAiAssessment()
+  });
+  assert.equal(risk.approved, false);
+  assert.ok(risk.reasons.includes('broker_stop_level_violation'));
+});
+
 test('balanced-weekly mode uses the frequency-tuned technical parameters', () => {
   const f = baseFeatures();
   const setup = buildEurUsdSetup(f, {
