@@ -464,7 +464,7 @@ async function main() {
   } else {
     const mod=await import('dukascopy-node');
     const getHistoricalRates=mod.getHistoricalRates||mod.default?.getHistoricalRates;
-    const rows=await getHistoricalRates({instrument:'xauusd',dates:{from:start,to:end},timeframe:'m5',priceType:'bid',volumes:true,format:'array'});
+    const rows=await getHistoricalRates({instrument:'xauusd',dates:{from:requestedStart,to:requestedEnd},timeframe:'m5',priceType:'bid',volumes:true,format:'array'});
     rawM5=normalizeDukascopy(rows);
     if(rawM5.length<200000) throw new Error('Insufficient Dukascopy XAUUSD M5 data: '+rawM5.length);
   }
@@ -486,7 +486,12 @@ async function main() {
     instrument:'XAUUSD',
     server_timezone:config.serverTimezone,
     source_period:{m5_first:new Date(rawM5[0].time*1000).toISOString(),m5_last:new Date(rawM5[rawM5.length-1].time*1000).toISOString()},
-    test_period:{start:start.toISOString(),end:end.toISOString()},
+    test_period:{
+      start:new Date(rawM5[0].time*1000).toISOString(),
+      end:new Date((rawM5[rawM5.length-1].time+300)*1000).toISOString(),
+      requested_start:requestedStart.toISOString(),
+      requested_end:requestedEnd.toISOString()
+    },
     prepared_data_file:dataFile||null,
     assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side'},
     strategy_parameters:strategy,
