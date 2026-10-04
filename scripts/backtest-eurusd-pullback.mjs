@@ -286,14 +286,18 @@ function simulateTrade(bars, i, setup) {
   const target = dir === 'BUY' ? entry + risk * setup.risk_reward : entry - risk * setup.risk_reward;
 
   const end = Math.min(bars.length - 1, i + CONFIG.maxHoldBars);
-  let resultR = dir === 'BUY' ? (bars[end].close - entry) / risk : (entry - bars[end].close) / risk;
+  const timeExitPrice = dir === 'BUY' ? bars[end].close : bars[end].close + spread;
+  let resultR = dir === 'BUY' ? (timeExitPrice - entry) / risk : (entry - timeExitPrice) / risk;
   let exitReason = 'TIME';
   let exitIndex = end;
 
   for (let j = i + 1; j <= end; j += 1) {
     const bar = bars[j];
-    const hitStop = dir === 'BUY' ? bar.low <= stop : bar.high >= stop;
-    const hitTarget = dir === 'BUY' ? bar.high >= target : bar.low <= target;
+    // Dukascopy OHLC is BID-side. BUY exits are BID; SELL exits are ASK (= BID + spread).
+    const exitHigh = dir === 'BUY' ? bar.high : bar.high + spread;
+    const exitLow = dir === 'BUY' ? bar.low : bar.low + spread;
+    const hitStop = dir === 'BUY' ? exitLow <= stop : exitHigh >= stop;
+    const hitTarget = dir === 'BUY' ? exitHigh >= target : exitLow <= target;
     if (hitStop && hitTarget) {
       resultR = -1;
       exitReason = 'STOP_AND_TARGET_SAME_BAR_CONSERVATIVE';
