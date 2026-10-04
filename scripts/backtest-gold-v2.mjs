@@ -15,7 +15,8 @@ const BASE_CONFIG = {
   maxDrawdownPct: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_DRAWDOWN_PCT || 5)),
   maxHoldBars: Math.max(1, Math.floor(Number(process.env.GOLD_BACKTEST_MAX_HOLD_BARS || 96))),
   maxEntryGapAtr: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_ENTRY_GAP_ATR || 0.50)),
-  maxBarsWithoutSetup: 0
+  maxBarsWithoutSetup: 0,
+  serverTimezone: process.env.GOLD_BACKTEST_SERVER_TIMEZONE || 'Europe/Nicosia'
 };
 
 const STRATEGY = {
@@ -113,10 +114,28 @@ function localHour(timestamp) {
   return new Date(timestamp * 1000).getUTCHours();
 }
 
-function aggregateM5ToH1(m5) {
+function localDateTimeParts(timestampSeconds, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23'
+  }).formatToParts(new Date(timestampSeconds*1000));
+  const out={};
+  for (const part of parts) if(part.type!=='literal') out[part.type]=Number(part.value);
+  return out;
+}
+
+function zonedHourStartUtc(timestampSeconds, timeZone) {
+  const p=localDateTimeParts(timestampSeconds,timeZone);
+  const localAsUtc=Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute,p.second);
+  const offsetSeconds=Math.round((localAsUtc-timestampSeconds*1000)/1000);
+  const localHourAsUtc=Date.UTC(p.year,p.month-1,p.day,p.hour,0,0);
+  return Math.floor((localHourAsUtc-offsetSeconds*1000)/1000);
+}
+
+function aggregateM5ToH1(m5, timeZone='UTC') {
   const buckets = new Map();
   for (const bar of m5) {
-    const hour = Math.floor(bar.time / 3600) * 3600;
+    const hour = timeZone==='UTC' ? Math.floor(bar.time/3600)*3600 : zonedHourStartUtc(bar.time,timeZone);
     const cur = buckets.get(hour);
     if (!cur) {
       buckets.set(hour, { time:hour, open:bar.open, high:bar.high, low:bar.low, close:bar.close, volume:bar.volume });
@@ -194,7 +213,7 @@ function dataQuality(bars) {
 
 function recentBars(bars, index, count=80) {
   return bars.slice(Math.max(0,index-count+1),index+1).map((b)=>({
-    time:b.time, open:b.open, high:b.high, low:b.low, close:b.close, volume:b.volume
+    time:b.time+300, open:b.open, high:b.high, low:b.low, close:b.close, volume:b.volume
   }));
 }
 
@@ -337,7 +356,8 @@ async function runOne(rawM5, rawH1, config, strategy) {
     if(signal.time<start) continue;
     if(i<nextAvailable) continue;
     if(![signal.ema20,signal.ema50,signal.rsi14,signal.atr14].every(Number.isFinite)) continue;
-    const h1i=latestCompletedH1Index(h1Ind,signal.time);
+    const signalTime = signal.time + 300;
+    const h1i=latestCompletedH1Index(h1Ind,signalTime);
     const h=h1Ind[h1i];
     if(!h || ![h.close,h.ema20,h.ema50,h.ema200,h.rsi14,h.atr14].every(Number.isFinite)) continue;
     const setup=buildGoldV2Setup({
@@ -347,7 +367,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
     },strategy);
     if(setup.candidate==='WAIT') continue;
     candidates++;
-    const gate=applyRiskGate(state,equity,signal.time,config);
+    const gate=applyRiskGate(state,equity,signalTime,config);
     if(!gate.allowed) { for(const r of gate.reasons) blocks[r]=(blocks[r]||0)+1; continue; }
     const next=m5Ind[i+1];
     if(next.time-signal.time!==300) continue;
@@ -387,7 +407,7 @@ async function main() {
   const rows=await getHistoricalRates({instrument:'xauusd',dates:{from:start,to:end},timeframe:'m5',priceType:'bid',volumes:true,format:'array'});
   const rawM5=normalizeDukascopy(rows);
   if(rawM5.length<200000) throw new Error('Insufficient Dukascopy XAUUSD M5 data: '+rawM5.length);
-  const rawH1=aggregateM5ToH1(rawM5);
+  const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
   const strategy=JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const config={...BASE_CONFIG,lookbackDays};
   const results={};
@@ -403,6 +423,7 @@ async function main() {
     fundamental_backtest_note:'AI/web-search environment filtering is intentionally excluded from historical technical performance because point-in-time AI outputs are not available in this price dataset.',
     data_source:{m5:'DUKASCOPY_XAUUSD',h1:'FROM_M5'},
     instrument:'XAUUSD',
+    server_timezone:config.serverTimezone,
     source_period:{m5_first:new Date(rawM5[0].time*1000).toISOString(),m5_last:new Date(rawM5[rawM5.length-1].time*1000).toISOString()},
     test_period:{start:start.toISOString(),end:end.toISOString()},
     assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side'},
