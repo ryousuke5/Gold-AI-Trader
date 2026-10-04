@@ -87,6 +87,13 @@ jobs:
           PULLBACK_BACKTEST_SELL_RSI_MAX: "${{ matrix.sell_rsi_max }}"
           PULLBACK_BACKTEST_OUTPUT_DIR: pullback-backtest-output
         run: node scripts/backtest-eurusd-pullback.mjs
+      - name: Upload Strategy B results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-pullback-backtest-${{ matrix.name }}
+          path: pullback-backtest-output/
+          retention-days: 30
       - name: Enforce live approval gate
         if: matrix.name == 'balanced'
         env:
@@ -99,9 +106,3 @@ jobs:
           PULLBACK_GATE_MIN_RECENT_YEAR_EXPECTANCY_R: "0.05"
           PULLBACK_GATE_MAX_RECENT_YEAR_DD_R: "6"
         run: node scripts/validate-eurusd-pullback-gate.mjs pullback-backtest-output/summary.json
-      - name: Upload Strategy B results
-        uses: actions/upload-artifact@v4
-        with:
-          name: eurusd-pullback-backtest-${{ matrix.name }}
-          path: pullback-backtest-output/
-          retention-days: 30
