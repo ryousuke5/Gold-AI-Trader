@@ -7,7 +7,8 @@ process.env.BACKTEST_H1_SOURCE ??= 'https://raw.githubusercontent.com/ejtraderLa
 const outDir = process.env.BACKTEST_OUTPUT_DIR ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../backtest-output-usdjpy');
 process.env.BACKTEST_OUTPUT_DIR = outDir;
 
-await import('./backtest-usdjpy.mjs');
+const { runBacktest } = await import('./backtest-usdjpy.mjs');
+await runBacktest();
 const fsPath = path.join(outDir, 'usdjpy_backtest_report.json');
 const report = JSON.parse(await fs.readFile(fsPath, 'utf8'));
 report.symbol = 'USDJPY';
