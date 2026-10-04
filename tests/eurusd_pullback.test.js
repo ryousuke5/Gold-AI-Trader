@@ -24,8 +24,8 @@ function barsSell() {
     { time: t + 900, open: 1.10155, high: 1.10160, low: 1.10105, close: 1.10115, volume: 110 },
     { time: t + 1800, open: 1.10115, high: 1.10150, low: 1.10108, close: 1.10140, volume: 120 },
     { time: t + 2700, open: 1.10140, high: 1.10150, low: 1.10118, close: 1.10125, volume: 125 },
-    { time: t + 3600, open: 1.10125, high: 1.10155, low: 1.10120, close: 1.10130, volume: 130 },
-    { time: t + 4500, open: 1.10130, high: 1.10152, low: 1.10122, close: 1.10125, volume: 140 },
+    { time: t + 3600, open: 1.10125, high: 1.10150, low: 1.10120, close: 1.10130, volume: 130 },
+    { time: t + 4500, open: 1.10130, high: 1.10148, low: 1.10122, close: 1.10125, volume: 140 },
     { time: t + 5400, open: 1.10125, high: 1.10138, low: 1.10105, close: 1.10110, volume: 145 },
     { time: t + 6300, open: 1.10110, high: 1.10115, low: 1.10025, close: 1.10035, volume: 240 }
   ];
@@ -49,8 +49,8 @@ function h1Bars(direction = 'UP') {
 function features(direction = 'UP') {
   const isUp = direction === 'UP';
   return normalizeEurUsdFeatures({
-    bid: isUp ? 1.10127 : 1.10034,
-    ask: isUp ? 1.10135 : 1.10042,
+    bid: isUp ? 1.10122 : 1.10042,
+    ask: isUp ? 1.10130 : 1.10050,
     point: 0.00001,
     spread: 0.00008,
     bar_time: 1727006300,
