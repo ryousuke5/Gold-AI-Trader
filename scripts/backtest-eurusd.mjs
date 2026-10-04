@@ -9,6 +9,7 @@ const CONFIG = {
   startDate: process.env.BACKTEST_START || '',
   endDate: process.env.BACKTEST_END || '',
   lookbackDays: Math.max(30, Number(process.env.BACKTEST_LOOKBACK_DAYS || 730)),
+  serverTimezone: process.env.BACKTEST_SERVER_TIMEZONE || 'Europe/Nicosia',
   initialEquity: Math.max(1000, Number(process.env.BACKTEST_INITIAL_EQUITY || 100000)),
   riskPct: Math.max(0.01, Number(process.env.BACKTEST_RISK_PCT || 0.25)),
   spreadPips: Math.max(0, Number(process.env.BACKTEST_SPREAD_PIPS || 0.8)),
@@ -139,6 +140,36 @@ async function fetchText(url) {
   if (!res.ok) throw new Error(`Download failed ${res.status}: ${url}`);
   return await res.text();
 }
+async function fetchDukascopyM15(lookbackDays) {
+  const end = new Date();
+  const start = new Date(end.getTime() - Number(lookbackDays) * 86400000);
+  const mod = await import('dukascopy-node');
+  const getHistoricalRates = mod.getHistoricalRates || mod.default?.getHistoricalRates;
+  if (typeof getHistoricalRates !== 'function') throw new Error('dukascopy-node getHistoricalRates export not found');
+  const rows = await getHistoricalRates({
+    instrument: 'eurusd',
+    dates: { from: start, to: end },
+    timeframe: 'm15',
+    priceType: 'bid',
+    volumes: true,
+    format: 'array'
+  });
+  if (!Array.isArray(rows) || rows.length < 100000) {
+    throw new Error('Insufficient Dukascopy EURUSD M15 data: ' + (rows?.length || 0));
+  }
+  const nowMs = Date.now();
+  return rows.map((row) => ({
+    time: Math.floor(Number(row[0]) / 1000),
+    open: Number(row[1]), high: Number(row[2]), low: Number(row[3]),
+    close: Number(row[4]), volume: Number(row[5]) || 0
+  })).filter((b) =>
+    Number.isFinite(b.time) && b.open > 0 &&
+    b.high >= b.low && b.high >= b.open && b.high >= b.close &&
+    b.low <= b.open && b.low <= b.close &&
+    (b.time + 900) * 1000 <= nowMs
+  ).sort((a, b) => a.time - b.time);
+}
+
 
 function ema(values, period) {
   const out = new Array(values.length).fill(null);
@@ -216,19 +247,35 @@ function addIndicators(bars) {
   }));
 }
 
-function aggregateM15ToH1(m15) {
+function localDateTimeParts(timestampSeconds, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date(timestampSeconds * 1000));
+  const out = {};
+  for (const part of parts) if (part.type !== 'literal') out[part.type] = Number(part.value);
+  return out;
+}
+
+function zonedHourStartUtc(timestampSeconds, timeZone) {
+  const p = localDateTimeParts(timestampSeconds, timeZone);
+  const localCurrentAsUtcMs = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  const offsetSeconds = Math.round((localCurrentAsUtcMs - timestampSeconds * 1000) / 1000);
+  const localHourAsUtcMs = Date.UTC(p.year, p.month - 1, p.day, p.hour, 0, 0);
+  return Math.floor((localHourAsUtcMs - offsetSeconds * 1000) / 1000);
+}
+
+function aggregateM15ToH1(m15, timeZone = 'UTC') {
   const buckets = new Map();
   for (const bar of m15) {
-    const hour = Math.floor(bar.time / 3600) * 3600;
+    const hour = timeZone === 'UTC'
+      ? Math.floor(bar.time / 3600) * 3600
+      : zonedHourStartUtc(bar.time, timeZone);
     const current = buckets.get(hour);
     if (!current) {
       buckets.set(hour, {
-        time: hour,
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-        volume: bar.volume
+        time: hour, open: bar.open, high: bar.high, low: bar.low,
+        close: bar.close, volume: bar.volume
       });
     } else {
       current.high = Math.max(current.high, bar.high);
@@ -600,10 +647,11 @@ export function latestCompletedH1Index(h1WithIndicators, signalTime) {
 }
 
 export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.h1, config = CONFIG } = {}) {
-  const m15Text = await fetchText(m15Source);
-  const rawM15Open = parseCsv(m15Text);
+  const rawM15Open = String(m15Source).toUpperCase() === 'DUKASCOPY'
+    ? await fetchDukascopyM15(config.lookbackDays)
+    : parseCsv(await fetchText(m15Source));
   const rawH1Open = h1Source === 'FROM_M15'
-    ? aggregateM15ToH1(rawM15Open)
+    ? aggregateM15ToH1(rawM15Open, config.serverTimezone || 'Europe/Nicosia')
     : parseCsv(await fetchText(h1Source));
   const rawM15 = shiftBarsToCloseTime(rawM15Open, 15 * 60);
   const rawH1 = shiftBarsToCloseTime(rawH1Open, 60 * 60);
@@ -775,6 +823,8 @@ export async function runBacktest({ m15Source = SOURCES.m15, h1Source = SOURCES.
       ? 'A timestamped historical fundamental mask was applied causally at or before each signal. Verify that the mask was created without lookahead.'
       : 'Historical AI/web-search outputs are not available in the price dataset, so this report measures the technical core separately. It must not be interpreted as full technical+AI historical performance.',
     data_source: { m15: m15Source, h1: h1Source },
+    source_mode: String(m15Source).toUpperCase() === 'DUKASCOPY' ? 'dukascopy' : 'csv',
+    server_timezone: config.serverTimezone || 'Europe/Nicosia',
     source_period: {
       m15_first: new Date(rawM15[0].time * 1000).toISOString(),
       m15_last: new Date(rawM15[rawM15.length - 1].time * 1000).toISOString(),
