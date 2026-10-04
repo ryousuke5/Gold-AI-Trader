@@ -186,9 +186,12 @@ export function buildEurUsdAsiaRangeBreakoutSetup({
   const candidate = directionUp ? 'BUY' : 'SELL';
 
   const entry = candidate === 'BUY' ? signalBar.close + spread / 2 : signalBar.close - spread / 2;
+  // Structural invalidation: once price closes back through the broken Asia edge,
+  // the breakout thesis is invalid. This is intentionally narrower than using
+  // the opposite side of the full Asia range as the stop.
   const stopLoss = candidate === 'BUY'
-    ? asiaRange.low - atr * 0.15
-    : asiaRange.high + atr * 0.15;
+    ? asiaRange.high - atr * 0.25
+    : asiaRange.low + atr * 0.25;
   const stopDistance = Math.abs(entry - stopLoss);
   const stopAtr = stopDistance / atr;
   if (!(stopAtr >= minStopAtr && stopAtr <= maxStopAtr)) {
