@@ -36,7 +36,7 @@ test('BUY requires H1 trend, London window and clean Asia high break', () => {
     signalBar: bar(t, 1.1012, 1.1022, 1.1010, 1.1020, { rsi14: 60 }),
     previousBar: bar(t - 900, 1.1005, 1.1012, 1.1003, 1.1010),
     h1Bar: { trend: 'UP' },
-    asiaRange: { date: '2022-03-07', high: 1.1015, low: 1.0995, bars: 24 },
+    asiaRange: { date: '2022-03-07', high: 1.1015, low: 1.1007, bars: 24 },
     config: { spreadPips: 0.8 }
   });
   assert.equal(setup.candidate, 'BUY');
@@ -50,7 +50,7 @@ test('SELL mirrors BUY logic', () => {
     signalBar: bar(t, 1.1000, 1.1002, 1.0988, 1.0990, { ema20: 1.1000, ema50: 1.1005, rsi14: 40 }),
     previousBar: bar(t - 900, 1.1007, 1.1010, 1.0999, 1.1002, { ema20: 1.1000, ema50: 1.1005 }),
     h1Bar: { trend: 'DOWN' },
-    asiaRange: { date: '2022-03-07', high: 1.1020, low: 1.0995, bars: 24 },
+    asiaRange: { date: '2022-03-07', high: 1.1003, low: 1.0995, bars: 24 },
     config: { spreadPips: 0.8 }
   });
   assert.equal(setup.candidate, 'SELL');
