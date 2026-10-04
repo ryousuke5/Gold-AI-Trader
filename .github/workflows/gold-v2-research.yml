@@ -1,0 +1,106 @@
+name: GOLD V2 Five-Year Research
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/gold_strategy_v2.js'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'tests/gold_strategy_v2.test.js'
+      - '.github/workflows/gold-v2-research.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: gold-v2-research
+  cancel-in-progress: true
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline
+            range_lookback: "12"
+            min_range_atr: "0.80"
+            max_range_atr: "2.80"
+            breakout_atr: "0.10"
+            body_atr: "0.40"
+            close_location: "0.65"
+            volume_ratio: "1.10"
+            session_start: "7"
+            session_end: "20"
+          - name: strict
+            range_lookback: "12"
+            min_range_atr: "0.80"
+            max_range_atr: "2.50"
+            breakout_atr: "0.15"
+            body_atr: "0.50"
+            close_location: "0.70"
+            volume_ratio: "1.25"
+            session_start: "7"
+            session_end: "17"
+          - name: loose
+            range_lookback: "18"
+            min_range_atr: "0.60"
+            max_range_atr: "3.50"
+            breakout_atr: "0.05"
+            body_atr: "0.30"
+            close_location: "0.60"
+            volume_ratio: "1.05"
+            session_start: "7"
+            session_end: "22"
+          - name: ny_focus
+            range_lookback: "12"
+            min_range_atr: "0.80"
+            max_range_atr: "2.80"
+            breakout_atr: "0.10"
+            body_atr: "0.40"
+            close_location: "0.65"
+            volume_ratio: "1.10"
+            session_start: "12"
+            session_end: "20"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Run five-year XAUUSD M5 backtest
+        env:
+          GOLD_BACKTEST_LOOKBACK_DAYS: "1825"
+          GOLD_BACKTEST_INITIAL_EQUITY: "100000"
+          GOLD_BACKTEST_RISK_PCT: "0.25"
+          GOLD_BACKTEST_SPREAD_PRICE: "0.50"
+          GOLD_BACKTEST_SLIPPAGE_PRICE: "0.05"
+          GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: "2"
+          GOLD_BACKTEST_MAX_DRAWDOWN_PCT: "5"
+          GOLD_BACKTEST_MAX_HOLD_BARS: "96"
+          GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: "0.50"
+          GOLD_RANGE_LOOKBACK: ${{ matrix.range_lookback }}
+          GOLD_MIN_RANGE_ATR: ${{ matrix.min_range_atr }}
+          GOLD_MAX_RANGE_ATR: ${{ matrix.max_range_atr }}
+          GOLD_BREAKOUT_ATR: ${{ matrix.breakout_atr }}
+          GOLD_MIN_BODY_ATR: ${{ matrix.body_atr }}
+          GOLD_MIN_CLOSE_LOCATION: ${{ matrix.close_location }}
+          GOLD_MIN_VOLUME_RATIO: ${{ matrix.volume_ratio }}
+          GOLD_SESSION_START_UTC: ${{ matrix.session_start }}
+          GOLD_SESSION_END_UTC: ${{ matrix.session_end }}
+          GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
+        run: node scripts/backtest-gold-v2.mjs
+
+      - name: Upload GOLD V2 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-${{ matrix.name }}
+          path: gold-backtest-output/
+          retention-days: 30
