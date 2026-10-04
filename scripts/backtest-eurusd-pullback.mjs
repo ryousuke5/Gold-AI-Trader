@@ -98,6 +98,31 @@ function parseCsv(text) {
 }
 
 async function fetchBars() {
+  const sourceMode = String(process.env.PULLBACK_BACKTEST_SOURCE || 'dukascopy').toLowerCase();
+  if (sourceMode === 'dukascopy') {
+    const end = new Date();
+    const start = new Date(end.getTime() - CONFIG.lookbackDays * 86400000);
+    const mod = await import('dukascopy-node');
+    const getHistoricalRates = mod.getHistoricalRates || mod.default?.getHistoricalRates;
+    if (typeof getHistoricalRates !== 'function') throw new Error('dukascopy-node getHistoricalRates export not found');
+    const data = await getHistoricalRates({
+      instrument: 'eurusd',
+      dates: { from: start, to: end },
+      timeframe: 'm15',
+      priceType: 'bid',
+      volumes: true,
+      format: 'array'
+    });
+    if (!Array.isArray(data) || data.length < 100) throw new Error('Dukascopy returned insufficient EURUSD M15 data: ' + (data?.length || 0));
+    return data.map((row) => ({
+      time: Math.floor(Number(row[0]) / 1000),
+      open: Number(row[1]),
+      high: Number(row[2]),
+      low: Number(row[3]),
+      close: Number(row[4]),
+      volume: Number(row[5]) || 0
+    })).filter((b) => Number.isFinite(b.time) && b.open > 0 && b.high >= b.low && b.high >= b.open && b.high >= b.close && b.low <= b.open && b.low <= b.close);
+  }
   const res = await fetch(SOURCE, { headers: { 'user-agent': 'Gold-AI-Trader-pullback-backtest/1.0' } });
   if (!res.ok) throw new Error('Download failed ' + res.status + ': ' + SOURCE);
   return parseCsv(await res.text());
@@ -341,10 +366,13 @@ async function main() {
     nextEligible = i + Math.max(1, trade.hold_bars) + CONFIG.cooldownBars;
   }
 
+  if (m15.length < 100000) throw new Error('Historical data coverage is unexpectedly low: only ' + m15.length + ' M15 bars after filtering. Refusing to call this a 5-year backtest.');
+
   const summary = {
     strategy: 'EURUSD M15 H1 Trend Pullback v1',
     lookback_days: CONFIG.lookbackDays,
-    source: SOURCE,
+    source_mode: String(process.env.PULLBACK_BACKTEST_SOURCE || 'dukascopy').toLowerCase(),
+    source: String(process.env.PULLBACK_BACKTEST_SOURCE || 'dukascopy').toLowerCase() === 'dukascopy' ? 'Dukascopy historical EURUSD M15 bid data' : SOURCE,
     bars: m15.length,
     candidate_signals: candidateCount,
     assumptions: {
