@@ -54,6 +54,7 @@ jobs:
         run: npm run test:mt4:pullback
       - name: Run Strategy B backtest
         env:
+          PULLBACK_BACKTEST_SOURCE: "dukascopy"
           PULLBACK_BACKTEST_LOOKBACK_DAYS: "1825"
           PULLBACK_BACKTEST_SPREAD_PIPS: "0.8"
           PULLBACK_BACKTEST_SLIPPAGE_PIPS: "0.1"
