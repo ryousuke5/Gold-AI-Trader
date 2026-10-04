@@ -21,24 +21,26 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Restore XAUUSD M1 cache
+        id: xau-cache-restore
+        uses: actions/cache/restore@v4
         with:
-          node-version: 22
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Validate research scripts
-        run: |
-          node --check scripts/fetch-xauusd-m5.mjs
-          node --check scripts/backtest-gold-v2.mjs
+          path: gold-xauusd-data/raw
+          key: xauusd-m1-v2-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            xauusd-m1-v2-${{ runner.os }}-
       - name: Prepare five-year XAUUSD M5 dataset
-        env:
-          GOLD_BACKTEST_LOOKBACK_DAYS: "1825"
-          GOLD_DATA_CHUNK_DAYS: "45"
-          GOLD_DATA_COOLDOWN_MS: "30000"
-          GOLD_DATA_CHUNK_RETRIES: "5"
-          GOLD_PREPARED_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
-        run: node scripts/fetch-xauusd-m5.mjs
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --self-test
+          python3 scripts/fetch-xauusd-m5.py --lookback-days 1825 --cache-dir gold-xauusd-data/raw --output-file gold-xauusd-data/xauusd-m5.json.gz
+      - name: Save XAUUSD M1 cache for resumability
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: gold-xauusd-data/raw
+          key: xauusd-m1-v2-${{ runner.os }}-${{ github.run_id }}
       - name: Upload prepared XAUUSD M5 dataset
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: gold-xauusd-m5-1825d
