@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: eurusd-pullback-backtest
+  cancel-in-progress: true
+
 jobs:
   backtest:
     runs-on: ubuntu-latest
