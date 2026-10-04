@@ -591,8 +591,9 @@ export function registerEurUsdRoutes(app) {
       }
 
       const state = (await getState()) || {};
+      const gate = executionGate();
       const orderAllowed = Boolean(
-        executionEnabled() &&
+        gate.allowed &&
         risk.approved &&
         ['DEMO', 'LIVE'].includes(String(state.mode || ''))
       );
@@ -619,6 +620,8 @@ export function registerEurUsdRoutes(app) {
         },
         order_allowed: orderAllowed,
         execution_enabled: executionEnabled(),
+        live_trading_approved: eurUsdLiveTradingApproved(),
+        execution_gate: gate,
         persisted: true,
         orders_executed: false
       });
@@ -647,6 +650,8 @@ export function registerEurUsdRoutes(app) {
         timeframe: 'M15',
         strategy_version: process.env.EURUSD_PULLBACK_STRATEGY_VERSION || 'eurusd-m15-h1-trend-pullback-v1',
         execution_enabled: executionEnabled(),
+        live_trading_approved: eurUsdLiveTradingApproved(),
+        execution_gate: executionGate(),
         risk_limits: getEurUsdRiskLimits(),
         state: state || null
       });
