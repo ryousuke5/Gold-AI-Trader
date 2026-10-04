@@ -3,6 +3,19 @@ name: EURUSD Pullback Backtest
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/eurusd.js'
+      - 'src/eurusd_ai.js'
+      - 'src/eurusd_features.js'
+      - 'src/eurusd_pullback.js'
+      - 'src/eurusd_risk.js'
+      - 'scripts/backtest-eurusd-pullback.mjs'
+      - 'scripts/validate-eurusd-pullback-gate.mjs'
+      - 'scripts/validate-eurusd-pullback-monitor.mjs'
+      - 'tests/**'
+      - 'mt4/EURUSDTrendPullbackMonitor.mq4'
+      - 'package.json'
+      - '.github/workflows/eurusd-pullback-backtest.yml'
   workflow_dispatch:
 
 concurrency:
