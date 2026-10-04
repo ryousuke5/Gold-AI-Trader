@@ -74,8 +74,11 @@ export function buildEurUsdTrendPullbackSetup(f, options = {}) {
   const latest = bars[bars.length - 1];
   if (f.barTime > 0 && latest.time !== f.barTime) return waitResult(trend, ['m15_bar_time_mismatch']);
 
-  for (let i = 1; i < bars.length; i += 1) {
-    if (bars[i].time - bars[i - 1].time !== 900) return waitResult(trend, ['recent_m15_bars_not_contiguous']);
+  const recentSetupBars = bars.slice(-(lookback + 1));
+  for (let i = 1; i < recentSetupBars.length; i += 1) {
+    if (recentSetupBars[i].time - recentSetupBars[i - 1].time !== 900) {
+      return waitResult(trend, ['recent_m15_setup_bars_not_contiguous']);
+    }
   }
 
   const atr = Number(f.m15?.atr14 || 0);
