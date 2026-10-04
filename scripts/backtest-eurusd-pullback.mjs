@@ -114,6 +114,7 @@ async function fetchBars() {
       format: 'array'
     });
     if (!Array.isArray(data) || data.length < 100) throw new Error('Dukascopy returned insufficient EURUSD M15 data: ' + (data?.length || 0));
+    const nowMs = Date.now();
     return data.map((row) => ({
       time: Math.floor(Number(row[0]) / 1000),
       open: Number(row[1]),
@@ -121,7 +122,14 @@ async function fetchBars() {
       low: Number(row[3]),
       close: Number(row[4]),
       volume: Number(row[5]) || 0
-    })).filter((b) => Number.isFinite(b.time) && b.open > 0 && b.high >= b.low && b.high >= b.open && b.high >= b.close && b.low <= b.open && b.low <= b.close);
+    })).filter((b) => Number.isFinite(b.time)
+      && b.open > 0
+      && b.high >= b.low
+      && b.high >= b.open
+      && b.high >= b.close
+      && b.low <= b.open
+      && b.low <= b.close
+      && (b.time + 900) * 1000 <= nowMs);
   }
   const res = await fetch(SOURCE, { headers: { 'user-agent': 'Gold-AI-Trader-pullback-backtest/1.0' } });
   if (!res.ok) throw new Error('Download failed ' + res.status + ': ' + SOURCE);
@@ -315,9 +323,11 @@ function stats(trades) {
 
 async function main() {
   await fs.mkdir(CONFIG.outputDir, { recursive: true });
-  let m15 = addIndicators(await fetchBars());
+  let m15 = await fetchBars();
   const lower = Math.floor(Date.now() / 1000) - CONFIG.lookbackDays * 86400;
   m15 = m15.filter((b) => b.time >= lower);
+  m15 = m15.sort((a, b) => a.time - b.time);
+  m15 = addIndicators(m15);
   const h1 = addIndicators(aggregateH1(m15));
   const trades = [];
   let nextEligible = 0;
