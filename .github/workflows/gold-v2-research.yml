@@ -19,7 +19,7 @@ concurrency:
 jobs:
   prepare-data:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - name: Restore XAUUSD M1 cache
@@ -33,7 +33,7 @@ jobs:
       - name: Prepare five-year XAUUSD M5 dataset
         run: |
           python3 scripts/fetch-xauusd-m5.py --self-test
-          python3 scripts/fetch-xauusd-m5.py --lookback-days 1825 --cache-dir gold-xauusd-data/raw --output-file gold-xauusd-data/xauusd-m5.json.gz
+          python3 scripts/fetch-xauusd-m5.py --lookback-days 1825 --cache-dir gold-xauusd-data/raw --output-file gold-xauusd-data/xauusd-m5.json.gz --request-delay 2.0
       - name: Save XAUUSD M1 cache for resumability
         if: always()
         uses: actions/cache/save@v4
