@@ -21,7 +21,13 @@ while (cursor < end) {
     timeframe: 'm5',
     priceType: 'bid',
     volumes: true,
-    format: 'array'
+    format: 'array',
+    batchSize: 5,
+    pauseBetweenBatchesMs: 500,
+    retryCount: 3,
+    retryOnEmpty: true,
+    failAfterRetryCount: true,
+    pauseBetweenRetriesMs: 1000
   });
   const now = Date.now();
   for (const row of (Array.isArray(rows) ? rows : [])) {
