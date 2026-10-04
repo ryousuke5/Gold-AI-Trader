@@ -221,7 +221,7 @@ function latestCompletedH1Index(h1, signalTime) {
   let lo=0, hi=h1.length-1, best=-1;
   while(lo<=hi) {
     const mid=Math.floor((lo+hi)/2);
-    if(h1[mid].time<=signalTime) {best=mid; lo=mid+1;} else hi=mid-1;
+    if(h1[mid].time+3600<=signalTime) {best=mid; lo=mid+1;} else hi=mid-1;
   }
   return best;
 }
