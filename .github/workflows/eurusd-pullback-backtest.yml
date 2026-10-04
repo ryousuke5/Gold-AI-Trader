@@ -77,7 +77,7 @@ jobs:
       - name: Enforce live approval gate
         if: matrix.name == 'balanced'
         env:
-          PULLBACK_GATE_MIN_TRADES_PER_WEEK: "1"
+          PULLBACK_GATE_GUIDANCE_TRADES_PER_WEEK: "1"
           PULLBACK_GATE_MIN_PF: "1.25"
           PULLBACK_GATE_MIN_EXPECTANCY_R: "0.10"
           PULLBACK_GATE_MAX_DD_R: "12"
