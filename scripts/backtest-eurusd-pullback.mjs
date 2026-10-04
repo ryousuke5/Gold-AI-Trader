@@ -214,21 +214,12 @@ function localDateTimeParts(timestampSeconds, timeZone) {
 
 function zonedHourStartUtc(timestampSeconds, timeZone) {
   const p = localDateTimeParts(timestampSeconds, timeZone);
+  const localCurrentAsUtcMs = Date.UTC(
+    p.year, p.month - 1, p.day, p.hour, p.minute, p.second
+  );
+  const offsetSeconds = Math.round((localCurrentAsUtcMs - timestampSeconds * 1000) / 1000);
   const localHourAsUtcMs = Date.UTC(p.year, p.month - 1, p.day, p.hour, 0, 0);
-  const nearby = [timestampSeconds - 3 * 86400, timestampSeconds, timestampSeconds + 3 * 86400];
-  let bestOffsetSeconds = 0;
-  let bestDistance = Infinity;
-  for (const probe of nearby) {
-    const q = localDateTimeParts(probe, timeZone);
-    const qAsUtcMs = Date.UTC(q.year, q.month - 1, q.day, q.hour, q.minute, q.second);
-    const offsetSeconds = Math.round((qAsUtcMs - probe * 1000) / 1000);
-    const distance = Math.abs((offsetSeconds * 1000) - (localHourAsUtcMs - timestampSeconds * 1000));
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestOffsetSeconds = offsetSeconds;
-    }
-  }
-  return Math.floor((localHourAsUtcMs - bestOffsetSeconds * 1000) / 1000);
+  return Math.floor((localHourAsUtcMs - offsetSeconds * 1000) / 1000);
 }
 
 function aggregateH1(m15, timeZone = CONFIG.serverTimezone) {
