@@ -1,0 +1,101 @@
+name: EURUSD Volatility Expansion Research
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: strict
+            squeeze_atr: "1.50"
+            atr_expansion: "1.15"
+            breakout_atr: "0.10"
+            body_atr: "0.35"
+            close_location: "0.70"
+            buy_rsi_min: "50"
+            buy_rsi_max: "68"
+            sell_rsi_min: "32"
+            sell_rsi_max: "50"
+          - name: balanced
+            squeeze_atr: "2.00"
+            atr_expansion: "1.08"
+            breakout_atr: "0.05"
+            body_atr: "0.30"
+            close_location: "0.65"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+          - name: opportunity
+            squeeze_atr: "2.50"
+            atr_expansion: "1.03"
+            breakout_atr: "0.03"
+            body_atr: "0.25"
+            close_location: "0.60"
+            buy_rsi_min: "47"
+            buy_rsi_max: "72"
+            sell_rsi_min: "28"
+            sell_rsi_max: "53"
+          - name: narrow-squeeze
+            squeeze_atr: "1.25"
+            atr_expansion: "1.05"
+            breakout_atr: "0.05"
+            body_atr: "0.30"
+            close_location: "0.65"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+          - name: high-expansion
+            squeeze_atr: "1.50"
+            atr_expansion: "1.20"
+            breakout_atr: "0.08"
+            body_atr: "0.40"
+            close_location: "0.70"
+            buy_rsi_min: "50"
+            buy_rsi_max: "68"
+            sell_rsi_min: "32"
+            sell_rsi_max: "50"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Unit tests
+        run: npm test
+      - name: 5-year volatility expansion backtest
+        env:
+          BACKTEST_LOOKBACK_DAYS: "1825"
+          BACKTEST_INITIAL_EQUITY: "100000"
+          BACKTEST_RISK_PCT: "0.25"
+          BACKTEST_SPREAD_PIPS: "0.8"
+          BACKTEST_SLIPPAGE_PIPS: "0.1"
+          BACKTEST_MIN_STOP_ATR: "0.50"
+          BACKTEST_MAX_STOP_ATR: "1.50"
+          BACKTEST_MAX_SPREAD_PIPS: "1.20"
+          BACKTEST_MAX_SPREAD_TO_TP_PCT: "12"
+          BACKTEST_BREAKOUT_MIN_ATR: ${{ matrix.breakout_atr }}
+          BACKTEST_BREAKOUT_MIN_BODY_ATR: ${{ matrix.body_atr }}
+          BACKTEST_BREAKOUT_MIN_CLOSE_LOCATION: ${{ matrix.close_location }}
+          BACKTEST_MAX_SQUEEZE_WIDTH_ATR: ${{ matrix.squeeze_atr }}
+          BACKTEST_MIN_ATR_EXPANSION: ${{ matrix.atr_expansion }}
+          BACKTEST_BREAKOUT_BUY_RSI_MIN: ${{ matrix.buy_rsi_min }}
+          BACKTEST_BREAKOUT_BUY_RSI_MAX: ${{ matrix.buy_rsi_max }}
+          BACKTEST_BREAKOUT_SELL_RSI_MIN: ${{ matrix.sell_rsi_min }}
+          BACKTEST_BREAKOUT_SELL_RSI_MAX: ${{ matrix.sell_rsi_max }}
+          BACKTEST_MIN_VOLUME_RATIO: "1.05"
+          BACKTEST_OUTPUT_DIR: backtest-output
+        run: node scripts/backtest-eurusd-volatility-expansion.mjs
+      - name: Upload research artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-volatility-expansion-${{ matrix.name }}
+          path: backtest-output/
+          retention-days: 30
