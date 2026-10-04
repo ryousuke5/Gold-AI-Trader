@@ -93,8 +93,9 @@ export function buildEurUsdVolatilityExpansionSetup(f, options = {}) {
   const bandwidth = upper - lower;
   const bandwidthAtr = bandwidth / atr;
 
-  const atrValues = atrSeries(bars, 14);
-  const previousAtrValues = atrValues.slice(-(lookback + 1), -1).filter(Number.isFinite);
+  const suppliedAtrValues = prior.map((b) => num(b.atr14, NaN)).filter(Number.isFinite);
+  const atrValues = suppliedAtrValues.length >= 10 ? suppliedAtrValues : atrSeries(bars, 14);
+  const previousAtrValues = atrValues.slice(-(lookback),).filter(Number.isFinite);
   const avgPriorAtr = average(previousAtrValues);
   const atrExpansionRatio = avgPriorAtr > 0 ? atr / avgPriorAtr : 0;
 
