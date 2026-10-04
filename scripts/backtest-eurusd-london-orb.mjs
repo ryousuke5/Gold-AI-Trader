@@ -205,6 +205,7 @@ function summarize(trades) {
   let equity = CONFIG.initialEquity;
   let peak = equity;
   let maxDd = 0;
+  let maxDdPct = 0;
   let grossProfit = 0;
   let grossLoss = 0;
   let wins = 0;
@@ -213,7 +214,9 @@ function summarize(trades) {
   for (const t of trades) {
     equity += t.net_pnl;
     peak = Math.max(peak, equity);
-    maxDd = Math.max(maxDd, peak - equity);
+    const dd = peak - equity;
+    maxDd = Math.max(maxDd, dd);
+    maxDdPct = peak > 0 ? Math.max(maxDdPct, dd / peak * 100) : maxDdPct;
     if (t.net_pnl > 0) { wins++; grossProfit += t.net_pnl; }
     else if (t.net_pnl < 0) { losses++; grossLoss += -t.net_pnl; }
     holding += t.holding_minutes;
@@ -230,15 +233,17 @@ function summarize(trades) {
     profit_factor: grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0,
     expectancy_per_trade: trades.length ? (equity - CONFIG.initialEquity) / trades.length : 0,
     max_drawdown: maxDd,
-    max_drawdown_pct: peak > 0 ? maxDd / peak * 100 : 0,
+    max_drawdown_pct: maxDdPct,
     avg_holding_minutes: trades.length ? holding / trades.length : 0,
     trades_per_week: 0
   };
 }
 
 export async function runSessionBacktest() {
-  const rawM15 = shiftBarsToCloseTime(parseCsv(await (await fetch(SOURCES.m15)).text()), 900);
-  const rawH1 = rawM15.length ? shiftBarsToCloseTime(aggregateM15ToH1(parseCsv(await (await fetch(SOURCES.m15)).text())), 3600) : [];
+  const m15Text = await (await fetch(SOURCES.m15)).text();
+  const rawM15Open = parseCsv(m15Text);
+  const rawM15 = shiftBarsToCloseTime(rawM15Open, 900);
+  const rawH1 = rawM15Open.length ? shiftBarsToCloseTime(aggregateM15ToH1(rawM15Open), 3600) : [];
   const latest = rawM15[rawM15.length - 1].time;
   const endTime = CONFIG.endDate ? Date.parse(CONFIG.endDate + 'T23:59:59Z') / 1000 : latest;
   const startTime = CONFIG.startDate ? Date.parse(CONFIG.startDate + 'T00:00:00Z') / 1000 : latest - CONFIG.lookbackDays * 86400;
