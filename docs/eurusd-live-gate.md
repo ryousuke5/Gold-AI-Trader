@@ -32,3 +32,10 @@ Both default to `false`.
 Therefore enabling execution alone is insufficient. The approval gate must be deliberately enabled only after the backtest, 直近365日検証 review, and forward/demo validation have been reviewed.
 
 Strategy B remains monitor-only until that point.
+## Strategy B V2 research status
+
+Strategy B V2 (TREND_PULLBACK_V2) is a research-only variant. It is intentionally not wired to the live /api/eurusd/pullback-signal execution path. V2 must first pass 5-year historical testing, recent-365-day validation, direction/year consistency review, and execution-cost stress testing. Trade frequency remains a guideline, not an approval criterion.
+
+The V2 backtester reports separate development-period and recent-365-day validation statistics. The recent-365-day segment is treated as a fixed-parameter validation segment; parameters are not fitted inside the backtester.
+
+Live approval remains blocked unless the explicit EURUSD live approval flag is enabled after the quantitative review and forward/demo validation.
