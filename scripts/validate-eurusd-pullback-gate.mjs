@@ -6,10 +6,10 @@ const guidanceTradesPerWeek = Number(process.env.PULLBACK_GATE_GUIDANCE_TRADES_P
 const minPf = Number(process.env.PULLBACK_GATE_MIN_PF || 1.25);
 const minExpectancyR = Number(process.env.PULLBACK_GATE_MIN_EXPECTANCY_R || 0.10);
 const maxDrawdownR = Number(process.env.PULLBACK_GATE_MAX_DD_R || 12);
-const minOosTrades = Number(process.env.PULLBACK_GATE_MIN_OOS_TRADES || 40);
-const minOosPf = Number(process.env.PULLBACK_GATE_MIN_OOS_PF || 1.10);
-const minOosExpectancyR = Number(process.env.PULLBACK_GATE_MIN_OOS_EXPECTANCY_R || 0.05);
-const maxOosDrawdownR = Number(process.env.PULLBACK_GATE_MAX_OOS_DD_R || 6);
+const minRecentYearTrades = Number(process.env.PULLBACK_GATE_MIN_recent-year validation_TRADES || 40);
+const minRecentYearPf = Number(process.env.PULLBACK_GATE_MIN_recent-year validation_PF || 1.10);
+const minRecentYearExpectancyR = Number(process.env.PULLBACK_GATE_MIN_recent-year validation_EXPECTANCY_R || 0.05);
+const maxRecentYearDrawdownR = Number(process.env.PULLBACK_GATE_MAX_recent-year validation_DD_R || 6);
 
 function finite(n) { return Number.isFinite(Number(n)); }
 
@@ -49,19 +49,19 @@ const trades = lines.map(line => {
 }).sort((a,b)=>Date.parse(a.signal_time)-Date.parse(b.signal_time));
 
 const cutoff = Date.now() - 365*86400*1000;
-const oosTrades = trades.filter(t => Date.parse(t.signal_time) >= cutoff);
+const recentYearTrades = trades.filter(t => Date.parse(t.signal_time) >= cutoff);
 const overall = stats(trades);
-const oos = stats(oosTrades);
+const oos = stats(recentYearTrades);
 
 const checks = {
   minimum_sample_size: overall.trades >= 100,
   minimum_profit_factor: finite(overall.profit_factor) && overall.profit_factor >= minPf,
   minimum_expectancy: overall.expectancy_r >= minExpectancyR,
   maximum_drawdown: overall.max_drawdown_r <= maxDrawdownR,
-  minimum_oos_trades: oos.trades >= minOosTrades,
-  minimum_oos_profit_factor: finite(oos.profit_factor) && oos.profit_factor >= minOosPf,
-  minimum_oos_expectancy: oos.expectancy_r >= minOosExpectancyR,
-  maximum_oos_drawdown: oos.max_drawdown_r <= maxOosDrawdownR
+  minimum_recent_year_trades: oos.trades >= minRecentYearTrades,
+  minimum_recent_year_profit_factor: finite(oos.profit_factor) && oos.profit_factor >= minRecentYearPf,
+  minimum_recent_year_expectancy: oos.expectancy_r >= minRecentYearExpectancyR,
+  maximum_recent_year_drawdown: oos.max_drawdown_r <= maxRecentYearDrawdownR
 };
 
 const result = {
@@ -73,10 +73,10 @@ const result = {
     min_pf: minPf,
     min_expectancy_r: minExpectancyR,
     max_drawdown_r: maxDrawdownR,
-    min_oos_trades: minOosTrades,
-    min_oos_pf: minOosPf,
-    min_oos_expectancy_r: minOosExpectancyR,
-    max_oos_drawdown_r: maxOosDrawdownR
+    min_oos_trades: minRecentYearTrades,
+    min_oos_pf: minRecentYearPf,
+    min_oos_expectancy_r: minRecentYearExpectancyR,
+    max_oos_drawdown_r: maxRecentYearDrawdownR
   },
   overall,
   frequency_guidance: {
@@ -84,7 +84,7 @@ const result = {
     meets_reference: overall.trades_per_week >= guidanceTradesPerWeek,
     note: 'Trade frequency is a guideline only and does not determine live approval.'
   },
-  oos_last_365_days: oos,
+  recent_365_days_validation: oos,
   evaluated_at: new Date().toISOString(),
   source_summary: {
     source_mode: summary.source_mode,
