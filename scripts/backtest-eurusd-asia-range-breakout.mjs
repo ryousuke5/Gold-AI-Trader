@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { parseCsv, shiftBarsToCloseTime, latestCompletedH1Index } from './backtest-eurusd.mjs';
 import {
   buildLondonAsiaRangeMap,
-  buildEurUsdAsiaRangeBreakoutSetup
+  buildEurUsdAsiaRangeBreakoutSetup,
+  londonSessionBucket
 } from '../src/eurusd_asia_range_breakout.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -274,8 +275,7 @@ function runPeriod(data, start, end) {
     const h1Bar = h1Index >= 0 ? { ...data.h1[h1Index], trend: h1Trend(data.h1[h1Index]) } : null;
     if (!h1Bar || ![h1Bar.close, h1Bar.ema20, h1Bar.ema50, h1Bar.ema200].every(Number.isFinite)) continue;
 
-    const localDate = signalBar.time;
-    const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date(localDate * 1000));
+    const dateKey = londonSessionBucket(signalBar.time);
     const asiaRange = asiaRangeMap.get(dateKey);
     if (!asiaRange) continue;
 
