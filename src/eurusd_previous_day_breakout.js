@@ -1,12 +1,14 @@
+const LONDON_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/London',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  hour12: false
+});
+
 function londonParts(timeSeconds) {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    hour12: false
-  }).formatToParts(new Date(timeSeconds * 1000));
+  const parts = LONDON_FORMATTER.formatToParts(new Date(timeSeconds * 1000));
   const map = Object.fromEntries(parts.filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]));
   return {
     date: `${map.year}-${map.month}-${map.day}`,
@@ -167,12 +169,29 @@ function isLondonWeekday(date) {
   return weekday >= 1 && weekday <= 5;
 }
 
+function sortedWeekdays(dayMap) {
+  if (Array.isArray(dayMap.__sortedWeekdays)) return dayMap.__sortedWeekdays;
+  const rows = [...dayMap.values()]
+    .filter((row) => isLondonWeekday(row.date) && row.bars > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  Object.defineProperty(dayMap, '__sortedWeekdays', { value: rows, writable: false, enumerable: false });
+  return rows;
+}
+
 export function latestPreviousTradingDay(dayMap, signalTime) {
   const currentDay = londonDayKey(signalTime);
+  const rows = sortedWeekdays(dayMap);
+  let lo = 0;
+  let hi = rows.length - 1;
   let best = null;
-  for (const [date, row] of dayMap.entries()) {
-    if (!isLondonWeekday(date)) continue;
-    if (date < currentDay && row.bars > 0 && (!best || date > best.date)) best = row;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (rows[mid].date < currentDay) {
+      best = rows[mid];
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
   }
   return best;
 }
