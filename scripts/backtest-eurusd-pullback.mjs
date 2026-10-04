@@ -43,6 +43,11 @@ function splitCsvLine(line) {
 function parseCsv(text) {
   const lines = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
   if (lines.length < 2) return [];
+  console.log(JSON.stringify({
+    raw_lines: lines.length,
+    raw_first_line: lines[0].slice(0, 220),
+    raw_last_line: lines[lines.length - 1].slice(0, 220)
+  }));
   const header = splitCsvLine(lines[0]).map((x) => x.trim().replace(/^"|"$/g, '').toLowerCase());
   const idx = Object.fromEntries(header.map((h, i) => [h, i]));
   const dateKey = ['datetime', 'date', 'time', 'timestamp', 'timestamp_utc'].find((k) => idx[k] !== undefined) || header[0];
@@ -50,19 +55,29 @@ function parseCsv(text) {
   for (const key of [dateKey, 'open', 'high', 'low', 'close']) if (idx[key] === undefined) throw new Error('CSV missing column: ' + key);
 
   const rows = [];
+  let rejectCount = 0;
+  const rejectExamples = [];
   for (let i = 1; i < lines.length; i += 1) {
     if (!lines[i].trim()) continue;
     const cells = splitCsvLine(lines[i]);
     const time = parseTimestamp(cells[idx[dateKey]]);
     const rawClose = Number(cells[idx.close]);
-    if (!Number.isFinite(time) || !(rawClose > 0)) continue;
+    if (!Number.isFinite(time) || !(rawClose > 0)) {
+      rejectCount += 1;
+      if (rejectExamples.length < 3) rejectExamples.push({ line: i + 1, raw: lines[i].slice(0, 220), time, rawClose });
+      continue;
+    }
     const scale = rawClose > 10 ? 100000 : 1;
     const price = (key) => Number(cells[idx[key]]) / scale;
     const open = price('open');
     const high = price('high');
     const low = price('low');
     const close = price('close');
-    if (!(open > 0 && high >= low && high >= open && high >= close && low <= open && low <= close)) continue;
+    if (!(open > 0 && high >= low && high >= open && high >= close && low <= open && low <= close)) {
+      rejectCount += 1;
+      if (rejectExamples.length < 3) rejectExamples.push({ line: i + 1, raw: lines[i].slice(0, 220), open, high, low, close });
+      continue;
+    }
     rows.push({
       time: Math.floor(time / 1000),
       open, high, low, close,
@@ -70,7 +85,16 @@ function parseCsv(text) {
     });
   }
   rows.sort((a, b) => a.time - b.time);
-  return rows.filter((r, i) => i === 0 || r.time !== rows[i - 1].time);
+  const unique = rows.filter((r, i) => i === 0 || r.time !== rows[i - 1].time);
+  console.log(JSON.stringify({
+    parsed_rows: rows.length,
+    unique_rows: unique.length,
+    reject_count: rejectCount,
+    reject_examples: rejectExamples,
+    first_parsed_time: unique[0]?.time ?? null,
+    last_parsed_time: unique.at(-1)?.time ?? null
+  }));
+  return unique;
 }
 
 async function fetchBars() {
