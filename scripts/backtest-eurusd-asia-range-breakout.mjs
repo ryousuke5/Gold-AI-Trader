@@ -265,6 +265,15 @@ function runPeriod(data, start, end) {
   let nextAvailableIndex = 0;
   const trades = [];
   let candidates = 0;
+  const diagnostics = {
+    session_bars: 0,
+    asia_range_found: 0,
+    h1_up: 0,
+    h1_down: 0,
+    trend_aligned: 0,
+    range_width_ok: 0,
+    breakout_raw: 0
+  };
 
   for (let i = 210; i < data.m15.length - 1; i++) {
     const signalBar = data.m15[i];
@@ -278,6 +287,18 @@ function runPeriod(data, start, end) {
     const dateKey = londonSessionBucket(signalBar.time);
     const asiaRange = asiaRangeMap.get(dateKey);
     if (!asiaRange) continue;
+
+    diagnostics.session_bars++;
+    if (asiaRange) diagnostics.asia_range_found++;
+    if (h1Bar.trend === 'UP') diagnostics.h1_up++;
+    if (h1Bar.trend === 'DOWN') diagnostics.h1_down++;
+    if ((h1Bar.trend === 'UP' && signalBar.ema20 > signalBar.ema50) || (h1Bar.trend === 'DOWN' && signalBar.ema20 < signalBar.ema50)) diagnostics.trend_aligned++;
+    if (asiaRange && signalBar.atr14 > 0) {
+      const rw = (asiaRange.high - asiaRange.low) / signalBar.atr14;
+      if (rw >= CONFIG.minRangeAtr && rw <= CONFIG.maxRangeAtr) diagnostics.range_width_ok++;
+      if ((h1Bar.trend === 'UP' && signalBar.close > asiaRange.high + signalBar.atr14 * CONFIG.breakoutMinAtr) ||
+          (h1Bar.trend === 'DOWN' && signalBar.close < asiaRange.low - signalBar.atr14 * CONFIG.breakoutMinAtr)) diagnostics.breakout_raw++;
+    }
 
     const setup = buildEurUsdAsiaRangeBreakoutSetup({
       signalBar,
@@ -324,7 +345,7 @@ function runPeriod(data, start, end) {
     if (nextAvailableIndex < 0) nextAvailableIndex = data.m15.length;
   }
 
-  return { summary: summarize(trades, CONFIG.initialEquity), candidates, trades };
+  return { summary: summarize(trades, CONFIG.initialEquity), candidates, trades, diagnostics };
 }
 
 function weeklyFrequency(trades, start, end) {
