@@ -307,14 +307,20 @@ function simulateTrade(bars, i, setup) {
     const exitLow = dir === 'BUY' ? bar.low : bar.low + spread;
     const hitStop = dir === 'BUY' ? exitLow <= stop : exitHigh >= stop;
     const hitTarget = dir === 'BUY' ? exitHigh >= target : exitLow <= target;
+    const adverseSlip = slippage;
+
     if (hitStop && hitTarget) {
-      resultR = -1;
+      resultR = dir === 'BUY'
+        ? (stop - adverseSlip - entry) / risk
+        : (entry - (stop + adverseSlip)) / risk;
       exitReason = 'STOP_AND_TARGET_SAME_BAR_CONSERVATIVE';
       exitIndex = j;
       break;
     }
     if (hitStop) {
-      resultR = -1;
+      resultR = dir === 'BUY'
+        ? (stop - adverseSlip - entry) / risk
+        : (entry - (stop + adverseSlip)) / risk;
       exitReason = 'STOP';
       exitIndex = j;
       break;
@@ -325,6 +331,13 @@ function simulateTrade(bars, i, setup) {
       exitIndex = j;
       break;
     }
+  }
+
+  if (exitReason === 'TIME') {
+    const adverseSlip = slippage;
+    resultR = dir === 'BUY'
+      ? (timeExitPrice - adverseSlip - entry) / risk
+      : (entry - (timeExitPrice + adverseSlip)) / risk;
   }
 
   return {
@@ -469,6 +482,7 @@ async function main() {
     assumptions: {
       spread_pips: CONFIG.spreadPips,
       slippage_pips: CONFIG.slippagePips,
+      stop_and_time_exit_slippage_mode: 'adverse_slippage_applied; target exits at target',
       max_hold_bars: CONFIG.maxHoldBars,
       cooldown_bars: CONFIG.cooldownBars
     },
