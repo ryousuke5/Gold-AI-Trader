@@ -470,6 +470,10 @@ async function main() {
 
   if (m15.length < 100000) throw new Error('Historical data coverage is unexpectedly low: only ' + m15.length + ' M15 bars after filtering. Refusing to call this a 5-year backtest.');
 
+  const validationCutoff = Date.now() - 365 * 86400 * 1000;
+  const validationTrades = trades.filter((t) => Date.parse(t.signal_time) >= validationCutoff);
+  const developmentTrades = trades.filter((t) => Date.parse(t.signal_time) < validationCutoff);
+
   const summary = {
     strategy: 'EURUSD M15 H1 Trend Pullback v2',
     lookback_days: CONFIG.lookbackDays,
@@ -500,6 +504,11 @@ async function main() {
       sell_rsi: [CONFIG.sellRsiMin, CONFIG.sellRsiMax]
     },
     statistics: stats(trades),
+    walk_forward: {
+      development_period: stats(developmentTrades),
+      validation_recent_365_days: stats(validationTrades),
+      validation_rule: 'fixed V2 parameters evaluated on the most recent 365 calendar days; no parameter fitting occurs inside the backtester'
+    },
     breakdown: breakdown(trades),
     diagnostics
   };
