@@ -22,12 +22,12 @@ while (cursor < end) {
     priceType: 'bid',
     volumes: true,
     format: 'array',
-    batchSize: 5,
-    pauseBetweenBatchesMs: 500,
-    retryCount: 3,
+    batchSize: 2,
+    pauseBetweenBatchesMs: 3000,
+    retryCount: 8,
     retryOnEmpty: false,
     failAfterRetryCount: true,
-    pauseBetweenRetriesMs: 1000
+    pauseBetweenRetriesMs: 5000
   });
   const now = Date.now();
   for (const row of (Array.isArray(rows) ? rows : [])) {
