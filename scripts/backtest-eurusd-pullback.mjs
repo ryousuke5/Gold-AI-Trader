@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { buildEurUsdTrendPullbackSetup } from '../src/eurusd_pullback.js';
+import { normalizeEurUsdFeatures } from '../src/eurusd_features.js';
 
 const CONFIG = {
   lookbackDays: Math.max(30, Number(process.env.PULLBACK_BACKTEST_LOOKBACK_DAYS || 1825)),
@@ -259,12 +260,12 @@ function latestCompletedH1Index(h1, signalClose) {
 function buildFeatures(m15, i, h1, h1i) {
   const b = m15[i];
   const spread = CONFIG.spreadPips * 0.0001;
-  return {
+  return normalizeEurUsdFeatures({
     bid: b.close - spread / 2,
     ask: b.close + spread / 2,
     point: 0.00001,
     spread,
-    barTime: b.time + 900,
+    bar_time: b.time + 900,
     m15: { ema20: b.ema20, ema50: b.ema50, rsi14: b.rsi14, atr14: b.atr14 },
     h1: {
       close: h1[h1i].close,
@@ -276,7 +277,7 @@ function buildFeatures(m15, i, h1, h1i) {
     },
     recent_m15: m15.slice(Math.max(0, i - 79), i + 1).map((x) => ({ ...x, time: x.time + 900 })),
     recent_h1: h1.slice(Math.max(0, h1i - 79), h1i + 1).map((x) => ({ ...x, time: x.time + 3600 }))
-  };
+  });
 }
 
 function simulateTrade(bars, i, setup) {
