@@ -49,8 +49,8 @@ function h1Bars(direction = 'UP') {
 function features(direction = 'UP') {
   const isUp = direction === 'UP';
   return normalizeEurUsdFeatures({
-    bid: isUp ? 1.10122 : 1.10042,
-    ask: isUp ? 1.10130 : 1.10050,
+    bid: isUp ? 1.10120 : 1.10042,
+    ask: isUp ? 1.10128 : 1.10050,
     point: 0.00001,
     spread: 0.00008,
     bar_time: 1727006300,
@@ -101,6 +101,8 @@ test('Strategy B recognizes an H1 downtrend pullback and produces SELL', () => {
 
 test('A weak pullback that fails EMA20 touch does not produce a signal', () => {
   const f = features('UP');
+  f.recentM15[2].low = 1.10075;
+  f.recentM15[3].low = 1.10075;
   f.recentM15[4].low = 1.10075;
   f.recentM15[5].low = 1.10078;
   f.recentM15[6].low = 1.10080;
