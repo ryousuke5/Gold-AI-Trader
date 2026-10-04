@@ -322,7 +322,10 @@ function summarize(trades, initialEquity) {
 function periodSummary(trades, initialEquity, days, periodEnd) {
   const end = Number.isFinite(Number(periodEnd)) ? Number(periodEnd) : Math.max(0, ...trades.map(t=>t.exit_time));
   const start = end - days*86400;
-  return summarize(trades.filter(t=>t.exit_time>=start && t.exit_time<=end),initialEquity);
+  const inPeriod = trades.filter(t=>t.exit_time>=start && t.exit_time<=end);
+  const priorPnl = trades.filter(t=>t.exit_time<start).reduce((sum,t)=>sum+t.net_pnl,0);
+  const periodStartEquity = initialEquity + priorPnl;
+  return summarize(inPeriod, periodStartEquity);
 }
 
 function annualSummary(trades, initialEquity) {
