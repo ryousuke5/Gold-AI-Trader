@@ -319,11 +319,10 @@ function summarize(trades, initialEquity) {
   };
 }
 
-function periodSummary(trades, initialEquity, days) {
-  if(!trades.length) return summarize([],initialEquity);
-  const end=Math.max(...trades.map(t=>t.exit_time));
-  const start=end-days*86400;
-  return summarize(trades.filter(t=>t.exit_time>=start),initialEquity);
+function periodSummary(trades, initialEquity, days, periodEnd) {
+  const end = Number.isFinite(Number(periodEnd)) ? Number(periodEnd) : Math.max(0, ...trades.map(t=>t.exit_time));
+  const start = end - days*86400;
+  return summarize(trades.filter(t=>t.exit_time>=start && t.exit_time<=end),initialEquity);
 }
 
 function annualSummary(trades, initialEquity) {
@@ -385,7 +384,21 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const exitIndex=m5Ind.findIndex((b,idx)=>idx>i+1 && b.time>trade.exit_time);
     nextAvailable=exitIndex<0?m5Ind.length:exitIndex;
   }
-  return {summary:summarize(trades,config.initialEquity),recent365:periodSummary(trades,config.initialEquity,365),annual:annualSummary(trades,config.initialEquity),trades,candidates,risk_gate_blocks:blocks,rejected_entry_gap:rejectedEntryGap};
+  const recent365 = periodSummary(trades, config.initialEquity, 365, latest);
+  const yearly = annualSummary(trades, config.initialEquity);
+  const positiveYears = yearly.filter((y)=>y.net_r > 0).length;
+  const summary = summarize(trades, config.initialEquity);
+  const qualityGate = {
+    minimum_trades_5y: 30,
+    minimum_profit_factor_5y: 1.15,
+    minimum_expectancy_R_5y: 0.05,
+    maximum_max_drawdown_pct_5y: 5,
+    minimum_recent365_trades: 8,
+    minimum_recent365_profit_factor: 1.00,
+    minimum_positive_years: 3,
+    passed: Boolean(summary.trades >= 30 && summary.profit_factor >= 1.15 && summary.expectancy_R >= 0.05 && summary.max_drawdown_pct <= 5 && recent365.trades >= 8 && recent365.profit_factor >= 1.00 && positiveYears >= 3)
+  };
+  return {summary,recent365,annual:yearly,positiveYears,qualityGate,trades,candidates,risk_gate_blocks:blocks,rejected_entry_gap:rejectedEntryGap};
 }
 
 function parseArgs() {
@@ -438,14 +451,14 @@ async function main() {
     strategy_parameters:strategy,
     data_quality:dataQuality(rawM5),
     cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{spread_price:costScenarios(config).find(c=>c.name===name).spreadPrice,slippage_price:costScenarios(config).find(c=>c.name===name).slippagePrice}])),
-    results:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{summary:r.summary,recent365:r.recent365,annual:r.annual,candidates:r.candidates,risk_gate_blocks:r.risk_gate_blocks,rejected_entry_gap:r.rejected_entry_gap}])),
+    results:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{summary:r.summary,recent365:r.recent365,annual:r.annual,positiveYears:r.positiveYears,qualityGate:r.qualityGate,candidates:r.candidates,risk_gate_blocks:r.risk_gate_blocks,rejected_entry_gap:r.rejected_entry_gap}])),
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
   await fs.writeFile(path.join(outDir,'gold_v2_backtest_report.json'),JSON.stringify(report,null,2));
   for(const [name,r] of Object.entries(results)) await fs.writeFile(path.join(outDir,'gold_v2_trades_'+name+'.csv'),toCsv(r.trades));
   console.log('=== GOLD V2 BACKTEST ===');
-  for(const [name,r] of Object.entries(results)) console.log(name, 'trades='+r.summary.trades,'PF='+r.summary.profit_factor,'expectancy_R='+r.summary.expectancy_R,'return='+r.summary.return_pct+'%','maxDD='+r.summary.max_drawdown_pct+'%','recent365_PF='+r.recent365.profit_factor);
+  for(const [name,r] of Object.entries(results)) console.log(name, 'trades='+r.summary.trades,'PF='+r.summary.profit_factor,'expectancy_R='+r.summary.expectancy_R,'return='+r.summary.return_pct+'%','maxDD='+r.summary.max_drawdown_pct+'%','recent365_trades='+r.recent365.trades,'recent365_PF='+r.recent365.profit_factor,'positiveYears='+r.positiveYears,'QUALITY_GATE='+r.qualityGate.passed);
 }
 
 if(import.meta.url===`file://${process.argv[1]}`) main();
