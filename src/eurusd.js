@@ -118,6 +118,18 @@ function executionEnabled() {
   return String(process.env.EURUSD_EXECUTION_ENABLED || 'false').toLowerCase() === 'true';
 }
 
+export function eurUsdLiveTradingApproved() {
+  return String(process.env.EURUSD_LIVE_TRADING_APPROVED || 'false').toLowerCase() === 'true';
+}
+
+function executionGate() {
+  const execution = executionEnabled();
+  const approved = eurUsdLiveTradingApproved();
+  if (!execution) return { allowed: false, reason: 'execution_disabled' };
+  if (!approved) return { allowed: false, reason: 'live_backtest_gate_not_approved' };
+  return { allowed: true, reason: 'approved' };
+}
+
 export function registerEurUsdRoutes(app) {
   app.post('/api/eurusd/ai-test', auth, async (req, res) => {
     const requestId = String(req.headers['x-request-id'] || crypto.randomUUID());
@@ -318,8 +330,9 @@ export function registerEurUsdRoutes(app) {
         }
       }
 
+      const gate = executionGate();
       const orderAllowed = Boolean(
-        executionEnabled() &&
+        gate.allowed &&
         risk.approved &&
         ['DEMO', 'LIVE'].includes(String((await getState())?.mode || ''))
       );
@@ -346,6 +359,8 @@ export function registerEurUsdRoutes(app) {
         },
         order_allowed: orderAllowed,
         execution_enabled: executionEnabled(),
+        live_trading_approved: eurUsdLiveTradingApproved(),
+        execution_gate: gate,
         persisted: true,
         orders_executed: false
       });
