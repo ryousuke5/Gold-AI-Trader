@@ -379,9 +379,9 @@ async function main() {
       h1: CONFIG.h1Source
     },
     periods: {
-      full: { start: CONFIG.start, end: CONFIG.end, ...full.summary, trades_per_week: weeklyFrequency(full.trades, CONFIG.start, CONFIG.end), technical_candidates: full.candidates },
-      early: { start: CONFIG.start, end: earlyEnd, ...early.summary, trades_per_week: weeklyFrequency(early.trades, CONFIG.start, earlyEnd), technical_candidates: early.candidates },
-      late: { start: lateStart, end: CONFIG.end, ...late.summary, trades_per_week: weeklyFrequency(late.trades, lateStart, CONFIG.end), technical_candidates: late.candidates }
+      full: { start: CONFIG.start, end: CONFIG.end, ...full.summary, trades_per_week: weeklyFrequency(full.trades, CONFIG.start, CONFIG.end), technical_candidates: full.candidates, diagnostics: full.diagnostics },
+      early: { start: CONFIG.start, end: earlyEnd, ...early.summary, trades_per_week: weeklyFrequency(early.trades, CONFIG.start, earlyEnd), technical_candidates: early.candidates, diagnostics: early.diagnostics },
+      late: { start: lateStart, end: CONFIG.end, ...late.summary, trades_per_week: weeklyFrequency(late.trades, lateStart, CONFIG.end), technical_candidates: late.candidates, diagnostics: late.diagnostics }
     },
     trades: full.trades
   };
