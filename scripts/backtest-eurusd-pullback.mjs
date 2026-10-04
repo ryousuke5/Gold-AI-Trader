@@ -4,6 +4,7 @@ import { buildEurUsdTrendPullbackSetup } from '../src/eurusd_pullback.js';
 
 const CONFIG = {
   lookbackDays: Math.max(30, Number(process.env.PULLBACK_BACKTEST_LOOKBACK_DAYS || 1825)),
+  serverTimezone: process.env.PULLBACK_BACKTEST_SERVER_TIMEZONE || 'Europe/Nicosia',
   spreadPips: Math.max(0, Number(process.env.PULLBACK_BACKTEST_SPREAD_PIPS || 0.8)),
   slippagePips: Math.max(0, Number(process.env.PULLBACK_BACKTEST_SLIPPAGE_PIPS || 0.1)),
   maxHoldBars: Math.max(8, Number(process.env.PULLBACK_BACKTEST_MAX_HOLD_BARS || 96)),
@@ -192,10 +193,47 @@ function addIndicators(bars) {
   return bars.map((b, i) => ({ ...b, ema20: e20[i], ema50: e50[i], ema200: e200[i], rsi14: r14[i], atr14: a14[i] }));
 }
 
-function aggregateH1(m15) {
+function localDateTimeParts(timestampSeconds, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(new Date(timestampSeconds * 1000));
+  const out = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') out[part.type] = Number(part.value);
+  }
+  return out;
+}
+
+function zonedHourStartUtc(timestampSeconds, timeZone) {
+  const p = localDateTimeParts(timestampSeconds, timeZone);
+  const localHourAsUtcMs = Date.UTC(p.year, p.month - 1, p.day, p.hour, 0, 0);
+  const nearby = [timestampSeconds - 3 * 86400, timestampSeconds, timestampSeconds + 3 * 86400];
+  let bestOffsetSeconds = 0;
+  let bestDistance = Infinity;
+  for (const probe of nearby) {
+    const q = localDateTimeParts(probe, timeZone);
+    const qAsUtcMs = Date.UTC(q.year, q.month - 1, q.day, q.hour, q.minute, q.second);
+    const offsetSeconds = Math.round((qAsUtcMs - probe * 1000) / 1000);
+    const distance = Math.abs((offsetSeconds * 1000) - (localHourAsUtcMs - timestampSeconds * 1000));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestOffsetSeconds = offsetSeconds;
+    }
+  }
+  return Math.floor((localHourAsUtcMs - bestOffsetSeconds * 1000) / 1000);
+}
+
+function aggregateH1(m15, timeZone = CONFIG.serverTimezone) {
   const map = new Map();
   for (const b of m15) {
-    const hour = Math.floor(b.time / 3600) * 3600;
+    const hour = zonedHourStartUtc(b.time, timeZone);
     const x = map.get(hour);
     if (!x) map.set(hour, { time: hour, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume });
     else {
@@ -383,6 +421,8 @@ async function main() {
     lookback_days: CONFIG.lookbackDays,
     source_mode: String(process.env.PULLBACK_BACKTEST_SOURCE || 'dukascopy').toLowerCase(),
     source: String(process.env.PULLBACK_BACKTEST_SOURCE || 'dukascopy').toLowerCase() === 'dukascopy' ? 'Dukascopy historical EURUSD M15 bid data' : SOURCE,
+    server_timezone: CONFIG.serverTimezone,
+    h1_bar_alignment: 'XM-style broker server day/hour boundaries via configured IANA timezone',
     bars: m15.length,
     candidate_signals: candidateCount,
     assumptions: {
