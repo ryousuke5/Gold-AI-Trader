@@ -1,0 +1,32 @@
+name: USDJPY Data Diagnostic
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Inspect raw USDJPY CSV
+        run: node - <<'NODE'
+const url = 'https://raw.githubusercontent.com/ejtraderLabs/historical-data/main/USDJPY/USDJPYm15.csv';
+const res = await fetch(url, { headers: { Range: 'bytes=0-4095', 'user-agent': 'Gold-AI-Trader-diagnostic/1.0' } });
+if (!res.ok) throw new Error('HTTP '+res.status);
+const buf = Buffer.from(await res.arrayBuffer());
+const text = buf.toString('utf8');
+console.log(text.slice(0,2000));
+const lines = text.split(/\r?\n/).filter(Boolean).slice(0,6);
+console.log('FIRST_LINES');
+for (const line of lines) console.log(line);
+const firstData = lines.find(line => !/^date|^time|^datetime|^timestamp/i.test(line));
+if (firstData) {
+  const fields = firstData.split(/[;,]/);
+  console.log('NUMERIC_FIELDS', fields.slice(0,6).map(Number));
+}
+NODE
