@@ -54,8 +54,13 @@ export function buildEurUsdTrendPullbackSetupV3(f, options={}) {
   const h1Recent=sortBarsAscending(f.recentH1||[]).slice(-6), h1Agreement=trend==='UP'?slopeAgreement(h1Recent,'UP'):trend==='DOWN'?slopeAgreement(h1Recent,'DOWN'):0;
   const h1Extension=f.h1.atr14>0?Math.abs(f.h1.close-f.h1.ema50)/f.h1.atr14:Infinity;
   if(!(h1Extension<=maxExtension)) return waitResult(trend,['h1_overextended'],{h1_extension_atr:h1Extension,h1_slope_agreement:h1Agreement});
-  const preTrigger=active.slice(0,-1), impulse=preTrigger.slice(0,split), pullback=preTrigger.slice(split);
-  if(impulse.length<3||pullback.length<4) return waitResult(trend,['invalid_pullback_window']);
+  const preConfirmation=active.slice(0,-1);
+  const trigger=preConfirmation.at(-1);
+  const structureBeforeTrigger=preConfirmation.slice(0,-1);
+  const structureSplit=Math.max(3,Math.floor(structureBeforeTrigger.length/2));
+  const impulse=structureBeforeTrigger.slice(0,structureSplit);
+  const pullback=structureBeforeTrigger.slice(structureSplit);
+  if(impulse.length<3||pullback.length<4||!trigger) return waitResult(trend,['invalid_pullback_window']);
   const impulseHigh=maxHigh(impulse), impulseLow=minLow(impulse), impulseRange=impulseHigh-impulseLow;
   if(!(impulseRange>0)) return waitResult(trend,['invalid_impulse_range']);
   const impulseNetAtr=(impulse.at(-1).close-impulse[0].open)/atr;
@@ -68,7 +73,6 @@ export function buildEurUsdTrendPullbackSetupV3(f, options={}) {
   const heldSell=maxHigh(pullback)<f.m15.ema50+atr*structureBufferAtr;
   const oppBuy=pullback.filter((b,i)=>i>0&&b.close<pullback[i-1].close).length;
   const oppSell=pullback.filter((b,i)=>i>0&&b.close>pullback[i-1].close).length;
-  const trigger=preTrigger.at(-1);
   const triggerLevelBuy=maxHigh(pullback), triggerLevelSell=minLow(pullback);
   const latestRange=Math.max(0,latest.high-latest.low), latestBodyAtr=Math.abs(latest.close-latest.open)/atr;
   const latestCloseLoc=latestRange>0?(latest.close-latest.low)/latestRange:0;
