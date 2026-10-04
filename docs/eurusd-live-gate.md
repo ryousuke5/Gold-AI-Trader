@@ -27,6 +27,6 @@ Live execution requires both:
 
 Both default to `false`.
 
-Therefore enabling execution alone is insufficient. The approval gate must be deliberately enabled only after the backtest, out-of-sample review, and forward/demo validation have been reviewed.
+Therefore enabling execution alone is insufficient. The approval gate must be deliberately enabled only after the backtest, 直近365日検証 review, and forward/demo validation have been reviewed.
 
 Strategy B remains monitor-only until that point.
