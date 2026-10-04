@@ -4,6 +4,7 @@ import {
   validateEurUsdFeatures,
   buildEurUsdSetup
 } from './eurusd_features.js';
+import { buildEurUsdTrendPullbackSetup } from './eurusd_pullback.js';
 import {
   analyzeEurUsdFundamental,
   buildEurUsdFundamentalDecision
@@ -360,6 +361,282 @@ export function registerEurUsdRoutes(app) {
         });
       } catch {}
       res.status(500).json({ ok: false, error: error.message || 'EURUSD signal generation failed', request_id: requestId });
+    }
+  });
+
+
+  app.post('/api/eurusd/pullback-ai-test', auth, async (req, res) => {
+    const requestId = String(req.headers['x-request-id'] || crypto.randomUUID());
+    try {
+      const body = req.body || {};
+      const symbol = String(body.symbol || 'EURUSD');
+      const timeframe = String(body.timeframe || 'M15');
+      if (symbol !== 'EURUSD') return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD', request_id: requestId });
+      if (timeframe !== 'M15') return res.status(400).json({ ok: false, error: 'EURUSD V1 supports M15 only', request_id: requestId });
+
+      const features = normalizeEurUsdFeatures(body.features || body);
+      const featureErrors = validateEurUsdFeatures(features);
+      if (featureErrors.length) return res.status(400).json({ ok: false, error: 'invalid_features', reasons: featureErrors, request_id: requestId });
+
+      const setup = buildEurUsdTrendPullbackSetup(features);
+      const strategyVersion = process.env.EURUSD_PULLBACK_STRATEGY_VERSION || 'eurusd-m15-h1-trend-pullback-v1';
+
+      if (setup.candidate === 'WAIT') {
+        const decision = buildDecision(setup, emptyFundamental('AI fundamental search skipped because trend-pullback setup was WAIT.'), null);
+        const risk = evaluateEurUsdRisk({ decision, setup, features, account: dummyAccount() });
+        return res.json({
+          ok: true,
+          request_id: requestId,
+          symbol,
+          timeframe,
+          strategy_version: strategyVersion,
+          setup,
+          h1_trend: setup.trend,
+          candidate: setup.candidate,
+          decision,
+          risk,
+          fundamental_sources: [],
+          openai: { called: false, response_id: null, model: null, web_search_used: false },
+          order_allowed: false,
+          execution_test_only: true
+        });
+      }
+
+      const fundamental = await analyzeEurUsdFundamental({
+        features,
+        candidate: setup.candidate,
+        model: process.env.OPENAI_MODEL || 'gpt-5.5',
+        strategyType: 'TREND_PULLBACK'
+      });
+      const decision = buildDecision(setup, fundamental.assessment, fundamental);
+      const risk = evaluateEurUsdRisk({
+        decision,
+        setup,
+        features,
+        account: dummyAccount(),
+        fundamentalAssessment: fundamental.assessment
+      });
+
+      res.json({
+        ok: true,
+        request_id: requestId,
+        symbol,
+        timeframe,
+        strategy_version: strategyVersion,
+        setup,
+        h1_trend: setup.trend,
+        candidate: setup.candidate,
+        decision,
+        risk,
+        fundamental_sources: fundamental.sources,
+        searched_sources_count: fundamental.searchedSources.length,
+        fundamental_validation: fundamental.validation,
+        openai: {
+          called: true,
+          response_id: fundamental.responseId,
+          model: fundamental.model,
+          web_search_used: fundamental.webSearchUsed
+        },
+        order_allowed: false,
+        execution_test_only: true
+      });
+    } catch (error) {
+      console.error('[eurusd/pullback-ai-test]', requestId, error);
+      res.status(500).json({ ok: false, error: error.message || 'EURUSD pullback AI test failed', request_id: requestId });
+    }
+  });
+
+  app.post('/api/eurusd/pullback-signal', auth, async (req, res) => {
+    const requestId = String(req.headers['x-request-id'] || crypto.randomUUID());
+    try {
+      const body = req.body || {};
+      const symbol = String(body.symbol || 'EURUSD');
+      const timeframe = String(body.timeframe || 'M15');
+      if (symbol !== 'EURUSD') return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD', request_id: requestId });
+      if (timeframe !== 'M15') return res.status(400).json({ ok: false, error: 'EURUSD V1 supports M15 only', request_id: requestId });
+
+      const features = normalizeEurUsdFeatures(body.features || body);
+      const featureErrors = validateEurUsdFeatures(features);
+      if (featureErrors.length) return res.status(400).json({ ok: false, error: 'invalid_features', reasons: featureErrors, request_id: requestId });
+
+      const strategyVersion = process.env.EURUSD_PULLBACK_STRATEGY_VERSION || 'eurusd-m15-h1-trend-pullback-v1';
+      const barTimeIso = new Date(features.barTime * 1000).toISOString();
+      const existing = await getSignalByKey({ symbol, timeframe, barTimeIso, strategyVersion });
+      if (existing) {
+        return res.status(409).json({
+          ok: false,
+          error: 'duplicate_bar',
+          request_id: requestId,
+          signal_id: existing.id,
+          decision: existing.decision,
+          existing: true
+        });
+      }
+
+      const setup = buildEurUsdTrendPullbackSetup(features);
+      let fundamental = null;
+      let decision;
+
+      if (setup.candidate === 'WAIT') {
+        decision = buildDecision(setup, emptyFundamental('AI fundamental search skipped because trend-pullback setup was WAIT.'), null);
+      } else {
+        fundamental = await analyzeEurUsdFundamental({
+          features,
+          candidate: setup.candidate,
+          model: process.env.OPENAI_MODEL || 'gpt-5.5',
+          strategyType: 'TREND_PULLBACK'
+        });
+        decision = buildDecision(setup, fundamental.assessment, fundamental);
+      }
+
+      const signalCreatedAt = Date.now();
+      const signalId = crypto.randomUUID();
+      const account = body.account || {};
+      const risk = evaluateEurUsdRisk({
+        decision,
+        setup,
+        features,
+        account,
+        signalCreatedAt,
+        now: Date.now(),
+        fundamentalAssessment: fundamental?.assessment || null
+      });
+
+      const signalRow = {
+        id: signalId,
+        symbol,
+        timeframe,
+        bar_time: barTimeIso,
+        strategy_version: strategyVersion,
+        request_id: requestId,
+        candidate: setup.candidate,
+        decision: decision.decision,
+        confidence: decision.confidence,
+        market_regime: decision.market_regime,
+        entry: decision.entry || null,
+        stop_loss: decision.stop_loss || null,
+        take_profit: decision.take_profit || null,
+        risk_reward: decision.risk_reward || null,
+        reason: decision.reason,
+        invalid_reasons: decision.invalid_reasons,
+        openai_response_id: fundamental?.responseId || null,
+        model: fundamental?.model || null,
+        created_at: nowIso()
+      };
+
+      try {
+        await insertSignal(signalRow);
+      } catch (error) {
+        if (error?.code === '23505') {
+          const raced = await getSignalByKey({ symbol, timeframe, barTimeIso, strategyVersion });
+          return res.status(409).json({
+            ok: false,
+            error: 'duplicate_bar',
+            request_id: requestId,
+            signal_id: raced?.id || null,
+            existing: true
+          });
+        }
+        throw error;
+      }
+
+      await insertRisk({
+        signal_id: signalId,
+        approved: risk.approved,
+        reasons: risk.reasons,
+        age_seconds: risk.ageSeconds,
+        account_snapshot: {
+          ...account,
+          risk_limits: getEurUsdRiskLimits(),
+          calculated_lots: risk.lots
+        },
+        created_at: nowIso()
+      });
+
+      if (fundamental?.webSearchUsed) {
+        try {
+          await insertEvent({
+            level: 'INFO',
+            event_type: 'eurusd_pullback_fundamental_analysis',
+            message: 'EURUSD trend pullback live web fundamental analysis completed',
+            metadata: {
+              request_id: requestId,
+              signal_id: signalId,
+              candidate: setup.candidate,
+              setup,
+              fundamental: decision.fundamental,
+              sources: fundamental.sources,
+              validation: fundamental.validation
+            },
+            created_at: nowIso()
+          });
+        } catch (eventError) {
+          console.error('[eurusd/pullback-fundamental-event]', requestId, eventError);
+        }
+      }
+
+      const state = (await getState()) || {};
+      const orderAllowed = Boolean(
+        executionEnabled() &&
+        risk.approved &&
+        ['DEMO', 'LIVE'].includes(String(state.mode || ''))
+      );
+
+      res.json({
+        ok: true,
+        request_id: requestId,
+        signal_id: signalId,
+        symbol,
+        timeframe,
+        strategy_version: strategyVersion,
+        setup,
+        h1_trend: setup.trend,
+        candidate: setup.candidate,
+        decision,
+        risk,
+        fundamental_sources: fundamental?.sources || [],
+        searched_sources_count: Array.isArray(fundamental?.searchedSources) ? fundamental.searchedSources.length : 0,
+        openai: {
+          called: Boolean(fundamental?.responseId),
+          response_id: fundamental?.responseId || null,
+          model: fundamental?.model || null,
+          web_search_used: fundamental?.webSearchUsed === true
+        },
+        order_allowed: orderAllowed,
+        execution_enabled: executionEnabled(),
+        persisted: true,
+        orders_executed: false
+      });
+    } catch (error) {
+      console.error('[eurusd/pullback-signal]', requestId, error);
+      try {
+        await insertEvent({
+          level: 'ERROR',
+          event_type: 'eurusd_pullback_signal_error',
+          message: error.message || String(error),
+          metadata: { request_id: requestId },
+          created_at: nowIso()
+        });
+      } catch {}
+      res.status(500).json({ ok: false, error: error.message || 'EURUSD pullback signal generation failed', request_id: requestId });
+    }
+  });
+
+  app.get('/api/eurusd/pullback-status', auth, async (req, res) => {
+    try {
+      const state = await getState();
+      res.json({
+        ok: true,
+        service: 'eurusd-m15-h1-trend-pullback-v1',
+        symbol: 'EURUSD',
+        timeframe: 'M15',
+        strategy_version: process.env.EURUSD_PULLBACK_STRATEGY_VERSION || 'eurusd-m15-h1-trend-pullback-v1',
+        execution_enabled: executionEnabled(),
+        risk_limits: getEurUsdRiskLimits(),
+        state: state || null
+      });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || 'EURUSD pullback status failed' });
     }
   });
 
