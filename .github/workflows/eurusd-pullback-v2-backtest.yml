@@ -1,0 +1,90 @@
+name: EURUSD Pullback V2 Research Backtest
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/eurusd_pullback_v2.js'
+      - 'scripts/backtest-eurusd-pullback-v2.mjs'
+      - 'tests/eurusd_pullback_v2.test.js'
+      - '.github/workflows/eurusd-pullback-v2-backtest.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-pullback-v2-backtest
+  cancel-in-progress: true
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: high-quality
+            min_retrace_ratio: "0.30"
+            max_retrace_ratio: "0.70"
+            min_body_atr: "0.40"
+            min_close_location: "0.75"
+            min_h1_agreement: "0.8333333"
+            tp_r: "1.80"
+          - name: balanced
+            min_retrace_ratio: "0.25"
+            max_retrace_ratio: "0.80"
+            min_body_atr: "0.35"
+            min_close_location: "0.70"
+            min_h1_agreement: "0.6666667"
+            tp_r: "1.80"
+          - name: lower-target
+            min_retrace_ratio: "0.25"
+            max_retrace_ratio: "0.80"
+            min_body_atr: "0.35"
+            min_close_location: "0.70"
+            min_h1_agreement: "0.6666667"
+            tp_r: "1.50"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run all unit tests
+        run: npm test
+      - name: Static validate existing EURUSD monitor
+        run: npm run test:mt4
+      - name: Static validate Strategy B monitor
+        run: npm run test:mt4:pullback
+      - name: Run Strategy B V2 research backtest
+        env:
+          PULLBACK_BACKTEST_SOURCE: "dukascopy"
+          PULLBACK_BACKTEST_LOOKBACK_DAYS: "1825"
+          PULLBACK_BACKTEST_SPREAD_PIPS: "0.8"
+          PULLBACK_BACKTEST_SLIPPAGE_PIPS: "0.1"
+          PULLBACK_BACKTEST_MAX_HOLD_BARS: "96"
+          PULLBACK_BACKTEST_COOLDOWN_BARS: "2"
+          PULLBACK_BACKTEST_MIN_RETRACE_RATIO: "${{ matrix.min_retrace_ratio }}"
+          PULLBACK_BACKTEST_MAX_RETRACE_RATIO: "${{ matrix.max_retrace_ratio }}"
+          PULLBACK_BACKTEST_V2_MIN_BODY_ATR: "${{ matrix.min_body_atr }}"
+          PULLBACK_BACKTEST_V2_MIN_CLOSE_LOCATION: "${{ matrix.min_close_location }}"
+          PULLBACK_BACKTEST_V2_MIN_H1_AGREEMENT: "${{ matrix.min_h1_agreement }}"
+          PULLBACK_BACKTEST_V2_TAKE_PROFIT_R: "${{ matrix.tp_r }}"
+          PULLBACK_BACKTEST_V2_MIN_IMPULSE_ATR: "0.50"
+          PULLBACK_BACKTEST_V2_MIN_PULLBACK_ATR: "0.10"
+          PULLBACK_BACKTEST_V2_H1_BUY_RSI_MIN: "52"
+          PULLBACK_BACKTEST_V2_H1_BUY_RSI_MAX: "68"
+          PULLBACK_BACKTEST_V2_H1_SELL_RSI_MIN: "32"
+          PULLBACK_BACKTEST_V2_H1_SELL_RSI_MAX: "48"
+          PULLBACK_BACKTEST_V2_M15_BUY_RSI_MIN: "52"
+          PULLBACK_BACKTEST_V2_M15_BUY_RSI_MAX: "68"
+          PULLBACK_BACKTEST_V2_M15_SELL_RSI_MIN: "32"
+          PULLBACK_BACKTEST_V2_M15_SELL_RSI_MAX: "48"
+          PULLBACK_BACKTEST_OUTPUT_DIR: pullback-v2-backtest-output
+        run: node scripts/backtest-eurusd-pullback-v2.mjs
+      - name: Upload Strategy B V2 research results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-pullback-v2-${{ matrix.name }}
+          path: pullback-v2-backtest-output/
+          retention-days: 30
