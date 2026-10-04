@@ -16,6 +16,8 @@ The balanced baseline must satisfy all of the following on the configured histor
 
 Trade frequency is a guideline only. A lower frequency can be acceptable when the statistical quality is stronger; a higher frequency does not compensate for weak expectancy, PF, drawdown, or recent stability.
 
+Bootstrapによる期待値95%レンジも参考情報として記録します。これは合否条件ではありません。
+
 These are engineering acceptance gates, not a guarantee of future profitability.
 
 ## Execution safety
