@@ -7,7 +7,8 @@
     "start": "node server.js",
     "test": "node --test tests/*.test.js",
     "test:mt4": "node scripts/validate-eurusd-mt4-monitor.mjs",
-    "test:mt4:pullback": "node scripts/validate-eurusd-pullback-monitor.mjs mt4/EURUSDTrendPullbackMonitor.mq4"
+    "test:mt4:pullback": "node scripts/validate-eurusd-pullback-monitor.mjs mt4/EURUSDTrendPullbackMonitor.mq4",
+    "test:pullback:gate": "node scripts/validate-eurusd-pullback-gate.mjs"
   },
   "engines": {
     "node": ">=20"
