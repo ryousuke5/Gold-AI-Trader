@@ -25,7 +25,7 @@ while (cursor < end) {
     batchSize: 5,
     pauseBetweenBatchesMs: 500,
     retryCount: 3,
-    retryOnEmpty: true,
+    retryOnEmpty: false,
     failAfterRetryCount: true,
     pauseBetweenRetriesMs: 1000
   });
