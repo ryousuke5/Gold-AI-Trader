@@ -279,7 +279,9 @@ function runPeriod(data, start, end) {
     if (setup.candidate === 'WAIT') continue;
     candidates++;
     if (!riskAllows(state, equity, signalBar.time)) continue;
-    const trade = simulateTrade({ setup, nextBar: data.m15[i + 1], futureBars: data.m15.slice(i + 1), equity });
+    const periodFutureBars = data.m15.slice(i + 1).filter((bar) => bar.time <= endTime);
+    if (!periodFutureBars.length) continue;
+    const trade = simulateTrade({ setup, nextBar: data.m15[i + 1], futureBars: periodFutureBars, equity });
     if (!trade) continue;
     trades.push(trade);
     equity += trade.net_pnl;
