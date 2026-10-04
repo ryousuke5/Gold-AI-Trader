@@ -226,19 +226,29 @@ function contiguous(bars) {
 }
 
 function dataQuality(bars) {
-  let invalid=0, gaps=0, weekendGaps=0, positiveVolume=0;
+  let invalid=0, gaps=0, weekendGaps=0, nonWeekendGaps=0, positiveVolume=0;
   for (let i=0;i<bars.length;i++) {
     const b=bars[i];
     if (b.volume>0) positiveVolume++;
     if (!(b.high>=b.low && b.high>=b.open && b.high>=b.close && b.low<=b.open && b.low<=b.close && b.close>0)) invalid++;
     if (i>0) {
       const d=bars[i].time-bars[i-1].time;
-      if (d>450) { gaps++; const day=new Date(bars[i-1].time*1000).getUTCDay(); if(day===5||day===6) weekendGaps++; }
+      if (d>450) {
+        gaps++;
+        const day=new Date(bars[i-1].time*1000).getUTCDay();
+        if(day===5||day===6) weekendGaps++;
+        else nonWeekendGaps++;
+      }
     }
   }
   return {
-    rows:bars.length, invalid_ohlc:invalid, gaps_gt_7_5min:gaps, weekend_gaps:weekendGaps,
-    volume_positive_rows:positiveVolume, volume_coverage_pct:bars.length ? positiveVolume/bars.length*100 : 0
+    rows:bars.length,
+    invalid_ohlc:invalid,
+    gaps_gt_7_5min:gaps,
+    weekend_gaps:weekendGaps,
+    non_weekend_gaps:nonWeekendGaps,
+    volume_positive_rows:positiveVolume,
+    volume_coverage_pct:bars.length ? positiveVolume/bars.length*100 : 0
   };
 }
 
@@ -464,7 +474,7 @@ async function main() {
   } else {
     const mod=await import('dukascopy-node');
     const getHistoricalRates=mod.getHistoricalRates||mod.default?.getHistoricalRates;
-    const rows=await getHistoricalRates({instrument:'xauusd',dates:{from:requestedStart,to:requestedEnd},timeframe:'m5',priceType:'bid',volumes:true,format:'array'});
+    const rows=await getHistoricalRates({instrument:'xauusd',dates:{from:requestedStart,to:requestedEnd},timeframe:'m5',priceType:'bid',volumes:true,ignoreFlats:true,format:'array'});
     rawM5=normalizeDukascopy(rows);
     if(rawM5.length<200000) throw new Error('Insufficient Dukascopy XAUUSD M5 data: '+rawM5.length);
   }
