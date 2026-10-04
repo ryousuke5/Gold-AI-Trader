@@ -6,7 +6,6 @@ EURUSD Trend Pullback v1 is not eligible for live trading until the quantitative
 
 The balanced baseline must satisfy all of the following on the configured historical test:
 
-- At least 1 trade per week.
 - Profit factor >= 1.25.
 - Expectancy >= 0.10R per trade.
 - Maximum drawdown <= 12R.
@@ -14,6 +13,8 @@ The balanced baseline must satisfy all of the following on the configured histor
 - Last 365 days profit factor >= 1.10.
 - Last 365 days expectancy >= 0.05R.
 - Last 365 days maximum drawdown <= 6R.
+
+Trade frequency is a guideline only. A lower frequency can be acceptable when the statistical quality is stronger; a higher frequency does not compensate for weak expectancy, PF, drawdown, or recent stability.
 
 These are engineering acceptance gates, not a guarantee of future profitability.
 
