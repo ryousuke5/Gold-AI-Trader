@@ -456,7 +456,7 @@ function costScenarios(config) {
 async function main() {
   const args=parseArgs();
   const lookbackDays=Math.max(365,Number(args.get('lookback-days')||BASE_CONFIG.lookbackDays));
-  const end=new Date(), start=new Date(end.getTime()-lookbackDays*86400000);
+  const requestedEnd=new Date(), requestedStart=new Date(requestedEnd.getTime()-lookbackDays*86400000);
   let rawM5;
   const dataFile=process.env.GOLD_BACKTEST_DATA_FILE;
   if (dataFile) {
