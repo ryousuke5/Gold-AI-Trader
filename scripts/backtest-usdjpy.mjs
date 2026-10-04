@@ -101,7 +101,7 @@ export function parseCsv(text) {
     const cells = splitCsvLine(line);
     const rawClose = Number(cells[idx.close]);
     if (!Number.isFinite(rawClose) || rawClose <= 0) continue;
-    const priceScale = rawClose > 10 ? 100000 : 1;
+    const priceScale = rawClose >= 10000 ? 1000 : 1;
     const parsePrice = (k) => Number(cells[idx[k]]) / priceScale;
     const rawTime = String(cells[idx[dateKey]]).trim();
     const time = parseTimestamp(rawTime);
