@@ -16,7 +16,7 @@ function fixture() {
     {time:t+6300,open:1.10096,high:1.10102,low:1.10094,close:1.10095,volume:170},
     {time:t+7200,open:1.10095,high:1.10130,low:1.10094,close:1.10105,volume:180},
     {time:t+8100,open:1.10200,high:1.10230,low:1.10192,close:1.10215,volume:200},
-    {time:t+9000,open:1.10215,high:1.10245,low:1.10200,close:1.10225,volume:220}
+    {time:t+9000,open:1.10195,high:1.10245,low:1.10195,close:1.10230,volume:220}
   ];
   const recentH1=Array.from({length:6},(_,i)=>{
     const close=1.0998+i*0.00035;
