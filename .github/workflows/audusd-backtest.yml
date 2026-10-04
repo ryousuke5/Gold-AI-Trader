@@ -1,0 +1,111 @@
+name: AUDUSD Research Backtest
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: strict
+            range_lookback: "6"
+            min_range_atr: "0.75"
+            max_range_atr: "2.00"
+            breakout_min_atr: "0.10"
+            breakout_min_body_atr: "0.35"
+            breakout_min_close_location: "0.70"
+            buy_rsi_min: "50"
+            buy_rsi_max: "68"
+            sell_rsi_min: "32"
+            sell_rsi_max: "50"
+          - name: balanced
+            range_lookback: "5"
+            min_range_atr: "0.60"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.08"
+            breakout_min_body_atr: "0.30"
+            breakout_min_close_location: "0.65"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+          - name: opportunity
+            range_lookback: "5"
+            min_range_atr: "0.50"
+            max_range_atr: "2.75"
+            breakout_min_atr: "0.06"
+            breakout_min_body_atr: "0.25"
+            breakout_min_close_location: "0.60"
+            buy_rsi_min: "47"
+            buy_rsi_max: "72"
+            sell_rsi_min: "28"
+            sell_rsi_max: "53"
+          - name: shorter-range
+            range_lookback: "4"
+            min_range_atr: "0.60"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.08"
+            breakout_min_body_atr: "0.30"
+            breakout_min_close_location: "0.65"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+          - name: body20
+            range_lookback: "5"
+            min_range_atr: "0.60"
+            max_range_atr: "2.50"
+            breakout_min_atr: "0.08"
+            breakout_min_body_atr: "0.20"
+            breakout_min_close_location: "0.65"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - name: Run 5-year AUDUSD technical backtest
+        env:
+          BACKTEST_LOOKBACK_DAYS: "1825"
+          BACKTEST_INITIAL_EQUITY: "100000"
+          BACKTEST_RISK_PCT: "0.25"
+          BACKTEST_SPREAD_PIPS: "0.8"
+          BACKTEST_SLIPPAGE_PIPS: "0.1"
+          BACKTEST_MIN_STOP_ATR: "0.60"
+          BACKTEST_MAX_STOP_ATR: "1.50"
+          BACKTEST_MIN_RR: "1.80"
+          BACKTEST_MAX_SPREAD_PIPS: "1.20"
+          BACKTEST_MAX_SPREAD_TO_TP_PCT: "12"
+          BACKTEST_MAX_DAILY_LOSS_PCT: "2"
+          BACKTEST_MAX_DRAWDOWN_PCT: "5"
+          BACKTEST_FREQUENCY_MODE: "audusd-${{ matrix.name }}"
+          BACKTEST_TARGET_TRADES_PER_WEEK: "1"
+          BACKTEST_RANGE_LOOKBACK: ${{ matrix.range_lookback }}
+          BACKTEST_MIN_RANGE_ATR: ${{ matrix.min_range_atr }}
+          BACKTEST_MAX_RANGE_ATR: ${{ matrix.max_range_atr }}
+          BACKTEST_BREAKOUT_MIN_ATR: ${{ matrix.breakout_min_atr }}
+          BACKTEST_BREAKOUT_MIN_BODY_ATR: ${{ matrix.breakout_min_body_atr }}
+          BACKTEST_BREAKOUT_MIN_CLOSE_LOCATION: ${{ matrix.breakout_min_close_location }}
+          BACKTEST_BREAKOUT_BUY_RSI_MIN: ${{ matrix.buy_rsi_min }}
+          BACKTEST_BREAKOUT_BUY_RSI_MAX: ${{ matrix.buy_rsi_max }}
+          BACKTEST_BREAKOUT_SELL_RSI_MIN: ${{ matrix.sell_rsi_min }}
+          BACKTEST_BREAKOUT_SELL_RSI_MAX: ${{ matrix.sell_rsi_max }}
+          BACKTEST_OUTPUT_DIR: backtest-output
+          AUDUSD_EXECUTION_ENABLED: "false"
+        run: node scripts/backtest-audusd.mjs
+      - name: Upload AUDUSD research artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: audusd-backtest-${{ matrix.name }}
+          path: backtest-output/
+          retention-days: 30
