@@ -328,7 +328,11 @@ function floorLot(raw, minLot = 0.01, maxLot = 100, lotStep = 0.01) {
 }
 
 function pipSize() {
-  return 0.0001;
+  return 0.01;
+}
+
+function quoteToUsd(price) {
+  return Math.max(1e-9, Number(price));
 }
 
 function simulateTrade({ signalBar, nextBar, futureBars, setup, equity, spreadPips, slippagePips, riskPct }) {
@@ -349,7 +353,7 @@ function simulateTrade({ signalBar, nextBar, futureBars, setup, equity, spreadPi
   if (!(stopDistance > 0)) return null;
 
   const riskCash = equity * (riskPct / 100);
-  const riskPerLot = stopDistance * 100000;
+  const riskPerLot = stopDistance * 100000 / quoteToUsd(entry);
   const lots = floorLot(riskCash / riskPerLot, CONFIG.minLot, CONFIG.maxLot, CONFIG.lotStep);
   if (!(lots > 0)) return null;
 
@@ -388,11 +392,15 @@ function simulateTrade({ signalBar, nextBar, futureBars, setup, equity, spreadPi
     ? (grossExit - grossEntry) / pipSize()
     : (grossEntry - grossExit) / pipSize();
 
-  const netPnl = side === 'BUY'
+  const quoteNetPnl = side === 'BUY'
     ? (exitPrice - entry) * 100000 * lots
     : (entry - exitPrice) * 100000 * lots;
+  const netPnl = quoteNetPnl / quoteToUsd(exitPrice);
 
-  const grossPnl = grossPips * 10 * lots;
+  const quoteGrossPnl = side === 'BUY'
+    ? (grossExit - grossEntry) * 100000 * lots
+    : (grossEntry - grossExit) * 100000 * lots;
+  const grossPnl = quoteGrossPnl / quoteToUsd(grossExit);
   const transactionCost = grossPnl - netPnl;
   const netPips = netPnl / ((pipSize() * 100000 / quoteToUsd(exitPrice)) * lots);
   const grossWouldWin = grossPnl > 0;
