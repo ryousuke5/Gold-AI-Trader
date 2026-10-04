@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/gold_strategy_v2.js'
       - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/fetch-xauusd-m5.mjs'
       - 'tests/gold_strategy_v2.test.js'
       - '.github/workflows/gold-v2-research.yml'
   workflow_dispatch:
@@ -15,8 +16,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  research:
+  prepare-data:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate research scripts
+        run: |
+          node --check scripts/fetch-xauusd-m5.mjs
+          node --check scripts/backtest-gold-v2.mjs
+      - name: Prepare five-year XAUUSD M5 dataset
+        env:
+          GOLD_BACKTEST_LOOKBACK_DAYS: "1825"
+          GOLD_PREPARED_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+        run: node scripts/fetch-xauusd-m5.mjs
+      - name: Upload prepared XAUUSD M5 dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data/xauusd-m5.json.gz
+          retention-days: 7
+
+  research:
+    needs: prepare-data
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -67,13 +97,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
+          cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-
+      - name: Download prepared XAUUSD M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
       - name: Run test suite
         run: npm test
-
       - name: Run five-year XAUUSD M5 backtest
         env:
           GOLD_BACKTEST_LOOKBACK_DAYS: "1825"
@@ -94,9 +127,9 @@ jobs:
           GOLD_MIN_VOLUME_RATIO: ${{ matrix.volume_ratio }}
           GOLD_SESSION_START_UTC: ${{ matrix.session_start }}
           GOLD_SESSION_END_UTC: ${{ matrix.session_end }}
+          GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
           GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
         run: node scripts/backtest-gold-v2.mjs
-
       - name: Upload GOLD V2 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -104,3 +137,4 @@ jobs:
           name: gold-v2-${{ matrix.name }}
           path: gold-backtest-output/
           retention-days: 30
+          if-no-files-found: warn
