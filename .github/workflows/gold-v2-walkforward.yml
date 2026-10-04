@@ -1,0 +1,41 @@
+name: GOLD V2 Walk-Forward Validation
+
+on:
+  workflow_run:
+    workflows: ["GOLD V2 Five-Year Research"]
+    types: [completed]
+
+jobs:
+  walk-forward:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Download prepared XAUUSD M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate walk-forward script
+        run: node --check scripts/backtest-gold-v2-walkforward.mjs
+      - name: Run fixed 3y IS / 2y OOS validation
+        env:
+          GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_WALKFORWARD_OUTPUT_DIR: gold-walkforward-output
+        run: node scripts/backtest-gold-v2-walkforward.mjs
+      - name: Upload walk-forward results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-walkforward
+          path: gold-walkforward-output/
+          retention-days: 30
+          if-no-files-found: warn
