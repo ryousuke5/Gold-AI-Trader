@@ -143,24 +143,47 @@ export function buildEurUsdAsiaRangeBreakoutSetup({
     bodyAtr >= minBodyAtr &&
     closeLocation <= 1 - minCloseLocation;
 
-  const candidate = buy ? 'BUY' : sell ? 'SELL' : 'WAIT';
-  if (candidate === 'WAIT') {
-    return {
-      candidate,
-      setup_type: 'NONE',
-      trend: h1Bar.trend,
-      session_hour: local.hour,
-      range_high: asiaRange.high,
-      range_low: asiaRange.low,
-      range_width_atr: rangeWidthAtr,
-      breakout_distance_atr: h1Bar.trend === 'UP'
-        ? (signalBar.close - asiaRange.high) / atr
-        : (asiaRange.low - signalBar.close) / atr,
-      body_atr: bodyAtr,
-      close_location: closeLocation,
-      reasons: []
-    };
+  if (h1Bar.trend !== 'UP' && h1Bar.trend !== 'DOWN') {
+    return { candidate: 'WAIT', setup_type: 'NONE', trend: h1Bar.trend, reasons: ['h1_trend_not_directional'] };
   }
+  const directionUp = h1Bar.trend === 'UP';
+  const trendAligned = directionUp ? signalBar.ema20 > signalBar.ema50 : signalBar.ema20 < signalBar.ema50;
+  if (!trendAligned) {
+    return { candidate: 'WAIT', setup_type: 'NONE', trend: h1Bar.trend, reasons: ['m15_ema_not_aligned'] };
+  }
+
+  const rsiOk = directionUp
+    ? signalBar.rsi14 >= buyRsiMin && signalBar.rsi14 <= buyRsiMax
+    : signalBar.rsi14 >= sellRsiMin && signalBar.rsi14 <= sellRsiMax;
+  if (!rsiOk) {
+    return { candidate: 'WAIT', setup_type: 'NONE', trend: h1Bar.trend, reasons: ['rsi_filter_failed'] };
+  }
+
+  const priorInside = directionUp
+    ? previousBar.close <= asiaRange.high
+    : previousBar.close >= asiaRange.low;
+  if (!priorInside) {
+    return { candidate: 'WAIT', setup_type: 'NONE', trend: h1Bar.trend, reasons: ['previous_bar_already_outside_range'] };
+  }
+
+  const breakoutOk = directionUp
+    ? signalBar.close > asiaRange.high + atr * breakoutMinAtr
+    : signalBar.close < asiaRange.low - atr * breakoutMinAtr;
+  if (!breakoutOk) {
+    return { candidate: 'WAIT', setup_type: 'NONE', trend: h1Bar.trend, reasons: ['breakout_penetration_failed'] };
+  }
+
+  if (bodyAtr < minBodyAtr) {
+    return { candidate: 'WAIT', setup_type: 'NONE', trend: h1Bar.trend, reasons: ['breakout_body_failed'] };
+  }
+  const closeLocationOk = directionUp
+    ? closeLocation >= minCloseLocation
+    : closeLocation <= 1 - minCloseLocation;
+  if (!closeLocationOk) {
+    return { candidate: 'WAIT', setup_type: 'NONE', trend: h1Bar.trend, reasons: ['close_location_failed'] };
+  }
+
+  const candidate = directionUp ? 'BUY' : 'SELL';
 
   const entry = candidate === 'BUY' ? signalBar.close + spread / 2 : signalBar.close - spread / 2;
   const stopLoss = candidate === 'BUY'
