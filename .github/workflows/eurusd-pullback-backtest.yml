@@ -81,10 +81,10 @@ jobs:
           PULLBACK_GATE_MIN_PF: "1.25"
           PULLBACK_GATE_MIN_EXPECTANCY_R: "0.10"
           PULLBACK_GATE_MAX_DD_R: "12"
-          PULLBACK_GATE_MIN_OOS_TRADES: "40"
-          PULLBACK_GATE_MIN_OOS_PF: "1.10"
-          PULLBACK_GATE_MIN_OOS_EXPECTANCY_R: "0.05"
-          PULLBACK_GATE_MAX_OOS_DD_R: "6"
+          PULLBACK_GATE_MIN_RECENT_YEAR_TRADES: "40"
+          PULLBACK_GATE_MIN_RECENT_YEAR_PF: "1.10"
+          PULLBACK_GATE_MIN_RECENT_YEAR_EXPECTANCY_R: "0.05"
+          PULLBACK_GATE_MAX_RECENT_YEAR_DD_R: "6"
         run: node scripts/validate-eurusd-pullback-gate.mjs pullback-backtest-output/summary.json
       - name: Upload Strategy B results
         uses: actions/upload-artifact@v4
