@@ -1,0 +1,71 @@
+name: EURUSD Pullback V2 Cost Stress
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/eurusd_pullback_v2.js'
+      - 'scripts/backtest-eurusd-pullback-v2.mjs'
+      - '.github/workflows/eurusd-pullback-v2-cost-stress.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-pullback-v2-cost-stress
+  cancel-in-progress: true
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline
+            spread_pips: "0.8"
+            slippage_pips: "0.1"
+          - name: realistic
+            spread_pips: "1.2"
+            slippage_pips: "0.2"
+          - name: conservative
+            spread_pips: "1.5"
+            slippage_pips: "0.3"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run Strategy B V2 balanced cost stress
+        env:
+          PULLBACK_BACKTEST_SOURCE: "dukascopy"
+          PULLBACK_BACKTEST_LOOKBACK_DAYS: "1825"
+          PULLBACK_BACKTEST_SPREAD_PIPS: "${{ matrix.spread_pips }}"
+          PULLBACK_BACKTEST_SLIPPAGE_PIPS: "${{ matrix.slippage_pips }}"
+          PULLBACK_BACKTEST_MAX_HOLD_BARS: "96"
+          PULLBACK_BACKTEST_COOLDOWN_BARS: "2"
+          PULLBACK_BACKTEST_V2_MIN_RETRACE_RATIO: "0.25"
+          PULLBACK_BACKTEST_V2_MAX_RETRACE_RATIO: "0.80"
+          PULLBACK_BACKTEST_V2_MIN_BODY_ATR: "0.35"
+          PULLBACK_BACKTEST_V2_MIN_CLOSE_LOCATION: "0.70"
+          PULLBACK_BACKTEST_V2_MIN_H1_AGREEMENT: "0.6666667"
+          PULLBACK_BACKTEST_V2_TAKE_PROFIT_R: "1.80"
+          PULLBACK_BACKTEST_V2_MIN_IMPULSE_ATR: "0.50"
+          PULLBACK_BACKTEST_V2_MIN_PULLBACK_ATR: "0.10"
+          PULLBACK_BACKTEST_V2_H1_BUY_RSI_MIN: "52"
+          PULLBACK_BACKTEST_V2_H1_BUY_RSI_MAX: "68"
+          PULLBACK_BACKTEST_V2_H1_SELL_RSI_MIN: "32"
+          PULLBACK_BACKTEST_V2_H1_SELL_RSI_MAX: "48"
+          PULLBACK_BACKTEST_V2_M15_BUY_RSI_MIN: "52"
+          PULLBACK_BACKTEST_V2_M15_BUY_RSI_MAX: "68"
+          PULLBACK_BACKTEST_V2_M15_SELL_RSI_MIN: "32"
+          PULLBACK_BACKTEST_V2_M15_SELL_RSI_MAX: "48"
+          PULLBACK_BACKTEST_OUTPUT_DIR: pullback-v2-cost-stress-output
+        run: node scripts/backtest-eurusd-pullback-v2.mjs
+      - name: Upload cost stress result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-pullback-v2-cost-stress-${{ matrix.name }}
+          path: pullback-v2-cost-stress-output/
+          retention-days: 30
