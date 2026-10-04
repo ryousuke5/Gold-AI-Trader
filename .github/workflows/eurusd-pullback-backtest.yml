@@ -1,0 +1,77 @@
+name: EURUSD Pullback Backtest
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: strict
+            min_retrace_atr: "0.30"
+            max_retrace_atr: "1.00"
+            min_body_atr: "0.35"
+            min_close_location: "0.70"
+            buy_rsi_min: "50"
+            buy_rsi_max: "68"
+            sell_rsi_min: "32"
+            sell_rsi_max: "50"
+          - name: balanced
+            min_retrace_atr: "0.20"
+            max_retrace_atr: "1.20"
+            min_body_atr: "0.30"
+            min_close_location: "0.65"
+            buy_rsi_min: "50"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "50"
+          - name: looser
+            min_retrace_atr: "0.15"
+            max_retrace_atr: "1.40"
+            min_body_atr: "0.25"
+            min_close_location: "0.60"
+            buy_rsi_min: "48"
+            buy_rsi_max: "72"
+            sell_rsi_min: "28"
+            sell_rsi_max: "52"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run all unit tests
+        run: npm test
+      - name: Static validate existing EURUSD monitor
+        run: npm run test:mt4
+      - name: Static validate Strategy B monitor
+        run: npm run test:mt4:pullback
+      - name: Run Strategy B backtest
+        env:
+          PULLBACK_BACKTEST_LOOKBACK_DAYS: "1825"
+          PULLBACK_BACKTEST_SPREAD_PIPS: "0.8"
+          PULLBACK_BACKTEST_SLIPPAGE_PIPS: "0.1"
+          PULLBACK_BACKTEST_MAX_HOLD_BARS: "96"
+          PULLBACK_BACKTEST_COOLDOWN_BARS: "2"
+          PULLBACK_BACKTEST_MIN_RETRACE_ATR: "${{ matrix.min_retrace_atr }}"
+          PULLBACK_BACKTEST_MAX_RETRACE_ATR: "${{ matrix.max_retrace_atr }}"
+          PULLBACK_BACKTEST_MIN_BODY_ATR: "${{ matrix.min_body_atr }}"
+          PULLBACK_BACKTEST_MIN_CLOSE_LOCATION: "${{ matrix.min_close_location }}"
+          PULLBACK_BACKTEST_BUY_RSI_MIN: "${{ matrix.buy_rsi_min }}"
+          PULLBACK_BACKTEST_BUY_RSI_MAX: "${{ matrix.buy_rsi_max }}"
+          PULLBACK_BACKTEST_SELL_RSI_MIN: "${{ matrix.sell_rsi_min }}"
+          PULLBACK_BACKTEST_SELL_RSI_MAX: "${{ matrix.sell_rsi_max }}"
+          PULLBACK_BACKTEST_OUTPUT_DIR: pullback-backtest-output
+        run: node scripts/backtest-eurusd-pullback.mjs
+      - name: Upload Strategy B results
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-pullback-backtest-${{ matrix.name }}
+          path: pullback-backtest-output/
+          retention-days: 30
