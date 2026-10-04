@@ -24,7 +24,7 @@ def bi5_url(day: date) -> str:
     return f"{BASE_URL}/{SYMBOL}/{day.year:04d}/{day.month-1:02d}/{day.day:02d}/BID_candles_min_1.bi5"
 
 def fetch_bytes(url: str, retries: int = 8, timeout: int = 30) -> tuple[str, bytes]:
-    delay = 3.0
+    delay = 5.0
     for attempt in range(1, retries + 1):
         req = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
         try:
@@ -36,9 +36,15 @@ def fetch_bytes(url: str, retries: int = 8, timeout: int = 30) -> tuple[str, byt
                 return "missing", b""
             if exc.code == 429 or exc.code >= 500:
                 if attempt < retries:
-                    print(json.dumps({"event": "retry", "status": exc.code, "attempt": attempt, "url": url}), flush=True)
-                    time.sleep(delay)
-                    delay = min(delay * 2.0, 120.0)
+                    retry_after = exc.headers.get("Retry-After")
+                    try:
+                        server_delay = max(0.0, float(retry_after)) if retry_after else 0.0
+                    except (TypeError, ValueError):
+                        server_delay = 0.0
+                    sleep_for = max(delay, server_delay)
+                    print(json.dumps({"event": "retry", "status": exc.code, "attempt": attempt, "sleep_seconds": sleep_for, "url": url}), flush=True)
+                    time.sleep(sleep_for)
+                    delay = min(delay * 2.0, 180.0)
                     continue
             raise
         except (URLError, TimeoutError, OSError) as exc:
@@ -149,6 +155,11 @@ def main() -> None:
     while day < end_day:
         requested += 1
         cache_file = cache_dir / f"{day:%Y%m%d}.bi5"
+        missing_marker = cache_dir / f"{day:%Y%m%d}.missing"
+        if missing_marker.exists():
+            missing_days.append(day.isoformat())
+            day += timedelta(days=1)
+            continue
         if cache_file.exists() and cache_file.stat().st_size > 0:
             raw = cache_file.read_bytes()
             reused += 1
@@ -157,6 +168,7 @@ def main() -> None:
             status, raw = fetch_bytes(bi5_url(day), retries=args.retries, timeout=args.timeout)
             if status == "missing" or not raw:
                 missing_days.append(day.isoformat())
+                missing_marker.touch()
                 day += timedelta(days=1)
                 continue
             cache_file.write_bytes(raw)
