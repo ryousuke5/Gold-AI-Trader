@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 
@@ -161,6 +162,36 @@ function normalizeDukascopy(rows) {
     b.low <= b.open && b.low <= b.close &&
     (b.time + 300) * 1000 <= now
   ).sort((a,b)=>a.time-b.time);
+}
+
+async function loadBacktestM5FromFile(filePath) {
+  const resolved = path.resolve(filePath);
+  const bytes = await fs.readFile(resolved);
+  const raw = resolved.endsWith('.gz') ? gunzipSync(bytes).toString('utf8') : bytes.toString('utf8');
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) throw new Error('Backtest data file must contain an array');
+  const bars = parsed.map((b) => ({
+    time: Number(b.time),
+    open: Number(b.open),
+    high: Number(b.high),
+    low: Number(b.low),
+    close: Number(b.close),
+    volume: Number(b.volume) || 0
+  })).filter((b) =>
+    Number.isFinite(b.time) && Number.isFinite(b.open) && Number.isFinite(b.high) &&
+    Number.isFinite(b.low) && Number.isFinite(b.close) && b.open > 0 &&
+    b.high >= b.low && b.high >= b.open && b.high >= b.close &&
+    b.low <= b.open && b.low <= b.close
+  ).sort((a,b)=>a.time-b.time);
+  const unique = [];
+  let last = -1;
+  for (const b of bars) {
+    if (b.time === last) continue;
+    unique.push(b);
+    last = b.time;
+  }
+  if (unique.length < 200000) throw new Error('Insufficient XAUUSD M5 data in file: ' + unique.length);
+  return unique;
 }
 
 async function fetchDukascopyM5(lookbackDays) {
@@ -426,11 +457,17 @@ async function main() {
   const args=parseArgs();
   const lookbackDays=Math.max(365,Number(args.get('lookback-days')||BASE_CONFIG.lookbackDays));
   const end=new Date(), start=new Date(end.getTime()-lookbackDays*86400000);
-  const mod=await import('dukascopy-node');
-  const getHistoricalRates=mod.getHistoricalRates||mod.default?.getHistoricalRates;
-  const rows=await getHistoricalRates({instrument:'xauusd',dates:{from:start,to:end},timeframe:'m5',priceType:'bid',volumes:true,format:'array'});
-  const rawM5=normalizeDukascopy(rows);
-  if(rawM5.length<200000) throw new Error('Insufficient Dukascopy XAUUSD M5 data: '+rawM5.length);
+  let rawM5;
+  const dataFile=process.env.GOLD_BACKTEST_DATA_FILE;
+  if (dataFile) {
+    rawM5=await loadBacktestM5FromFile(dataFile);
+  } else {
+    const mod=await import('dukascopy-node');
+    const getHistoricalRates=mod.getHistoricalRates||mod.default?.getHistoricalRates;
+    const rows=await getHistoricalRates({instrument:'xauusd',dates:{from:start,to:end},timeframe:'m5',priceType:'bid',volumes:true,format:'array'});
+    rawM5=normalizeDukascopy(rows);
+    if(rawM5.length<200000) throw new Error('Insufficient Dukascopy XAUUSD M5 data: '+rawM5.length);
+  }
   const config={...BASE_CONFIG,lookbackDays};
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
   const strategy=JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
@@ -445,11 +482,12 @@ async function main() {
     strategy:'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
     fundamental_backtest_status:'NOT_RUN',
     fundamental_backtest_note:'AI/web-search environment filtering is intentionally excluded from historical technical performance because point-in-time AI outputs are not available in this price dataset.',
-    data_source:{m5:'DUKASCOPY_XAUUSD',h1:'FROM_M5'},
+    data_source:{m5:dataFile?'PREPARED_DUKASCOPY_XAUUSD':'DUKASCOPY_XAUUSD',h1:'FROM_M5'},
     instrument:'XAUUSD',
     server_timezone:config.serverTimezone,
     source_period:{m5_first:new Date(rawM5[0].time*1000).toISOString(),m5_last:new Date(rawM5[rawM5.length-1].time*1000).toISOString()},
     test_period:{start:start.toISOString(),end:end.toISOString()},
+    prepared_data_file:dataFile||null,
     assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side'},
     strategy_parameters:strategy,
     data_quality:dataQuality(rawM5),
