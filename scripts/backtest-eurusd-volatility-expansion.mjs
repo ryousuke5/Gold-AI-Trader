@@ -75,12 +75,12 @@ export async function runBacktest(){
  const rawOpen=parseCsv(await (await fetch(M15_SOURCE)).text()); const rawM15=shiftBarsToCloseTime(rawOpen,900); const rawH1=shiftBarsToCloseTime(aggregateM15ToH1(rawOpen),3600);
  const latest=rawM15.at(-1).time; const end=CONFIG.endDate?Date.parse(CONFIG.endDate+'T23:59:59Z')/1000:latest; const start=CONFIG.startDate?Date.parse(CONFIG.startDate+'T00:00:00Z')/1000:latest-CONFIG.lookbackDays*86400; const warm=start-60*86400;
  const m15=rawM15.filter(b=>b.time>=warm&&b.time<=end),h1=rawH1.filter(b=>b.time>=warm-30*86400&&b.time<=end);
- const c=m15.map(b=>b.close),e20=ema(c,20),e50=ema(c,50),r14=rsi(c,14),a14=atr(m15,14), hi=addH1(h1);
+ const c=m15.map(b=>b.close),e20=ema(c,20),e50=ema(c,50),r14=rsi(c,14),a14=atr(m15,14), hi=addH1(h1), m15Ind=m15.map((b,j)=>({...b,ema20:e20[j],ema50:e50[j],rsi14:r14[j],atr14:a14[j]}));
  const risk={day:null,dayStart:CONFIG.initialEquity,peak:CONFIG.initialEquity}; let equity=CONFIG.initialEquity,trades=[],nextAvailable=0;
  for(let i=210;i<m15.length-1;i++){
-   const s={...m15[i],ema20:e20[i],ema50:e50[i],rsi14:r14[i],atr14:a14[i]}; if(s.time<start||s.time>end||i<nextAvailable||![s.ema20,s.ema50,s.rsi14,s.atr14].every(Number.isFinite))continue;
+   const s=m15Ind[i]; if(s.time<start||s.time>end||i<nextAvailable||![s.ema20,s.ema50,s.rsi14,s.atr14].every(Number.isFinite))continue;
    const hidx=latestCompletedH1Index(hi,s.time);const hb=hidx>=0?hi[hidx]:null;if(!hb||![hb.close,hb.ema20,hb.ema50,hb.ema200].every(Number.isFinite))continue;
-   const spread=CONFIG.spreadPips*0.0001, f={bid:s.close-spread/2,ask:s.close+spread/2,spread,barTime:s.time,m15:{ema20:s.ema20,ema50:s.ema50,rsi14:s.rsi14,atr14:s.atr14},h1:{close:hb.close,ema20:hb.ema20,ema50:hb.ema50,ema200:hb.ema200},recentM15:recent(m15.map((b,j)=>({...b,ema20:e20[j],ema50:e50[j],rsi14:r14[j],atr14:a14[j]})),i)};
+   const spread=CONFIG.spreadPips*0.0001, f={bid:s.close-spread/2,ask:s.close+spread/2,spread,barTime:s.time,m15:{ema20:s.ema20,ema50:s.ema50,rsi14:s.rsi14,atr14:s.atr14},h1:{close:hb.close,ema20:hb.ema20,ema50:hb.ema50,ema200:hb.ema200},recentM15:recent(m15Ind,i,80)};
    const setup=buildEurUsdVolatilityExpansionSetup(f,{lookback:CONFIG.lookback,breakoutAtr:CONFIG.breakoutAtr,minBodyAtr:CONFIG.minBodyAtr,minCloseLocation:CONFIG.minCloseLocation,maxSqueezeWidthAtr:CONFIG.maxSqueezeWidthAtr,minAtrExpansion:CONFIG.minAtrExpansion,buyRsiMin:CONFIG.buyRsiMin,buyRsiMax:CONFIG.buyRsiMax,sellRsiMin:CONFIG.sellRsiMin,sellRsiMax:CONFIG.sellRsiMax,minVolumeRatio:CONFIG.minVolumeRatio,requireVolume:true,maxSpreadPips:CONFIG.maxSpreadPips,minStopAtr:CONFIG.minStopAtr,maxStopAtr:CONFIG.maxStopAtr,takeProfitR:2,maxSpreadToTpPct:CONFIG.maxSpreadToTpPct});
    if(setup.candidate==='WAIT'||!riskGate(risk,equity,s.time))continue; const t=simulate(s,m15[i+1],m15.slice(i+1),setup,equity);if(!t)continue;trades.push(t);equity+=t.net_pnl;nextAvailable=m15.findIndex(b=>b.time>t.exit_time);if(nextAvailable<0)nextAvailable=m15.length;
  }
