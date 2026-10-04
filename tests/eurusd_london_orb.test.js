@@ -15,7 +15,8 @@ test('London ORB only evaluates inside its breakout window', () => {
     ask: 1.1006,
     spread: 0.0002,
     m15: { ema20: 1.101, ema50: 1.100, rsi14: 55, atr14: 0.001 },
-    h1: { close: 1.102, ema20: 1.101, ema50: 1.100, ema200: 1.098 }
+    h1: { close: 1.102, ema20: 1.101, ema50: 1.100, ema200: 1.098 },
+    recentM15: recent
   };
   const setup = buildEurUsdLondonOrbSetup(f);
   assert.equal(setup.candidate, 'WAIT');
