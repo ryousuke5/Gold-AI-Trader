@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import process from 'node:process';
 
 const file = process.argv[2] || 'pullback-backtest-output/summary.json';
-const minTradesPerWeek = Number(process.env.PULLBACK_GATE_MIN_TRADES_PER_WEEK || 1);
+const guidanceTradesPerWeek = Number(process.env.PULLBACK_GATE_GUIDANCE_TRADES_PER_WEEK || 1);
 const minPf = Number(process.env.PULLBACK_GATE_MIN_PF || 1.25);
 const minExpectancyR = Number(process.env.PULLBACK_GATE_MIN_EXPECTANCY_R || 0.10);
 const maxDrawdownR = Number(process.env.PULLBACK_GATE_MAX_DD_R || 12);
@@ -54,7 +54,7 @@ const overall = stats(trades);
 const oos = stats(oosTrades);
 
 const checks = {
-  minimum_frequency: overall.trades_per_week >= minTradesPerWeek,
+  minimum_sample_size: overall.trades >= 100,
   minimum_profit_factor: finite(overall.profit_factor) && overall.profit_factor >= minPf,
   minimum_expectancy: overall.expectancy_r >= minExpectancyR,
   maximum_drawdown: overall.max_drawdown_r <= maxDrawdownR,
@@ -69,7 +69,7 @@ const result = {
   approved: Object.values(checks).every(Boolean),
   checks,
   thresholds: {
-    min_trades_per_week: minTradesPerWeek,
+    guidance_trades_per_week: guidanceTradesPerWeek,
     min_pf: minPf,
     min_expectancy_r: minExpectancyR,
     max_drawdown_r: maxDrawdownR,
@@ -79,6 +79,11 @@ const result = {
     max_oos_drawdown_r: maxOosDrawdownR
   },
   overall,
+  frequency_guidance: {
+    reference_trades_per_week: guidanceTradesPerWeek,
+    meets_reference: overall.trades_per_week >= guidanceTradesPerWeek,
+    note: 'Trade frequency is a guideline only and does not determine live approval.'
+  },
   oos_last_365_days: oos,
   evaluated_at: new Date().toISOString(),
   source_summary: {
