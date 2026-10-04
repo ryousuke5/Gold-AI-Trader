@@ -23,7 +23,7 @@ function fixture() {
     return {time:t+i*3600,open:close-0.00005,high:close+0.00012,low:close-0.00012,close,volume:100+i};
   });
   return normalizeEurUsdFeatures({
-    bid:1.10225,ask:1.10233,point:0.00001,spread:0.00008,bar_time:t+9000,
+    bid:1.10217,ask:1.10225,point:0.00001,spread:0.00008,bar_time:t+9000,
     m15:{ema20:1.1012,ema50:1.1008,rsi14:58,atr14:0.0010},
     h1:{close:1.10155,ema20:1.1012,ema50:1.1008,ema200:1.0997,rsi14:55,atr14:0.0025},
     recent_m15:recentM15,recent_h1:recentH1
