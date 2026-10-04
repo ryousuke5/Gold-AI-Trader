@@ -1,0 +1,66 @@
+name: EURUSD Pullback V3 Cost Stress
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/eurusd_pullback_v3.js'
+      - 'scripts/backtest-eurusd-pullback-v3.mjs'
+      - '.github/workflows/eurusd-pullback-v3-cost-stress.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-pullback-v3-cost-stress
+  cancel-in-progress: true
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline
+            spread_pips: "0.8"
+            slippage_pips: "0.1"
+          - name: realistic
+            spread_pips: "1.2"
+            slippage_pips: "0.2"
+          - name: conservative
+            spread_pips: "1.5"
+            slippage_pips: "0.3"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run V3 balanced cost stress
+        env:
+          PULLBACK_BACKTEST_SOURCE: "dukascopy"
+          PULLBACK_BACKTEST_LOOKBACK_DAYS: "1825"
+          PULLBACK_BACKTEST_SPREAD_PIPS: "${{ matrix.spread_pips }}"
+          PULLBACK_BACKTEST_SLIPPAGE_PIPS: "${{ matrix.slippage_pips }}"
+          PULLBACK_BACKTEST_MAX_HOLD_BARS: "96"
+          PULLBACK_BACKTEST_COOLDOWN_BARS: "2"
+          PULLBACK_BACKTEST_V3_MIN_RETRACE_RATIO: "0.20"
+          PULLBACK_BACKTEST_V3_MAX_RETRACE_RATIO: "0.80"
+          PULLBACK_BACKTEST_V3_MIN_IMPULSE_ATR: "0.40"
+          PULLBACK_BACKTEST_V3_MIN_PULLBACK_ATR: "0.08"
+          PULLBACK_BACKTEST_V3_MIN_H1_AGREEMENT: "0.60"
+          PULLBACK_BACKTEST_V3_BREAK_BUFFER_ATR: "0.02"
+          PULLBACK_BACKTEST_V3_HOLD_BUFFER_ATR: "0.08"
+          PULLBACK_BACKTEST_V3_TAKE_PROFIT_R: "1.50"
+          PULLBACK_BACKTEST_V3_MIN_BODY_ATR: "0.30"
+          PULLBACK_BACKTEST_V3_MIN_CLOSE_LOCATION: "0.68"
+          PULLBACK_BACKTEST_V3_MAX_H1_EXTENSION_ATR: "2.50"
+          PULLBACK_BACKTEST_OUTPUT_DIR: pullback-v3-cost-stress-output
+        run: node scripts/backtest-eurusd-pullback-v3.mjs
+      - name: Upload V3 cost stress result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-pullback-v3-cost-stress-${{ matrix.name }}
+          path: pullback-v3-cost-stress-output/
+          retention-days: 30
