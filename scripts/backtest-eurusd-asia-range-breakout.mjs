@@ -272,7 +272,8 @@ function runPeriod(data, start, end) {
     h1_down: 0,
     trend_aligned: 0,
     range_width_ok: 0,
-    breakout_raw: 0
+    breakout_raw: 0,
+    rejection_reasons: {}
   };
 
   for (let i = 210; i < data.m15.length - 1; i++) {
@@ -325,7 +326,11 @@ function runPeriod(data, start, end) {
         maxSpreadToTpPct: CONFIG.maxSpreadToTpPct
       }
     });
-    if (setup.candidate === 'WAIT') continue;
+    if (setup.candidate === 'WAIT') {
+      const reason = setup.reasons?.[0] || 'unknown_rejection';
+      diagnostics.rejection_reasons[reason] = (diagnostics.rejection_reasons[reason] || 0) + 1;
+      continue;
+    }
     candidates++;
     if (!riskAllows(state, equity, signalBar.time)) continue;
 
