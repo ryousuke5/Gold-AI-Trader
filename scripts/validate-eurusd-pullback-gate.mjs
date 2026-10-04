@@ -6,10 +6,10 @@ const guidanceTradesPerWeek = Number(process.env.PULLBACK_GATE_GUIDANCE_TRADES_P
 const minPf = Number(process.env.PULLBACK_GATE_MIN_PF || 1.25);
 const minExpectancyR = Number(process.env.PULLBACK_GATE_MIN_EXPECTANCY_R || 0.10);
 const maxDrawdownR = Number(process.env.PULLBACK_GATE_MAX_DD_R || 12);
-const minRecentYearTrades = Number(process.env.PULLBACK_GATE_MIN_recent-year validation_TRADES || 40);
-const minRecentYearPf = Number(process.env.PULLBACK_GATE_MIN_recent-year validation_PF || 1.10);
-const minRecentYearExpectancyR = Number(process.env.PULLBACK_GATE_MIN_recent-year validation_EXPECTANCY_R || 0.05);
-const maxRecentYearDrawdownR = Number(process.env.PULLBACK_GATE_MAX_recent-year validation_DD_R || 6);
+const minRecentYearTrades = Number(process.env.PULLBACK_GATE_MIN_RECENT_YEAR_TRADES || 40);
+const minRecentYearPf = Number(process.env.PULLBACK_GATE_MIN_RECENT_YEAR_PF || 1.10);
+const minRecentYearExpectancyR = Number(process.env.PULLBACK_GATE_MIN_RECENT_YEAR_EXPECTANCY_R || 0.05);
+const maxRecentYearDrawdownR = Number(process.env.PULLBACK_GATE_MAX_RECENT_YEAR_DD_R || 6);
 
 function finite(n) { return Number.isFinite(Number(n)); }
 
@@ -73,10 +73,10 @@ const result = {
     min_pf: minPf,
     min_expectancy_r: minExpectancyR,
     max_drawdown_r: maxDrawdownR,
-    min_oos_trades: minRecentYearTrades,
-    min_oos_pf: minRecentYearPf,
-    min_oos_expectancy_r: minRecentYearExpectancyR,
-    max_oos_drawdown_r: maxRecentYearDrawdownR
+    min_recent_year_trades: minRecentYearTrades,
+    min_recent_year_pf: minRecentYearPf,
+    min_recent_year_expectancy_r: minRecentYearExpectancyR,
+    max_recent_year_drawdown_r: maxRecentYearDrawdownR
   },
   overall,
   frequency_guidance: {
