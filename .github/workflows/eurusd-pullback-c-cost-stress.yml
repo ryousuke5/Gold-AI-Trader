@@ -1,0 +1,60 @@
+name: EURUSD Strategy C Cost Stress
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/eurusd_pullback_c.js'
+      - 'scripts/backtest-eurusd-pullback-c.mjs'
+      - '.github/workflows/eurusd-pullback-c-cost-stress.yml'
+  workflow_dispatch:
+concurrency:
+  group: eurusd-pullback-c-cost-stress
+  cancel-in-progress: true
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline
+            spread_pips: "0.8"
+            slippage_pips: "0.1"
+          - name: realistic
+            spread_pips: "1.2"
+            slippage_pips: "0.2"
+          - name: conservative
+            spread_pips: "1.5"
+            slippage_pips: "0.3"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run balanced Strategy C cost stress
+        env:
+          PULLBACK_BACKTEST_SOURCE: dukascopy
+          PULLBACK_BACKTEST_LOOKBACK_DAYS: "1825"
+          PULLBACK_BACKTEST_SPREAD_PIPS: "${{ matrix.spread_pips }}"
+          PULLBACK_BACKTEST_SLIPPAGE_PIPS: "${{ matrix.slippage_pips }}"
+          PULLBACK_BACKTEST_MAX_HOLD_BARS: "96"
+          PULLBACK_BACKTEST_COOLDOWN_BARS: "2"
+          PULLBACK_BACKTEST_C_MIN_RETRACE_RATIO: "0.20"
+          PULLBACK_BACKTEST_C_MAX_RETRACE_RATIO: "0.90"
+          PULLBACK_BACKTEST_C_MIN_IMPULSE_ATR: "0.40"
+          PULLBACK_BACKTEST_C_MIN_PULLBACK_ATR: "0.08"
+          PULLBACK_BACKTEST_C_MIN_H1_AGREEMENT: "0.60"
+          PULLBACK_BACKTEST_C_BREAK_BUFFER_ATR: "0.03"
+          PULLBACK_BACKTEST_C_TAKE_PROFIT_R: "1.50"
+          PULLBACK_BACKTEST_C_MIN_BODY_ATR: "0.30"
+          PULLBACK_BACKTEST_C_MIN_CLOSE_LOCATION: "0.68"
+          PULLBACK_BACKTEST_OUTPUT_DIR: pullback-c-cost-stress-output
+        run: node scripts/backtest-eurusd-pullback-c.mjs
+      - name: Upload Strategy C cost stress result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-pullback-c-cost-stress-${{ matrix.name }}
+          path: pullback-c-cost-stress-output/
+          retention-days: 30
