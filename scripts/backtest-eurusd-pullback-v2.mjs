@@ -326,7 +326,9 @@ function simulateTrade(bars, i, setup) {
       break;
     }
     if (hitTarget) {
-      resultR = setup.risk_reward;
+      resultR = dir === 'BUY'
+        ? (target - adverseSlip - entry) / risk
+        : (entry - (target + adverseSlip)) / risk;
       exitReason = 'TARGET';
       exitIndex = j;
       break;
