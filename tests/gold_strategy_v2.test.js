@@ -7,7 +7,7 @@ function baseFeatures() {
   const recentM5 = [];
   for (let i = 0; i < 12; i++) {
     const time = t - (12 - i) * 300;
-    const center = 2500 + (i % 2) * 0.2;
+    const center = 2502 + (i % 2) * 0.2;
     recentM5.push({
       time,
       open: center,
@@ -19,10 +19,10 @@ function baseFeatures() {
   }
   recentM5.push({
     time: t,
-    open: 2501,
-    high: 2506,
-    low: 2500.8,
-    close: 2505.5,
+    open: 2502,
+    high: 2504.5,
+    low: 2501.2,
+    close: 2504.0,
     volume: 140
   });
   return {
