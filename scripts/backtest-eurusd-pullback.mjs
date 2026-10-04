@@ -273,11 +273,21 @@ async function main() {
   const trades = [];
   let nextEligible = 0;
   let candidateCount = 0;
+  const diagnostics = {
+    evaluated: 0,
+    h1_up: 0,
+    h1_down: 0,
+    h1_range: 0,
+    setup_wait: 0,
+    stop_wait: 0,
+    reason_counts: {}
+  };
 
   for (let i = 250; i < m15.length - 2; i += 1) {
     if (i < nextEligible) continue;
     const h1i = latestCompletedH1Index(h1, m15[i].time + 900);
     if (h1i < 200) continue;
+    diagnostics.evaluated += 1;
     const f = buildFeatures(m15, i, h1, h1i);
     const setup = buildEurUsdTrendPullbackSetup(f, {
       minRetraceAtr: CONFIG.minRetraceAtr,
@@ -290,7 +300,16 @@ async function main() {
       sellRsiMax: CONFIG.sellRsiMax,
       maxSpreadPips: Math.max(CONFIG.spreadPips, 0.1)
     });
-    if (setup.candidate === 'WAIT') continue;
+    if (setup.trend === 'UP') diagnostics.h1_up += 1;
+    else if (setup.trend === 'DOWN') diagnostics.h1_down += 1;
+    else diagnostics.h1_range += 1;
+    if (setup.candidate === 'WAIT') {
+      diagnostics.setup_wait += 1;
+      for (const reason of (setup.reasons || [])) {
+        diagnostics.reason_counts[reason] = (diagnostics.reason_counts[reason] || 0) + 1;
+      }
+      continue;
+    }
     candidateCount += 1;
     const trade = simulateTrade(m15, i, setup);
     if (!trade) continue;
@@ -318,7 +337,8 @@ async function main() {
       buy_rsi: [CONFIG.buyRsiMin, CONFIG.buyRsiMax],
       sell_rsi: [CONFIG.sellRsiMin, CONFIG.sellRsiMax]
     },
-    statistics: stats(trades)
+    statistics: stats(trades),
+    diagnostics
   };
 
   await fs.writeFile(path.join(CONFIG.outputDir, 'summary.json'), JSON.stringify(summary, null, 2));
