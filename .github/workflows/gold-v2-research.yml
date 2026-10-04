@@ -7,6 +7,7 @@ on:
       - 'src/gold_strategy_v2.js'
       - 'scripts/backtest-gold-v2.mjs'
       - 'scripts/fetch-xauusd-m5.mjs'
+      - 'scripts/fetch-xauusd-m5.py'
       - 'tests/gold_strategy_v2.test.js'
       - '.github/workflows/gold-v2-research.yml'
   workflow_dispatch:
