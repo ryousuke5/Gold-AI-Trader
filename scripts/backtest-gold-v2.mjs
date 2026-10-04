@@ -251,7 +251,14 @@ function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
   let exitPrice=futureBars[Math.min(futureBars.length-1,config.maxHoldBars-1)]?.close ?? nextBar.close;
   let exitReason='TIME';
   const scan=futureBars.slice(0,config.maxHoldBars);
+  let previousBar = null;
   for(const bar of scan) {
+    if(previousBar && bar.time - previousBar.time > 900) {
+      exitTime=previousBar.time;
+      exitReason='DATA_GAP';
+      exitPrice=side==='BUY' ? previousBar.close-slip : previousBar.close+spread+slip;
+      break;
+    }
     const stopHit=side==='BUY' ? bar.low<=stop : bar.high+spread>=stop;
     const targetHit=side==='BUY' ? bar.high>=target : bar.low+spread<=target;
     if(stopHit) {
@@ -266,6 +273,7 @@ function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
       exitPrice=side==='BUY' ? target-slip : target+spread+slip;
       break;
     }
+    previousBar=bar;
   }
   const pnlPrice=side==='BUY' ? exitPrice-entry : entry-exitPrice;
   const netR=pnlPrice/stopDistance;
