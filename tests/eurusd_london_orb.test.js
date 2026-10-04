@@ -29,7 +29,7 @@ test('London DST conversion distinguishes winter and summer correctly', () => {
   assert.equal(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(recentSummer * 1000)), '08:15');
 });
 
-test('London ORB requires prior close inside the range before a breakout', () => {
+test('London ORB rejects a breakout when the immediately prior candle already closed beyond the range', () => {
   const rangeStart = Date.parse('2026-01-15T07:15:00Z') / 1000;
   const rangeBars = [
     bar(rangeStart, 1.1000, 1.1010, 1.0990, 1.1005, 100),
@@ -37,7 +37,8 @@ test('London ORB requires prior close inside the range before a breakout', () =>
     bar(rangeStart + 1800, 1.1008, 1.1012, 1.0998, 1.1009, 100),
     bar(rangeStart + 2700, 1.1009, 1.1013, 1.0999, 1.1010, 100)
   ];
-  const breakout = bar(Date.parse('2026-01-15T08:15:00Z') / 1000, 1.1020, 1.1038, 1.1019, 1.1036, 150);
+  const preBreakout = bar(Date.parse('2026-01-15T08:15:00Z') / 1000, 1.1020, 1.1038, 1.1019, 1.1036, 150);
+  const breakout = bar(Date.parse('2026-01-15T08:30:00Z') / 1000, 1.1036, 1.1045, 1.1035, 1.1042, 160);
   const f = {
     barTime: breakout.time,
     bid: 1.1035,
