@@ -276,9 +276,10 @@ function simulateTrade(bars, i, setup) {
   const spread = CONFIG.spreadPips * 0.0001;
   const slippage = CONFIG.slippagePips * 0.0001;
   const dir = setup.candidate;
+  // Dukascopy input is BID-side OHLC. Use full spread to model the opposite-side executable price.
   const entry = dir === 'BUY'
-    ? bars[i + 1].open + spread / 2 + slippage
-    : bars[i + 1].open - spread / 2 - slippage;
+    ? bars[i + 1].open + spread + slippage
+    : bars[i + 1].open - spread - slippage;
   const risk = Math.abs(setup.entry - setup.stop_loss);
   if (!(risk > 0)) return null;
   const stop = dir === 'BUY' ? entry - risk : entry + risk;
