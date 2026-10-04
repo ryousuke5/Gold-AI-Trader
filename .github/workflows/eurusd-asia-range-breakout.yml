@@ -1,0 +1,93 @@
+name: EURUSD Asia Range London Breakout Research
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: strict
+            breakout_min_atr: "0.10"
+            min_body_atr: "0.35"
+            min_close_location: "0.70"
+            min_range_atr: "0.35"
+            max_range_atr: "1.50"
+            buy_rsi_min: "50"
+            buy_rsi_max: "68"
+            sell_rsi_min: "32"
+            sell_rsi_max: "50"
+          - name: balanced
+            breakout_min_atr: "0.05"
+            min_body_atr: "0.25"
+            min_close_location: "0.60"
+            min_range_atr: "0.30"
+            max_range_atr: "1.75"
+            buy_rsi_min: "48"
+            buy_rsi_max: "70"
+            sell_rsi_min: "30"
+            sell_rsi_max: "52"
+          - name: opportunity
+            breakout_min_atr: "0.03"
+            min_body_atr: "0.20"
+            min_close_location: "0.58"
+            min_range_atr: "0.25"
+            max_range_atr: "2.00"
+            buy_rsi_min: "47"
+            buy_rsi_max: "72"
+            sell_rsi_min: "28"
+            sell_rsi_max: "53
+"
+          - name: mid
+            breakout_min_atr: "0.07"
+            min_body_atr: "0.30"
+            min_close_location: "0.65"
+            min_range_atr: "0.32"
+            max_range_atr: "1.65"
+            buy_rsi_min: "49"
+            buy_rsi_max: "69"
+            sell_rsi_min: "31"
+            sell_rsi_max: "51"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run unit tests
+        run: npm test
+      - name: Run Asia range breakout research
+        env:
+          BACKTEST_START: "2017-03-06"
+          BACKTEST_END: "2022-03-05"
+          BACKTEST_INITIAL_EQUITY: "100000"
+          BACKTEST_RISK_PCT: "0.25"
+          BACKTEST_SPREAD_PIPS: "0.8"
+          BACKTEST_SLIPPAGE_PIPS: "0.1"
+          BACKTEST_MIN_STOP_ATR: "0.50"
+          BACKTEST_MAX_STOP_ATR: "1.50"
+          BACKTEST_MAX_SPREAD_PIPS: "1.20"
+          BACKTEST_MAX_SPREAD_TO_TP_PCT: "12"
+          BACKTEST_BREAKOUT_MIN_ATR: ${{ matrix.breakout_min_atr }}
+          BACKTEST_MIN_BODY_ATR: ${{ matrix.min_body_atr }}
+          BACKTEST_MIN_CLOSE_LOCATION: ${{ matrix.min_close_location }}
+          BACKTEST_MIN_RANGE_ATR: ${{ matrix.min_range_atr }}
+          BACKTEST_MAX_RANGE_ATR: ${{ matrix.max_range_atr }}
+          BACKTEST_BUY_RSI_MIN: ${{ matrix.buy_rsi_min }}
+          BACKTEST_BUY_RSI_MAX: ${{ matrix.buy_rsi_max }}
+          BACKTEST_SELL_RSI_MIN: ${{ matrix.sell_rsi_min }}
+          BACKTEST_SELL_RSI_MAX: ${{ matrix.sell_rsi_max }}
+          BACKTEST_VARIANT: ${{ matrix.name }}
+          BACKTEST_OUTPUT_DIR: asia-range-backtest-output
+        run: node scripts/backtest-eurusd-asia-range-breakout.mjs
+      - name: Upload research artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-asia-range-london-breakout-${{ matrix.name }}
+          path: asia-range-backtest-output/
+          retention-days: 30
