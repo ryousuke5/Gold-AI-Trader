@@ -170,7 +170,7 @@ export function buildEurUsdLondonOrbSetup(f, options = {}) {
   const bodyAtr = atr > 0 ? candleBody / atr : 0;
   const closeLocation = candleRange > 0 ? (latest.close - latest.low) / candleRange : 0;
 
-  const priorBars = bars.filter((b) => londonDateKey(b.time) === londonDate).slice(-24);
+  const priorBars = bars.filter((b) => londonDateKey(b.time) === londonDate && b.time < latest.time).slice(-24);
   const priorVolumes = priorBars.map((b) => num(b.volume)).filter((v) => v > 0);
   const averageVolume = average(priorVolumes);
   const volumeDataAvailable = latest.volume > 0 && averageVolume > 0;
