@@ -9,7 +9,7 @@ test('volatility expansion stays WAIT with insufficient history',()=>{
  const recent=Array.from({length:21},(_,i)=>b(now+i*900,1.1,1.1005,1.0995,1.1));
  const setup=buildEurUsdVolatilityExpansionSetup({barTime:recent.at(-1).time,recentM15:recent,m15:{ema20:1.1,ema50:1.099,rsi14:55,atr14:.001},h1:{close:1.102,ema20:1.101,ema50:1.100,ema200:1.098},spread:.00008});
  assert.equal(setup.candidate,'WAIT');
- assert.match(setup.reasons.join('|'),/no_valid_volatility_breakout|outside/);
+ assert.ok(setup.reasons.includes('insufficient_recent_m15_bars'));
 });
 
 test('volatility expansion blocks when H1 trend is not established',()=>{
