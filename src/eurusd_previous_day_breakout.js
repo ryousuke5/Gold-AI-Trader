@@ -162,10 +162,16 @@ export function buildPreviousTradingDayMap(bars) {
   return days;
 }
 
+function isLondonWeekday(date) {
+  const weekday = new Date(date + 'T12:00:00Z').getUTCDay();
+  return weekday >= 1 && weekday <= 5;
+}
+
 export function latestPreviousTradingDay(dayMap, signalTime) {
   const currentDay = londonDayKey(signalTime);
   let best = null;
   for (const [date, row] of dayMap.entries()) {
+    if (!isLondonWeekday(date)) continue;
     if (date < currentDay && row.bars > 0 && (!best || date > best.date)) best = row;
   }
   return best;
