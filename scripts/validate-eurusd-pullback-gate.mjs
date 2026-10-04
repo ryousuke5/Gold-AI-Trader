@@ -13,6 +13,31 @@ const maxRecentYearDrawdownR = Number(process.env.PULLBACK_GATE_MAX_RECENT_YEAR_
 
 function finite(n) { return Number.isFinite(Number(n)); }
 
+function seededRandom(seed) {
+  let x = seed >>> 0;
+  return () => {
+    x = (1664525 * x + 1013904223) >>> 0;
+    return x / 4294967296;
+  };
+}
+
+function bootstrapExpectancy(trades, iterations = 2000, seed = 20261005) {
+  if (!trades.length) return { lower_95_pct: null, median: null, upper_95_pct: null };
+  const values = trades.map(t => Number(t.result_r)).filter(Number.isFinite);
+  const rand = seededRandom(seed);
+  const samples = [];
+  for (let k = 0; k < iterations; k += 1) {
+    let sum = 0;
+    for (let i = 0; i < values.length; i += 1) {
+      sum += values[Math.floor(rand() * values.length)];
+    }
+    samples.push(sum / values.length);
+  }
+  samples.sort((a,b)=>a-b);
+  const q = p => samples[Math.min(samples.length - 1, Math.floor((samples.length - 1) * p))];
+  return { lower_95_pct: q(0.025), median: q(0.5), upper_95_pct: q(0.975) };
+}
+
 function stats(trades) {
   const wins = trades.filter(t => Number(t.result_r) > 0);
   const losses = trades.filter(t => Number(t.result_r) < 0);
@@ -52,6 +77,8 @@ const cutoff = Date.now() - 365*86400*1000;
 const recentYearTrades = trades.filter(t => Date.parse(t.signal_time) >= cutoff);
 const overall = stats(trades);
 const oos = stats(recentYearTrades);
+const overallBootstrap = bootstrapExpectancy(trades);
+const recentYearBootstrap = bootstrapExpectancy(recentYearTrades);
 
 const checks = {
   minimum_sample_size: overall.trades >= 100,
@@ -85,6 +112,11 @@ const result = {
     note: 'Trade frequency is a guideline only and does not determine live approval.'
   },
   recent_365_days_validation: oos,
+  expectancy_bootstrap_95: {
+    overall: overallBootstrap,
+    recent_365_days: recentYearBootstrap,
+    note: 'Descriptive uncertainty range only; not a hard approval gate.'
+  },
   evaluated_at: new Date().toISOString(),
   source_summary: {
     source_mode: summary.source_mode,
