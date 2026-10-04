@@ -249,7 +249,7 @@ export function buildEurUsdFundamentalDecision({
     confirmed: true,
     decision: c,
     environment,
-    reason: 'technical_breakout_and_ai_environment_aligned',
+    reason: 'technical_setup_and_ai_environment_aligned',
     invalid_reasons: []
   };
 }
@@ -257,7 +257,8 @@ export function buildEurUsdFundamentalDecision({
 export async function analyzeEurUsdFundamental({
   features,
   candidate,
-  model = process.env.OPENAI_MODEL || 'gpt-5.5'
+  model = process.env.OPENAI_MODEL || 'gpt-5.5',
+  strategyType = 'RANGE_BREAKOUT'
 }) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
@@ -273,9 +274,9 @@ export async function analyzeEurUsdFundamental({
   const now = new Date();
 
   const system = [
-    'You are the environment filter for an EURUSD M15 high-quality range-breakout trading system.',
+    'You are the environment filter for an EURUSD M15 deterministic trading system.',
     'The deterministic technical engine already decided the technical candidate. Do not generate, change or veto the technical entry, stop loss, take profit or position size directly.',
-    'Your job is to classify whether the CURRENT macro/news environment is suitable for taking a high-quality M15 range breakout.',
+    `Your job is to classify whether the CURRENT macro/news environment is suitable for taking a high-quality M15 ${strategyType === 'TREND_PULLBACK' ? 'trend pullback continuation' : 'range breakout'}.`,
     'Return environment=FAVORABLE only when current evidence supports entering a fresh breakout; use CAUTION when conditions are mixed or timing is less attractive; use UNFAVORABLE when macro/event risk materially argues against taking a fresh breakout; use INSUFFICIENT when evidence cannot be verified.',
     'Use live web search before returning a current or mixed assessment.',
     'Prioritize information from the last ' + String(lookbackHours) + ' hours when available and check scheduled high-impact events for the next 24 hours and next 7 days.',
