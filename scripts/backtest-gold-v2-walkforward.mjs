@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_FILE = process.env.GOLD_BACKTEST_DATA_FILE || path.join(ROOT, 'gold-xauusd-data', 'xauusd-m5.json.gz');
 const OUTPUT_DIR = process.env.GOLD_WALKFORWARD_OUTPUT_DIR || path.join(ROOT, 'gold-walkforward-output');
 
@@ -14,8 +15,8 @@ const VARIANTS = [
   { name:'ny_focus', rangeLookback:12, minRangeAtr:.80, maxRangeAtr:2.80, breakoutAtr:.10, bodyAtr:.40, closeLocation:.65, volumeRatio:1.10, sessionStart:12, sessionEnd:20 }
 ];
 
-function loadBars(file) {
-  const bytes = fs.readFileSync(file);
+async function loadBars(file) {
+  const bytes = await fs.readFile(file);
   const parsed = JSON.parse(file.endsWith('.gz') ? gunzipSync(bytes).toString('utf8') : bytes.toString('utf8'));
   if (!Array.isArray(parsed) || parsed.length < 100000) throw new Error('Invalid/insufficient prepared GOLD data');
   return parsed.map(b => ({
@@ -27,7 +28,7 @@ async function writeSlice(file, bars, start, end) {
   const slice = bars.filter(b => b.time >= start && b.time <= end);
   if (slice.length < 50000) throw new Error('Slice too small: '+slice.length);
   await fs.mkdir(path.dirname(file), {recursive:true});
-  await fs.writeFile(file, JSON.stringify(slice));
+  await fs.writeFile(file, gzipSync(JSON.stringify(slice), { level: 6 }));
   return slice.length;
 }
 
@@ -80,18 +81,19 @@ function selectIsWinner(reports) {
 
 async function main() {
   await fs.mkdir(OUTPUT_DIR,{recursive:true});
-  const bars = loadBars(DATA_FILE);
+  const bars = await loadBars(DATA_FILE);
   const latest = bars[bars.length-1].time;
   const oosDays = 730;
   const isDays = 1095;
   const oosStart = latest - oosDays*86400;
   const isStart = oosStart - isDays*86400;
-  const warmup = 120*86400;
+  const isWarmup = 120*86400;
+  const oosWarmup = 760*86400;
 
   const isFile = path.join(OUTPUT_DIR,'is_data.json.gz');
   const oosFile = path.join(OUTPUT_DIR,'oos_data.json.gz');
-  const isBars = await writeSlice(isFile, bars, isStart-warmup, oosStart-1);
-  const oosBars = await writeSlice(oosFile, bars, oosStart-warmup, latest+300);
+  const isBars = await writeSlice(isFile, bars, isStart-isWarmup, oosStart-1);
+  const oosBars = await writeSlice(oosFile, bars, oosStart-oosWarmup, latest+300);
 
   const isReports=[];
   for(const v of VARIANTS){
