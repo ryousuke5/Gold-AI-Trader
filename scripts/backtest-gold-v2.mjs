@@ -431,9 +431,9 @@ async function main() {
   const rows=await getHistoricalRates({instrument:'xauusd',dates:{from:start,to:end},timeframe:'m5',priceType:'bid',volumes:true,format:'array'});
   const rawM5=normalizeDukascopy(rows);
   if(rawM5.length<200000) throw new Error('Insufficient Dukascopy XAUUSD M5 data: '+rawM5.length);
+  const config={...BASE_CONFIG,lookbackDays};
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
   const strategy=JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
-  const config={...BASE_CONFIG,lookbackDays};
   const results={};
   for(const cost of costScenarios(config)) {
     const runConfig={...config,...cost};
