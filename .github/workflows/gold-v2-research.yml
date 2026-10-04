@@ -18,7 +18,7 @@ concurrency:
 jobs:
   prepare-data:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,6 +34,8 @@ jobs:
         env:
           GOLD_BACKTEST_LOOKBACK_DAYS: "1825"
           GOLD_DATA_CHUNK_DAYS: "45"
+          GOLD_DATA_COOLDOWN_MS: "30000"
+          GOLD_DATA_CHUNK_RETRIES: "5"
           GOLD_PREPARED_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
         run: node scripts/fetch-xauusd-m5.mjs
       - name: Upload prepared XAUUSD M5 dataset
