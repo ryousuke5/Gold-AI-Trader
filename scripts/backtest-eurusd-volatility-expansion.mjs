@@ -54,7 +54,7 @@ function atr(bars, period) {
   for(let i=period+1;i<bars.length;i++){v=(v*(period-1)+tr[i])/period;out[i]=v;} return out;
 }
 function aggregateM15ToH1(m15){const map=new Map();for(const b of m15){const h=Math.floor(b.time/3600)*3600;const x=map.get(h);if(!x)map.set(h,{time:h,open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume});else{x.high=Math.max(x.high,b.high);x.low=Math.min(x.low,b.low);x.close=b.close;x.volume+=b.volume;}}return [...map.values()].sort((a,b)=>a.time-b.time);}
-function recent(bars,i,count=160){return bars.slice(Math.max(0,i-count+1),i+1).map(b=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume}));}
+function recent(bars,i,count=160){return bars.slice(Math.max(0,i-count+1),i+1).map(b=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume,atr14:b.atr14}));}
 function floorLot(v){const x=Math.floor((v+1e-12)/0.01)*0.01;return x>=0.01?Math.min(100,Number(x.toFixed(8))):0;}
 function riskGate(state,equity,t){const day=new Date(t*1000).toISOString().slice(0,10);if(state.day!==day){state.day=day;state.dayStart=equity;}state.peak=Math.max(state.peak,equity);const daily=(equity-state.dayStart)/state.dayStart*100;const dd=(state.peak-equity)/state.peak*100;return daily>-2&&dd<5;}
 function simulate(signal,next,future,setup,equity){
