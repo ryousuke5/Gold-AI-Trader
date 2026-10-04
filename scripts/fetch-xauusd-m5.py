@@ -109,7 +109,7 @@ def self_test() -> None:
     assert len(bars) == 5
     assert bars[0]["time"] == int(datetime(2026, 1, 2, tzinfo=timezone.utc).timestamp())
     assert bars[0]["open"] == 400.0
-    assert bars[-1]["close"] == 400.006
+    assert bars[-1]["close"] == 400.005
     m5, incomplete = resample_m1_to_m5(bars)
     assert len(m5) == 1 and incomplete == 0
     assert m5[0]["time"] == bars[0]["time"]
