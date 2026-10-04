@@ -172,7 +172,7 @@ jobs:
           BACKTEST_MAX_RANGE_ATR: ${{ matrix.max_range_atr }}
           BACKTEST_BREAKOUT_MIN_ATR: ${{ matrix.breakout_min_atr }}
           BACKTEST_BREAKOUT_MIN_BODY_ATR: ${{ matrix.breakout_min_body_atr }}
-          BACKTEST_BREAKOUT_MIN_CLOSE_LOCATION: ${{ matrix.min_range_atr == '0.50' && '0.60' || matrix.breakout_min_close_location }}
+          BACKTEST_BREAKOUT_MIN_CLOSE_LOCATION: ${{ matrix.breakout_min_close_location }}
           BACKTEST_BREAKOUT_BUY_RSI_MIN: ${{ matrix.buy_rsi_min }}
           BACKTEST_BREAKOUT_BUY_RSI_MAX: ${{ matrix.buy_rsi_max }}
           BACKTEST_BREAKOUT_SELL_RSI_MIN: ${{ matrix.sell_rsi_min }}
