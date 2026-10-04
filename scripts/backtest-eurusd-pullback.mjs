@@ -328,6 +328,28 @@ function simulateTrade(bars, i, setup) {
   };
 }
 
+function breakdown(trades) {
+  const byYear = {};
+  const byDirection = {};
+  const byExitReason = {};
+  for (const t of trades) {
+    const year = String(new Date(t.signal_time).getUTCFullYear());
+    byYear[year] ||= [];
+    byYear[year].push(t);
+    const dir = String(t.direction || 'UNKNOWN');
+    byDirection[dir] ||= [];
+    byDirection[dir].push(t);
+    const reason = String(t.exit_reason || 'UNKNOWN');
+    byExitReason[reason] ||= 0;
+    byExitReason[reason] += 1;
+  }
+  return {
+    by_year: Object.fromEntries(Object.entries(byYear).map(([year, items]) => [year, stats(items)])),
+    by_direction: Object.fromEntries(Object.entries(byDirection).map(([direction, items]) => [direction, stats(items)])),
+    exit_reason_counts: byExitReason
+  };
+}
+
 function stats(trades) {
   const wins = trades.filter((t) => t.result_r > 0);
   const losses = trades.filter((t) => t.result_r < 0);
@@ -437,6 +459,7 @@ async function main() {
       sell_rsi: [CONFIG.sellRsiMin, CONFIG.sellRsiMax]
     },
     statistics: stats(trades),
+    breakdown: breakdown(trades),
     diagnostics
   };
 
