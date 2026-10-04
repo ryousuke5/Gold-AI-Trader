@@ -11,12 +11,12 @@ function fixture() {
     {time:t+1800,open:1.1008,high:1.1015,low:1.1006,close:1.1014,volume:120},
     {time:t+2700,open:1.1014,high:1.1020,low:1.1012,close:1.1018,volume:130},
     {time:t+3600,open:1.1018,high:1.1020,low:1.1012,close:1.1014,volume:140},
-    {time:t+4500,open:1.1014,high:1.1015,low:1.1008,close:1.1010,volume:150},
-    {time:t+5400,open:1.1010,high:1.1011,low:1.1005,close:1.1007,volume:160},
-    {time:t+6300,open:1.1007,high:1.1009,low:1.1004,close:1.1006,volume:170},
-    {time:t+7200,open:1.1006,high:1.1018,low:1.1005,close:1.1016,volume:180},
-    {time:t+8100,open:1.1016,high:1.1019,low:1.1014,close:1.10175,volume:190},
-    {time:t+9000,open:1.10175,high:1.1024,low:1.1017,close:1.1022,volume:220}
+    {time:t+4500,open:1.1014,high:1.1015,low:1.1010,close:1.1010,volume:150},
+    {time:t+5400,open:1.1010,high:1.1011,low:1.10098,close:1.1007,volume:160},
+    {time:t+6300,open:1.1007,high:1.1009,low:1.10095,close:1.1006,volume:170},
+    {time:t+7200,open:1.1006,high:1.1018,low:1.10095,close:1.1016,volume:180},
+    {time:t+8100,open:1.1019,high:1.10225,low:1.10185,close:1.10212,volume:200},
+    {time:t+9000,open:1.10212,high:1.10245,low:1.10204,close:1.10228,volume:220}
   ];
   const recentH1=Array.from({length:6},(_,i)=>{
     const close=1.0998+i*0.00035;
@@ -24,7 +24,7 @@ function fixture() {
   });
   return normalizeEurUsdFeatures({
     bid:1.1022,ask:1.10228,point:0.00001,spread:0.00008,bar_time:t+9000,
-    m15:{ema20:1.1012,ema50:1.1009,rsi14:58,atr14:0.0010},
+    m15:{ema20:1.1012,ema50:1.1008,rsi14:58,atr14:0.0010},
     h1:{close:1.10155,ema20:1.1012,ema50:1.1008,ema200:1.0997,rsi14:55,atr14:0.0025},
     recent_m15:recentM15,recent_h1:recentH1
   });
