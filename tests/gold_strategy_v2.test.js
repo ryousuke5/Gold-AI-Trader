@@ -64,7 +64,7 @@ test('GOLD V2 rejects a signal against H1 trend', () => {
   f.h1.ema20 = 2470;
   f.h1.ema50 = 2480;
   f.h1.ema200 = 2490;
-  f.h1.rsi14 = 40;
+  f.h1.rsi14 = 55;
   const result = buildGoldV2Setup(f);
   assert.equal(result.candidate, 'WAIT');
   assert.equal(result.reason, 'h1_trend_filter');
