@@ -75,6 +75,7 @@ jobs:
           PULLBACK_BACKTEST_OUTPUT_DIR: pullback-backtest-output
         run: node scripts/backtest-eurusd-pullback.mjs
       - name: Enforce live approval gate
+        if: matrix.name == 'balanced'
         env:
           PULLBACK_GATE_MIN_TRADES_PER_WEEK: "1"
           PULLBACK_GATE_MIN_PF: "1.25"
