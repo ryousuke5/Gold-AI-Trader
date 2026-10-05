@@ -193,10 +193,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Resumable XAUUSD M1->M5 downloader for one independent date chunk."
     )
-    parser.add_argument("--start-date", required=True)
-    parser.add_argument("--end-date", required=True)
+    parser.add_argument("--start-date", default=None)
+    parser.add_argument("--end-date", default=None)
     parser.add_argument("--cache-dir", default="gold-xauusd-data/raw")
-    parser.add_argument("--output-file", required=True)
+    parser.add_argument("--output-file", default=None)
     parser.add_argument("--manifest-file", default="")
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--retries", type=int, default=8)
@@ -207,6 +207,8 @@ def main() -> None:
     if args.self_test:
         self_test()
         return
+    if not (args.start_date and args.end_date and args.output_file):
+        raise ValueError("--start-date, --end-date, and --output-file are required unless --self-test is used")
 
     start_day = date.fromisoformat(args.start_date)
     end_day = date.fromisoformat(args.end_date)
