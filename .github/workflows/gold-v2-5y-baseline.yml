@@ -67,3 +67,5 @@ jobs:
           path: gold-backtest-output/
           if-no-files-found: warn
           retention-days: 30
+
+# Baseline trigger marker: rerun after report updates.
