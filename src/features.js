@@ -12,7 +12,7 @@ export function normalizeFeatures(input = {}) {
   return {
     bid: n(input.bid), ask: n(input.ask), point: n(input.point), spread: n(input.spread), spreadPoints: n(input.spread_points), barTime: n(input.bar_time),
     m5: { ema20: n(input.m5?.ema20), ema50: n(input.m5?.ema50), rsi14: n(input.m5?.rsi14), atr14: n(input.m5?.atr14), high20: n(input.m5?.high20), low20: n(input.m5?.low20) },
-    h1: { ema20: n(input.h1?.ema20), ema50: n(input.h1?.ema50), ema200: n(input.h1?.ema200), rsi14: n(input.h1?.rsi14), atr14: n(input.h1?.atr14) },
+    h1: { close: n(input.h1?.close), ema20: n(input.h1?.ema20), ema50: n(input.h1?.ema50), ema200: n(input.h1?.ema200), rsi14: n(input.h1?.rsi14), atr14: n(input.h1?.atr14) },
     recentM5: bars(input.recent_m5), recentH1: bars(input.recent_h1)
   };
 }
@@ -26,7 +26,7 @@ export function validateFeatures(f) {
   if (!(f.barTime > 0)) errors.push('missing_bar_time');
   const required = [
     ['m5.ema20', f.m5.ema20], ['m5.ema50', f.m5.ema50], ['m5.rsi14', f.m5.rsi14], ['m5.atr14', f.m5.atr14],
-    ['h1.ema20', f.h1.ema20], ['h1.ema50', f.h1.ema50], ['h1.ema200', f.h1.ema200], ['h1.rsi14', f.h1.rsi14], ['h1.atr14', f.h1.atr14]
+    ['h1.close', f.h1.close], ['h1.ema20', f.h1.ema20], ['h1.ema50', f.h1.ema50], ['h1.ema200', f.h1.ema200], ['h1.rsi14', f.h1.rsi14], ['h1.atr14', f.h1.atr14]
   ];
   for (const [name, value] of required) if (!(value > 0) && !name.includes('rsi14')) errors.push(`invalid_${name}`);
   if (f.m5.rsi14 < 0 || f.m5.rsi14 > 100) errors.push('invalid_m5_rsi');
