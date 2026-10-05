@@ -244,6 +244,17 @@ def download_day(
     return {"day":day,"status":"transient_failed","source":"NONE"}
 
 
+def load_cached_source(day: date, native_m5_dir: Path, m1_dir: Path) -> tuple[str, bytes] | None:
+    """Load the highest-quality cached source for a day without modifying cache state."""
+    native_file = native_m5_dir / f"{day:%Y%m%d}.bi5"
+    m1_file = m1_dir / f"{day:%Y%m%d}.bi5"
+    if native_file.exists() and native_file.stat().st_size > 0:
+        return "M5", native_file.read_bytes()
+    if m1_file.exists() and m1_file.stat().st_size > 0:
+        return "M1", m1_file.read_bytes()
+    return None
+
+
 def resolve_date_range(args) -> tuple[date, date]:
     if args.start_date or args.end_date:
         if not (args.start_date and args.end_date):
