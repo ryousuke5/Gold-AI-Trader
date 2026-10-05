@@ -33,7 +33,8 @@ let ddStart = null;
 let maxDdDurationMs = 0;
 let peakTime = null;
 let troughTime = null;
-for (const t of [...trades].sort((a,b)=>a.exit_time-b.exit_time)) {
+peakTime = Number(ordered[0].entry_time ?? ordered[0].exit_time);
+for (const t of ordered) {
   equity += Number(t.net_pnl) || 0;
   if (equity > peak) { peak = equity; peakTime = t.exit_time; }
   const dd = peak - equity;
@@ -49,7 +50,7 @@ if (ddStart !== null && trades.length) {
 
 function streak(sign) {
   let cur=0,best=0;
-  for(const t of trades){
+  for(const t of ordered){
     const x=Number(t.net_pnl)||0;
     if ((sign>0&&x>0)||(sign<0&&x<0)) {cur++;best=Math.max(best,cur);} else cur=0;
   }
