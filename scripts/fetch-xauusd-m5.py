@@ -197,6 +197,9 @@ def download_day(
     retries: int,
     timeout: int,
     request_delay: float,
+    *,
+    retry_native: bool = False,
+    max_backoff: float = 20.0,
 ) -> dict:
     native_file = native_m5_dir / f"{day:%Y%m%d}.bi5"
     m1_file = m1_dir / f"{day:%Y%m%d}.bi5"
@@ -214,6 +217,7 @@ def download_day(
             bi5_url(day, 5),
             retries=retries,
             timeout=timeout,
+            max_backoff=max_backoff,
         )
         if status == "ok":
             try:
@@ -382,6 +386,8 @@ def main() -> None:
     parser.add_argument("--workers",type=int,default=4)
     parser.add_argument("--rounds",type=int,default=3)
     parser.add_argument("--request-delay",type=float,default=0.2)
+    parser.add_argument("--rescue-rounds",type=int,default=2)
+    parser.add_argument("--rescue-max-backoff",type=float,default=30.0)
     parser.add_argument("--download-only",action="store_true")
     parser.add_argument("--build-only",action="store_true")
     parser.add_argument("--self-test",action="store_true")
@@ -437,9 +443,59 @@ def main() -> None:
                             "pending_after_round":len(next_pending)
                         }), flush=True)
             pending = sorted(next_pending)
+
+        # Final targeted rescue pass for transient provider failures. This is
+        # intentionally serial and more patient than the bulk pass so a small
+        # number of stubborn dates do not abort an otherwise complete dataset.
+        if pending:
+            rescue_rounds = max(1, args.rescue_rounds)
+            rescue_retries = max(args.retries * 2, 8)
+            rescue_timeout = max(args.timeout, 30)
+            rescue_delay = max(args.request_delay, 1.0)
+            rescue_backoff = max(args.rescue_max_backoff, 20.0)
+            for rescue_no in range(1, rescue_rounds + 1):
+                if not pending:
+                    break
+                print(json.dumps({
+                    "event": "rescue_round",
+                    "round": rescue_no,
+                    "pending_days": len(pending),
+                    "workers": 1,
+                    "retries": rescue_retries,
+                    "timeout": rescue_timeout,
+                    "max_backoff": rescue_backoff,
+                }), flush=True)
+                next_pending = []
+                for d in pending:
+                    # Give the native-M5 endpoint a fresh chance for each
+                    # stubborn date instead of inheriting a previous circuit-open.
+                    NATIVE_M5_DISABLED.clear()
+                    result = download_day(
+                        d,
+                        native_m5_dir,
+                        m1_dir,
+                        rescue_retries,
+                        rescue_timeout,
+                        rescue_delay,
+                        retry_native=True,
+                        max_backoff=rescue_backoff,
+                    )
+                    if result["status"] == "transient_failed":
+                        next_pending.append(d)
+                    print(json.dumps({
+                        "event": "rescue_day",
+                        "date": d.isoformat(),
+                        "status": result["status"],
+                        "source": result["source"],
+                    }), flush=True)
+                pending = sorted(next_pending)
+                if pending and rescue_no < rescue_rounds:
+                    time.sleep(min(60.0, 5.0 * rescue_no))
+
         if pending:
             raise RuntimeError(
-                f"Unresolved transient download failures after {args.rounds} rounds: "
+                f"Unresolved transient download failures after {args.rounds} rounds "
+                f"plus {args.rescue_rounds} rescue rounds: "
                 + ",".join(d.isoformat() for d in pending[:50])
                 + ("..." if len(pending)>50 else "")
             )
