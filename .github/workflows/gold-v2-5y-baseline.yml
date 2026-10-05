@@ -1,0 +1,69 @@
+name: Gold V2 5Y Baseline
+
+on:
+  push:
+    paths:
+      - 'scripts/backtest-gold-v2-resumable.mjs'
+      - 'scripts/report-gold-v2-backtest.mjs'
+      - 'src/gold_strategy_v2.js'
+      - '.github/workflows/gold-v2-5y-baseline.yml'
+      - 'package.json'
+  workflow_dispatch:
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GOLD_BACKTEST_LOOKBACK_DAYS: 1825
+      GOLD_BACKTEST_END_UTC: '2026-10-05T23:59:59Z'
+      GOLD_BACKTEST_INITIAL_EQUITY: 100000
+      GOLD_BACKTEST_RISK_PCT: 0.25
+      GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Syntax checks
+        run: |
+          node --check scripts/backtest-gold-v2-resumable.mjs
+          node --check scripts/report-gold-v2-backtest.mjs
+          node --check src/gold_strategy_v2.js
+
+      - name: Run Gold V2 five-year baseline
+        run: node scripts/backtest-gold-v2-resumable.mjs
+
+      - name: Generate baseline metrics
+        run: node scripts/report-gold-v2-backtest.mjs gold-backtest-output/gold_v2_resumed_trades.json
+
+      - name: Validate completion contract
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const cp=JSON.parse(fs.readFileSync('gold-backtest-output/gold_v2_resume_checkpoint.json'));
+          if(cp.status!=='COMPLETE') throw new Error('Backtest checkpoint is not COMPLETE');
+          const m=JSON.parse(fs.readFileSync('gold-backtest-output/gold_v2_baseline_metrics.json'));
+          if(!(m.trades>0)) throw new Error('No trades generated');
+          for(const k of ['profitFactor','expectancyPerTrade','maxDrawdownPct','maxConsecutiveLosses']) {
+            if(m[k]===null || m[k]===undefined || Number.isNaN(Number(m[k]))) throw new Error('Invalid metric: '+k);
+          }
+          console.log('GOLD V2 FIVE-YEAR BASELINE PASS');
+          console.log(JSON.stringify(m,null,2));
+          NODE
+
+      - name: Upload baseline artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-5y-baseline
+          path: gold-backtest-output/
+          if-no-files-found: warn
+          retention-days: 30
