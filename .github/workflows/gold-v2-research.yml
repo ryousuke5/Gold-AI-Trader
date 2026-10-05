@@ -1,5 +1,7 @@
 name: GOLD V2 Five-Year Research
 
+# Resumability: independent 14-day chunks + stable per-chunk caches.
+
 on:
   push:
     branches: [main]
