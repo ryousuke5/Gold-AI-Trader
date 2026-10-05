@@ -7,6 +7,7 @@ import hashlib
 import json
 import lzma
 import struct
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
@@ -20,6 +21,7 @@ PRICE_SCALE = 1000.0
 RECORD = struct.Struct(">IIIIIf")
 BASE_URL = "https://datafeed.dukascopy.com/datafeed"
 USER_AGENT = "Gold-AI-Trader/1.0 historical-research"
+NATIVE_M5_DISABLED = threading.Event()
 
 
 def bi5_url(day: date, resolution: int = 5) -> str:
@@ -204,42 +206,54 @@ def download_day(
     if m1_file.exists() and m1_file.stat().st_size > 0:
         return {"day": day, "status": "cached_m1", "source": "M1"}
 
-    status, raw = fetch_bytes(
-        bi5_url(day, 5),
-        retries=retries,
-        timeout=timeout,
-    )
-    if status == "ok":
-        try:
-            bars = parse_day(raw, day)
-            if not bars:
-                raise RuntimeError("native M5 payload parsed to zero bars")
-        except Exception as exc:
+    if not NATIVE_M5_DISABLED.is_set():
+        status, raw = fetch_bytes(
+            bi5_url(day, 5),
+            retries=retries,
+            timeout=timeout,
+        )
+        if status == "ok":
+            try:
+                bars = parse_day(raw, day)
+                if not bars:
+                    raise RuntimeError("native M5 payload parsed to zero bars")
+            except Exception as exc:
+                print(
+                    json.dumps(
+                        {
+                            "event": "native_m5_invalid",
+                            "date": day.isoformat(),
+                            "error": str(exc),
+                        }
+                    ),
+                    flush=True,
+                )
+                NATIVE_M5_DISABLED.set()
+            else:
+                native_file.write_bytes(raw)
+                if request_delay > 0:
+                    time.sleep(request_delay)
+                return {
+                    "day": day,
+                    "status": "ok_m5",
+                    "source": "M5",
+                    "rows": len(bars),
+                }
+        elif status in {"missing", "transient_failed"}:
+            NATIVE_M5_DISABLED.set()
             print(
                 json.dumps(
                     {
-                        "event": "native_m5_invalid",
+                        "event": "native_m5_circuit_open",
                         "date": day.isoformat(),
-                        "error": str(exc),
+                        "status": status,
                     }
                 ),
                 flush=True,
             )
-        else:
-            native_file.write_bytes(raw)
-            if request_delay > 0:
-                time.sleep(request_delay)
-            return {
-                "day": day,
-                "status": "ok_m5",
-                "source": "M5",
-                "rows": len(bars),
-            }
-    elif status == "missing":
-        pass
 
-    # Native M5 is not available for this day; use the official M1 file as a
-    # deterministic fallback and resample to M5 later.
+    # Native M5 is unavailable or unhealthy for this run; use the official M1
+    # file as a deterministic fallback and resample to M5 later.
     status, raw = fetch_bytes(
         bi5_url(day, 1),
         retries=retries,
@@ -454,6 +468,7 @@ def main() -> None:
         "non_weekend_gaps_gt_15m": non_weekend_gaps,
         "max_m5_gap_seconds": max_gap,
         "output_sha256": digest,
+        "native_m5_circuit_open": NATIVE_M5_DISABLED.is_set(),
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     manifest_path = output_file.with_name("xauusd_m5_manifest.json")
