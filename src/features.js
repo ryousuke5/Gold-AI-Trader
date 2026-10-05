@@ -4,7 +4,7 @@ function n(v, fallback = 0) {
 }
 function bars(input) {
   if (!Array.isArray(input)) return [];
-  return input.slice(0, 24).map((b) => ({
+  return input.slice(-24).map((b) => ({
     time: n(b.time), open: n(b.open), high: n(b.high), low: n(b.low), close: n(b.close), volume: n(b.volume)
   }));
 }
