@@ -26,20 +26,25 @@ jobs:
         id: xau-cache-restore
         uses: actions/cache/restore@v4
         with:
-          path: gold-xauusd-data/raw
-          key: xauusd-m1-v2-${{ runner.os }}-${{ github.run_id }}
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw_m5
+          key: xauusd-v3-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
+            xauusd-v3-${{ runner.os }}-
             xauusd-m1-v2-${{ runner.os }}-
       - name: Prepare five-year XAUUSD M5 dataset
         run: |
           python3 scripts/fetch-xauusd-m5.py --self-test
-          python3 scripts/fetch-xauusd-m5.py --lookback-days 1825 --cache-dir gold-xauusd-data/raw --output-file gold-xauusd-data/xauusd-m5.json.gz --request-delay 0.5 --workers 4
+          python3 scripts/fetch-xauusd-m5.py --lookback-days 1825 --native-cache-dir gold-xauusd-data/raw_m5 --m1-cache-dir gold-xauusd-data/raw --output-file gold-xauusd-data/xauusd-m5.json.gz --request-delay 0.2 --workers 5
       - name: Save XAUUSD M1 cache for resumability
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: gold-xauusd-data/raw
-          key: xauusd-m1-v2-${{ runner.os }}-${{ github.run_id }}
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw_m5
+          key: xauusd-v3-${{ runner.os }}-${{ github.run_id }}
       - name: Upload prepared XAUUSD M5 dataset
         if: success()
         uses: actions/upload-artifact@v4
