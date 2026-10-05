@@ -43,6 +43,8 @@ def fetch_bytes(url: str, retries: int = 8, timeout: int = 30) -> tuple[str, byt
                 return "missing", b""
             if exc.code == 429 or exc.code >= 500:
                 if attempt < retries:
+                    if exc.code == 429:
+                        delay = max(delay, 10.0)
                     retry_after = exc.headers.get("Retry-After")
                     try:
                         server_delay = (
