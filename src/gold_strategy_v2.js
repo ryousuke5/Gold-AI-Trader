@@ -1,3 +1,4 @@
+// CI: GOLD V2 resumable research pipeline trigger
 const n = (v, fallback = 0) => {
   const x = Number(v);
   return Number.isFinite(x) ? x : fallback;
