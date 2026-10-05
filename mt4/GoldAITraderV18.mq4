@@ -314,14 +314,59 @@ bool BuildSignalPayload(string &payload)
    json += "\"low20\":" + JsonNumber(m5Low20, digits);
    json += "},";
    json += "\"h1\":{";
+   json += "\"close\":" + JsonNumber(iClose(sym, PERIOD_H1, 1), digits) + ",";
    json += "\"ema20\":" + JsonNumber(h1Ema20, digits) + ",";
    json += "\"ema50\":" + JsonNumber(h1Ema50, digits) + ",";
    json += "\"ema200\":" + JsonNumber(h1Ema200, digits) + ",";
    json += "\"rsi14\":" + JsonNumber(h1Rsi14, 2) + ",";
    json += "\"atr14\":" + JsonNumber(h1Atr14, digits);
    json += "},";
-   json += "\"recent_m5\":[],";
-   json += "\"recent_h1\":[]";
+
+   // Send the completed M5/H1 bars required by GOLD V2. Times are close-times,
+   // matching the backtest convention and preventing the current forming bar from entering the setup.
+   json += "\"recent_m5\":[";
+   bool firstM5 = true;
+   for(int shiftM5 = 24; shiftM5 >= 1; shiftM5--)
+   {
+      datetime barOpenM5 = iTime(sym, PERIOD_M5, shiftM5);
+      if(barOpenM5 <= 0)
+         continue;
+
+      if(!firstM5)
+         json += ",";
+
+      json += "{\"time\":" + IntegerToString((int)(barOpenM5 + 300));
+      json += ",\"open\":" + JsonNumber(iOpen(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"high\":" + JsonNumber(iHigh(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"low\":" + JsonNumber(iLow(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"close\":" + JsonNumber(iClose(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"volume\":" + JsonNumber(iVolume(sym, PERIOD_M5, shiftM5), 0);
+      json += "}";
+      firstM5 = false;
+   }
+   json += "],";
+
+   json += "\"recent_h1\":[";
+   bool firstH1 = true;
+   for(int shiftH1 = 24; shiftH1 >= 1; shiftH1--)
+   {
+      datetime barOpenH1 = iTime(sym, PERIOD_H1, shiftH1);
+      if(barOpenH1 <= 0)
+         continue;
+
+      if(!firstH1)
+         json += ",";
+
+      json += "{\"time\":" + IntegerToString((int)(barOpenH1 + 3600));
+      json += ",\"open\":" + JsonNumber(iOpen(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"high\":" + JsonNumber(iHigh(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"low\":" + JsonNumber(iLow(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"close\":" + JsonNumber(iClose(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"volume\":" + JsonNumber(iVolume(sym, PERIOD_H1, shiftH1), 0);
+      json += "}";
+      firstH1 = false;
+   }
+   json += "]";
    json += "},";
    json += "\"account\":{";
    json += "\"equity\":" + JsonNumber(equity, 2) + ",";
