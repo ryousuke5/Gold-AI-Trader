@@ -1,0 +1,6 @@
+{
+  "end_date_utc": "2026-10-06",
+  "lookback_days": 1825,
+  "chunk_days": 14,
+  "purpose": "Fixed anchor for reproducible GOLD V2 five-year research and resumable chunk caches."
+}
