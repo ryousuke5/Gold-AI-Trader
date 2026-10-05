@@ -1,11 +1,17 @@
 name: GOLD V2 Five-Year Research
 
-# Resumability: independent 14-day chunks + stable per-chunk caches.
+# Resumability:
+# - The 5-year data window is anchored by a committed config date.
+# - Data is split into independent 14-day chunks.
+# - Each chunk has its own stable M1/M5 cache key.
+# - A new run on the same window reuses completed chunks.
+# - Research uses the original detailed backtester so PF/DD/yearly/cost reports are preserved.
 
 on:
   push:
     branches: [main]
     paths:
+      - 'config/gold-v2-data-window.json'
       - 'src/gold_strategy_v2.js'
       - 'scripts/backtest-gold-v2.mjs'
       - 'scripts/backtest-gold-v2-resumable.mjs'
@@ -16,12 +22,12 @@ on:
   workflow_dispatch:
     inputs:
       end_date_utc:
-        description: 'UTC cutoff date (exclusive), YYYY-MM-DD. Blank = workflow start UTC date.'
+        description: 'UTC cutoff date (exclusive), YYYY-MM-DD. Blank = committed research window date.'
         required: false
         default: ''
 
 concurrency:
-  group: gold-v2-research-v3
+  group: gold-v2-research-v4
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +37,10 @@ jobs:
       chunks: ${{ steps.plan.outputs.chunks }}
       start_date: ${{ steps.plan.outputs.start_date }}
       end_date: ${{ steps.plan.outputs.end_date }}
+      lookback_days: ${{ steps.plan.outputs.lookback_days }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Build resumable 14-day chunk plan
         id: plan
         env:
@@ -40,17 +49,22 @@ jobs:
           python3 - <<'PY'
           import json
           import os
-          from datetime import date, datetime, timedelta, timezone
+          from datetime import date, timedelta
 
-          lookback_days = 1825
-          chunk_days = 14
+          with open("config/gold-v2-data-window.json", "r", encoding="utf-8") as fh:
+              cfg = json.load(fh)
+
+          lookback_days = int(cfg["lookback_days"])
+          chunk_days = int(cfg["chunk_days"])
+          configured_end = str(cfg["end_date_utc"]).strip()
+
+          if lookback_days < 365:
+              raise SystemExit("lookback_days must be >= 365")
+          if not (1 <= chunk_days <= 31):
+              raise SystemExit("chunk_days must be between 1 and 31")
 
           requested = os.environ.get("END_DATE_INPUT", "").strip()
-          if requested:
-              end_day = date.fromisoformat(requested)
-          else:
-              end_day = datetime.now(timezone.utc).date()
-
+          end_day = date.fromisoformat(requested or configured_end)
           start_day = end_day - timedelta(days=lookback_days)
 
           chunks = []
@@ -72,6 +86,7 @@ jobs:
               fh.write(f"chunks={json.dumps(chunks, separators=(',', ':'))}\n")
               fh.write(f"start_date={start_day.isoformat()}\n")
               fh.write(f"end_date={end_day.isoformat()}\n")
+              fh.write(f"lookback_days={lookback_days}\n")
 
           print(json.dumps({
               "lookback_days": lookback_days,
@@ -79,6 +94,7 @@ jobs:
               "chunk_count": len(chunks),
               "start_date": start_day.isoformat(),
               "end_date_exclusive": end_day.isoformat(),
+              "window_source": "workflow_dispatch" if requested else "config/gold-v2-data-window.json",
           }, indent=2))
           PY
 
@@ -124,8 +140,18 @@ jobs:
       - name: Download or resume this 14-day chunk
         if: steps.m5cache.outputs.cache-hit != 'true'
         run: |
-          python3 scripts/fetch-xauusd-m5-chunk.py             --start-date "${{ matrix.chunk.start }}"             --end-date "${{ matrix.chunk.end }}"             --cache-dir "gold-xauusd-data/raw/${{ matrix.chunk.id }}"             --output-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz"             --manifest-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json"             --request-delay 2.0             --timeout 30             --retries 8
+          python3 scripts/fetch-xauusd-m5-chunk.py \
+            --start-date "${{ matrix.chunk.start }}" \
+            --end-date "${{ matrix.chunk.end }}" \
+            --cache-dir "gold-xauusd-data/raw/${{ matrix.chunk.id }}" \
+            --output-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz" \
+            --manifest-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json" \
+            --request-delay 2.0 \
+            --timeout 30 \
+            --retries 8
 
+      # Persist raw data even when the downloader exits non-zero.
+      # On a future rerun, completed day files from this chunk can be reused.
       - name: Save raw M1 checkpoint
         if: always() && steps.m5cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -169,7 +195,13 @@ jobs:
 
       - name: Assemble and validate five-year XAUUSD M5 dataset
         run: |
-          python3 scripts/assemble-xauusd-m5.py             --input-dir gold-xauusd-data/chunks             --output-file gold-xauusd-data/xauusd-m5.json.gz             --manifest-file gold-xauusd-data/xauusd_m5_manifest.json             --start-date "${{ needs.plan.outputs.start_date }}"             --end-date "${{ needs.plan.outputs.end_date }}"             --min-bars 200000
+          python3 scripts/assemble-xauusd-m5.py \
+            --input-dir gold-xauusd-data/chunks \
+            --output-file gold-xauusd-data/xauusd-m5.json.gz \
+            --manifest-file gold-xauusd-data/xauusd_m5_manifest.json \
+            --start-date "${{ needs.plan.outputs.start_date }}" \
+            --end-date "${{ needs.plan.outputs.end_date }}" \
+            --min-bars 200000
 
       - name: Upload prepared XAUUSD M5 dataset
         uses: actions/upload-artifact@v4
@@ -248,6 +280,8 @@ jobs:
       - name: Run test suite
         run: npm test
 
+      # Keep the original detailed backtester here. The resumability layer is
+      # for data acquisition; the production research report remains unchanged.
       - name: Run five-year XAUUSD M5 backtest
         env:
           GOLD_BACKTEST_LOOKBACK_DAYS: "1825"
@@ -270,7 +304,7 @@ jobs:
           GOLD_SESSION_END_UTC: ${{ matrix.session_end }}
           GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
           GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
-        run: node scripts/backtest-gold-v2-resumable.mjs
+        run: node scripts/backtest-gold-v2.mjs
 
       - name: Upload GOLD V2 results
         if: always()
