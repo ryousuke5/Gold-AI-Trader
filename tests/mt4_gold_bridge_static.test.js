@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const source = fs.readFileSync(new URL('../mt4/GoldAITraderV18.mq4', import.meta.url), 'utf8');
 
 test('MT4 GOLD bridge uses completed M5 close time consistently', () => {
-  assert.match(source, /datetime closedBarTime = closedBarOpen + 300;/);
+  assert.match(source, /datetime\s+closedBarTime\s*=\s*closedBarOpen\s*\+\s*300;/);
   assert.match(source, /"bar_time":.*closedBarTime/);
   assert.match(source, /barOpenM5 + 300/);
   assert.doesNotMatch(source, /closedBarTime + 300/);
