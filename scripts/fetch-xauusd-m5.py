@@ -268,8 +268,18 @@ def load_cached_source(day: date, native_m5_dir: Path, m1_dir: Path) -> tuple[st
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lookback-days", type=int, default=1825)
-    parser.add_argument("--cache-dir", default="gold-xauusd-data/raw")
-    parser.add_argument("--native-m5-cache-dir", default="gold-xauusd-data/raw-m5")
+    parser.add_argument(
+        "--cache-dir",
+        "--m1-cache-dir",
+        dest="cache_dir",
+        default="gold-xauusd-data/raw",
+    )
+    parser.add_argument(
+        "--native-m5-cache-dir",
+        "--native-cache-dir",
+        dest="native_m5_cache_dir",
+        default="gold-xauusd-data/raw-m5",
+    )
     parser.add_argument("--output-file", default="gold-xauusd-data/xauusd-m5.json.gz")
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--retries", type=int, default=4)
