@@ -49,6 +49,24 @@ function streak(sign) {
   }
   return best;
 }
+function periodStats(items) {
+  const wins=items.filter(t=>(Number(t.net_pnl)||0)>0);
+  const losses=items.filter(t=>(Number(t.net_pnl)||0)<0);
+  const gw=wins.reduce((s,t)=>s+(Number(t.net_pnl)||0),0);
+  const gl=Math.abs(losses.reduce((s,t)=>s+(Number(t.net_pnl)||0),0));
+  const net=items.reduce((s,t)=>s+(Number(t.net_pnl)||0),0);
+  return {trades:items.length,netPnl:net,winRate:items.length?wins.length/items.length:0,profitFactor:gl?gw/gl:null};
+}
+function grouped(format) {
+  const map=new Map();
+  for(const t of trades){
+    const key=format(new Date(Number(t.exit_time)*1000));
+    if(!map.has(key)) map.set(key,[]);
+    map.get(key).push(t);
+  }
+  return Object.fromEntries([...map.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,periodStats(v)]));
+}
+
 function side(s) {
   const a=trades.filter(t=>t.side===s), w=a.filter(t=>(Number(t.net_pnl)||0)>0);
   const gp=w.reduce((x,t)=>x+(Number(t.net_pnl)||0),0);
@@ -74,7 +92,9 @@ const out={
   maxConsecutiveWins:streak(1),
   maxConsecutiveLosses:streak(-1),
   long:side('BUY'),
-  short:side('SELL')
+  short:side('SELL'),
+  monthly:grouped(d=>d.toISOString().slice(0,7)),
+  yearly:grouped(d=>d.toISOString().slice(0,4))
 };
 console.log(JSON.stringify(out,null,2));
 await fs.writeFile(path.join(path.dirname(path.resolve(file)),'gold_v2_baseline_metrics.json'), JSON.stringify(out,null,2));
