@@ -7,7 +7,7 @@ import { validateFundamentalSourceFreshness, enforceFundamentalSafety } from '..
 const base = {
   bid: 3000, ask: 3000.3, point: 0.01, spread: 0.3, spread_points: 30, bar_time: Math.floor(Date.now()/1000)-30,
   m5:{ema20:3001,ema50:2999,rsi14:45,atr14:3,high20:3005,low20:2995},
-  h1:{ema20:3010,ema50:3005,ema200:2990,rsi14:58,atr14:8}
+  h1:{close:3000,ema20:3010,ema50:3005,ema200:2990,rsi14:58,atr14:8}
 };
 test('features validate',()=>{const f=normalizeFeatures(base);assert.deepEqual(validateFeatures(f),[]);});
 test('rule candidate identifies bullish setup',()=>assert.equal(ruleCandidate(normalizeFeatures(base)),'BUY'));
