@@ -127,3 +127,5 @@ jobs:
           if (cp.status !== 'COMPLETE') process.exit(1);
           console.log('CROSS-JOB RESUME TEST PASS', { trades: resumed.length, finalStatus: cp.status });
           NODE
+
+# Resume E2E trigger: keep cross-job checkpoint validation active.
