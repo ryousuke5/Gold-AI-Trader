@@ -30,11 +30,29 @@ services:
       - key: DEFAULT_SYMBOL
         value: XAUUSD
       - key: STRATEGY_VERSION
-        value: gold-m5-h1-v1
+        value: gold-m5-h1-v2
       - key: AI_ONLY_ON_CANDIDATE
         value: "true"
       - key: MAX_RISK_PER_TRADE_PCT
-        value: "2"
+        value: "0.25"
+      - key: GOLD_RANGE_LOOKBACK
+        value: "12"
+      - key: GOLD_MIN_RANGE_ATR
+        value: "0.80"
+      - key: GOLD_MAX_RANGE_ATR
+        value: "2.80"
+      - key: GOLD_BREAKOUT_ATR
+        value: "0.10"
+      - key: GOLD_MIN_BODY_ATR
+        value: "0.40"
+      - key: GOLD_MIN_CLOSE_LOCATION
+        value: "0.65"
+      - key: GOLD_MIN_VOLUME_RATIO
+        value: "1.10"
+      - key: GOLD_SESSION_START_UTC
+        value: "7"
+      - key: GOLD_SESSION_END_UTC
+        value: "20"
       - key: EURUSD_STRATEGY_VERSION
         value: eurusd-m15-h1-ai-environment-v3-balanced-weekly
       - key: EURUSD_FREQUENCY_MODE
