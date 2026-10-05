@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/gold_strategy_v2.js'
       - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/backtest-gold-v2-resumable.mjs'
       - 'scripts/fetch-xauusd-m5.mjs'
       - 'scripts/fetch-xauusd-m5.py'
       - 'tests/gold_strategy_v2.test.js'
@@ -14,7 +15,7 @@ on:
 
 concurrency:
   group: gold-v2-research
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
 
@@ -191,7 +192,7 @@ jobs:
   research:
     needs: prepare-data
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -242,7 +243,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Download prepared XAUUSD M5 dataset
@@ -252,7 +252,7 @@ jobs:
           path: gold-xauusd-data
       - name: Run test suite
         run: npm test
-      - name: Run five-year XAUUSD M5 backtest
+      - name: Run resumable five-year XAUUSD M5 backtest
         env:
           GOLD_BACKTEST_LOOKBACK_DAYS: "1825"
           GOLD_BACKTEST_INITIAL_EQUITY: "100000"
@@ -274,8 +274,8 @@ jobs:
           GOLD_SESSION_END_UTC: ${{ matrix.session_end }}
           GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
           GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
-        run: node scripts/backtest-gold-v2.mjs
-      - name: Upload GOLD V2 results
+        run: node scripts/backtest-gold-v2-resumable.mjs
+      - name: Upload GOLD V2 results and checkpoint
         if: always()
         uses: actions/upload-artifact@v4
         with:
