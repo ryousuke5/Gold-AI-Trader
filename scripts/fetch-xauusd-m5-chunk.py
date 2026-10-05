@@ -229,6 +229,7 @@ def main() -> None:
 
     all_m1: list[dict] = []
     missing_days: list[str] = []
+    transient_failed_days: list[str] = []
     requested = reused = downloaded = 0
 
     day = start_day
@@ -257,6 +258,10 @@ def main() -> None:
                 missing_marker.touch()
                 day += timedelta(days=1)
                 continue
+            if status != "ok":
+                transient_failed_days.append(day.isoformat())
+                day += timedelta(days=1)
+                continue
             cache_file.write_bytes(raw)
             downloaded += 1
             time.sleep(max(0.0, args.request_delay))
@@ -280,6 +285,13 @@ def main() -> None:
             flush=True,
         )
         day += timedelta(days=1)
+
+    if transient_failed_days:
+        sample = ", ".join(transient_failed_days[:20])
+        raise RuntimeError(
+            f"Transient download failures remain for {len(transient_failed_days)} day(s): "
+            f"{sample}"
+        )
 
     all_m1.sort(key=lambda x: x["time"])
     dedup_m1: list[dict] = []
@@ -327,6 +339,7 @@ def main() -> None:
         "downloaded_days": downloaded,
         "missing_days_404_or_empty": len(missing_days),
         "missing_day_samples": missing_days[:20],
+        "transient_failed_days": transient_failed_days,
         "m1_rows": len(dedup_m1),
         "m5_rows": len(m5),
         "incomplete_m5_groups_dropped": incomplete_m5,
