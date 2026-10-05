@@ -198,7 +198,6 @@ def download_day(
     timeout: int,
     request_delay: float,
     *,
-    retry_native: bool = False,
     max_backoff: float = 20.0,
 ) -> dict:
     native_file = native_m5_dir / f"{day:%Y%m%d}.bi5"
@@ -236,7 +235,12 @@ def download_day(
             NATIVE_M5_DISABLED.set()
             print(json.dumps({"event":"native_m5_circuit_open","date":day.isoformat(),"status":status}), flush=True)
 
-    status, raw = fetch_bytes(bi5_url(day, 1), retries=retries, timeout=timeout)
+    status, raw = fetch_bytes(
+        bi5_url(day, 1),
+        retries=retries,
+        timeout=timeout,
+        max_backoff=max_backoff,
+    )
     if status == "ok":
         m1_file.write_bytes(raw)
         if request_delay > 0:
@@ -477,7 +481,6 @@ def main() -> None:
                         rescue_retries,
                         rescue_timeout,
                         rescue_delay,
-                        retry_native=True,
                         max_backoff=rescue_backoff,
                     )
                     if result["status"] == "transient_failed":
