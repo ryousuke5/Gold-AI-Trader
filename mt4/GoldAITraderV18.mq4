@@ -304,7 +304,8 @@ bool BuildSignalPayload(string &payload)
    json += "\"point\":" + JsonNumber(point, digits) + ",";
    json += "\"spread\":" + JsonNumber(spread, digits) + ",";
    json += "\"spread_points\":" + JsonNumber(spreadPoints, 2) + ",";
-   // bar_time is the completed M5 close time, matching recent_m5 and GOLD V2 backtest convention.\n   json += "\"bar_time\":" + IntegerToString((int)(closedBarTime + 300)) + ",";
+   // bar_time is the completed M5 close time, matching recent_m5 and GOLD V2 backtest convention.
+   json += "\"bar_time\":" + IntegerToString((int)(closedBarTime + 300)) + ",";
    json += "\"m5\":{";
    json += "\"ema20\":" + JsonNumber(m5Ema20, digits) + ",";
    json += "\"ema50\":" + JsonNumber(m5Ema50, digits) + ",";
