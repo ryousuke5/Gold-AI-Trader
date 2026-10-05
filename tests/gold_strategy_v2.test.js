@@ -69,3 +69,40 @@ test('GOLD V2 rejects a signal against H1 trend', () => {
   assert.equal(result.candidate, 'WAIT');
   assert.equal(result.reason, 'h1_trend_filter');
 });
+
+
+test('GOLD V2 pipeline accepts normalized MT4-style completed-bar input', async () => {
+  const { normalizeFeatures } = await import('../src/features.js');
+  const input = {
+    bid: 2504.01,
+    ask: 2504.11,
+    point: 0.01,
+    spread: 0.10,
+    spread_points: 10,
+    bar_time: Date.parse('2026-01-12T13:00:00Z') / 1000,
+    m5: { ema20: 2501.5, ema50: 2499.0, rsi14: 60, atr14: 2.0, high20: 2504.5, low20: 2500.0 },
+    h1: { close: 2504, ema20: 2498, ema50: 2490, ema200: 2470, rsi14: 60, atr14: 8 },
+    recent_m5: baseFeatures().recentM5,
+    recent_h1: []
+  };
+  const normalized = normalizeFeatures(input);
+  assert.equal(normalized.recentM5.length, 13);
+  assert.equal(normalized.h1.close, 2504);
+  const result = buildGoldV2Setup(normalized);
+  assert.equal(result.candidate, 'BUY');
+  assert.equal(result.setup_type, 'H1_TREND_M5_COMPRESSION_BREAKOUT');
+});
+
+test('GOLD V2 pipeline rejects malformed or insufficient history safely', async () => {
+  const { normalizeFeatures } = await import('../src/features.js');
+  const normalized = normalizeFeatures({
+    bid: 2500, ask: 2500.1, point: 0.01, spread: 0.1, spread_points: 10,
+    bar_time: Date.parse('2026-01-12T13:00:00Z') / 1000,
+    m5: { ema20: 2501.5, ema50: 2499.0, rsi14: 60, atr14: 2.0 },
+    h1: { close: 2504, ema20: 2498, ema50: 2490, ema200: 2470, rsi14: 60, atr14: 8 },
+    recent_m5: []
+  });
+  const result = buildGoldV2Setup(normalized);
+  assert.equal(result.candidate, 'WAIT');
+  assert.equal(result.reason, 'missing_or_invalid_features');
+});
