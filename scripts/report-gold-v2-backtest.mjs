@@ -4,6 +4,12 @@ import path from 'node:path';
 const file = process.argv[2] || process.env.GOLD_TRADES_FILE || 'gold-backtest-output/gold_v2_resumed_trades.json';
 const trades = JSON.parse(await fs.readFile(path.resolve(file), 'utf8'));
 if (!Array.isArray(trades) || !trades.length) throw new Error('No trades found');
+const initialEquity = Number(process.env.GOLD_BACKTEST_INITIAL_EQUITY || 100000);
+if (!(initialEquity > 0)) throw new Error('Invalid GOLD_BACKTEST_INITIAL_EQUITY');
+const ordered = [...trades].sort((a,b) => Number(a.exit_time) - Number(b.exit_time));
+for (let i = 1; i < ordered.length; i++) {
+  if (!(Number(ordered[i].exit_time) >= Number(ordered[i - 1].exit_time))) throw new Error('Trades are not chronologically sortable');
+}
 
 const pnl = trades.map(t => Number(t.net_pnl) || 0);
 const r = trades.map(t => Number(t.net_r) || 0);
@@ -19,7 +25,7 @@ const winRate = wins.length / trades.length;
 const avgWin = wins.length ? grossWin / wins.length : 0;
 const avgLoss = losses.length ? grossLoss / losses.length : 0;
 
-let equity = 100000;
+let equity = initialEquity;
 let peak = equity;
 let maxDd = 0;
 let maxDdPct = 0;
@@ -76,9 +82,9 @@ function side(s) {
 const out={
   trades:trades.length,
   netPnl:net,
-  initialEquity:100000,
-  finalEquity:100000+net,
-  returnPct:net/100000*100,
+  initialEquity,
+  finalEquity:initialEquity+net,
+  returnPct:net/initialEquity*100,
   profitFactor:Number.isFinite(pf)?pf:null,
   expectancyPerTrade:expectancy,
   expectancyR:avgR,
