@@ -8,6 +8,7 @@ import json
 import lzma
 import struct
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -23,37 +24,67 @@ USER_AGENT = "Gold-AI-Trader/1.0 historical-research"
 def bi5_url(day: date) -> str:
     return f"{BASE_URL}/{SYMBOL}/{day.year:04d}/{day.month-1:02d}/{day.day:02d}/BID_candles_min_1.bi5"
 
-def fetch_bytes(url: str, retries: int = 8, timeout: int = 30) -> tuple[str, bytes]:
-    delay = 5.0
+def fetch_bytes(url: str, retries: int = 6, timeout: int = 20) -> tuple[str, bytes]:
+    delay = 3.0
     for attempt in range(1, retries + 1):
         req = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
         try:
             with urlopen(req, timeout=timeout) as response:
                 data = response.read()
+                if not data:
+                    raise RuntimeError("empty response body")
                 return "ok", data
         except HTTPError as exc:
             if exc.code == 404:
                 return "missing", b""
-            if exc.code == 429 or exc.code >= 500:
-                if attempt < retries:
-                    retry_after = exc.headers.get("Retry-After")
-                    try:
-                        server_delay = max(0.0, float(retry_after)) if retry_after else 0.0
-                    except (TypeError, ValueError):
-                        server_delay = 0.0
-                    sleep_for = max(delay, server_delay)
-                    print(json.dumps({"event": "retry", "status": exc.code, "attempt": attempt, "sleep_seconds": sleep_for, "url": url}), flush=True)
-                    time.sleep(sleep_for)
-                    delay = min(delay * 2.0, 180.0)
-                    continue
-            raise
+            retryable = exc.code == 429 or exc.code >= 500
+            if not retryable or attempt >= retries:
+                raise
+            retry_after = exc.headers.get("Retry-After")
+            try:
+                server_delay = max(0.0, float(retry_after)) if retry_after else 0.0
+            except (TypeError, ValueError):
+                server_delay = 0.0
+            sleep_for = max(delay, server_delay)
+            print(json.dumps({"event": "retry", "status": exc.code, "attempt": attempt, "sleep_seconds": sleep_for, "url": url}), flush=True)
+            time.sleep(sleep_for)
+            delay = min(delay * 2.0, 60.0)
         except (URLError, TimeoutError, OSError) as exc:
-            if attempt < retries:
-                print(json.dumps({"event": "retry", "error": str(exc), "attempt": attempt, "url": url}), flush=True)
-                time.sleep(delay)
-                delay = min(delay * 2.0, 120.0)
-                continue
-            raise
+            if attempt >= retries:
+                raise
+            print(json.dumps({"event": "retry", "error": str(exc), "attempt": attempt, "sleep_seconds": delay, "url": url}), flush=True)
+            time.sleep(delay)
+            delay = min(delay * 2.0, 60.0)
+
+
+def process_day(day: date, cache_dir: Path, retries: int, timeout: int, request_delay: float) -> dict:
+    cache_file = cache_dir / f"{day:%Y%m%d}.bi5"
+    missing_marker = cache_dir / f"{day:%Y%m%d}.missing"
+    if missing_marker.exists():
+        return {"date": day.isoformat(), "status": "missing-cached", "m1_rows": 0, "m5": [], "incomplete_m5": 0}
+
+    if cache_file.exists() and cache_file.stat().st_size > 0:
+        raw = cache_file.read_bytes()
+        status = "cached"
+    else:
+        status, raw = fetch_bytes(bi5_url(day), retries=retries, timeout=timeout)
+        if status == "missing":
+            missing_marker.touch()
+            return {"date": day.isoformat(), "status": "missing", "m1_rows": 0, "m5": [], "incomplete_m5": 0}
+        cache_file.write_bytes(raw)
+        status = "downloaded"
+        if request_delay > 0:
+            time.sleep(request_delay)
+
+    bars = parse_day(raw, day)
+    m5, incomplete = resample_m1_to_m5(bars)
+    return {
+        "date": day.isoformat(),
+        "status": status,
+        "m1_rows": len(bars),
+        "m5": m5,
+        "incomplete_m5": incomplete,
+    }
 
 def parse_day(raw: bytes, day: date) -> list[dict]:
     if not raw:
@@ -126,9 +157,10 @@ def main() -> None:
     parser.add_argument("--lookback-days", type=int, default=1825)
     parser.add_argument("--cache-dir", default="gold-xauusd-data/raw")
     parser.add_argument("--output-file", default="gold-xauusd-data/xauusd-m5.json.gz")
-    parser.add_argument("--timeout", type=int, default=30)
-    parser.add_argument("--retries", type=int, default=8)
-    parser.add_argument("--request-delay", type=float, default=1.5)
+    parser.add_argument("--timeout", type=int, default=20)
+    parser.add_argument("--retries", type=int, default=6)
+    parser.add_argument("--request-delay", type=float, default=0.5)
+    parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -145,67 +177,96 @@ def main() -> None:
     output_file = Path(args.output_file)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    all_m1 = []
-    missing_days = []
-    requested = 0
-    reused = 0
-    downloaded = 0
-
+    days = []
     day = start_day
     while day < end_day:
-        requested += 1
-        cache_file = cache_dir / f"{day:%Y%m%d}.bi5"
-        missing_marker = cache_dir / f"{day:%Y%m%d}.missing"
-        if missing_marker.exists():
-            missing_days.append(day.isoformat())
-            day += timedelta(days=1)
-            continue
-        if cache_file.exists() and cache_file.stat().st_size > 0:
-            raw = cache_file.read_bytes()
-            reused += 1
-            status = "cached"
-        else:
-            status, raw = fetch_bytes(bi5_url(day), retries=args.retries, timeout=args.timeout)
-            if status == "missing" or not raw:
-                missing_days.append(day.isoformat())
-                missing_marker.touch()
-                day += timedelta(days=1)
-                continue
-            cache_file.write_bytes(raw)
-            downloaded += 1
-            time.sleep(max(0.0, args.request_delay))
-
-        bars = parse_day(raw, day)
-        all_m1.extend(bars)
-        if requested % 20 == 0 or status != "cached":
-            print(json.dumps({
-                "event": "day",
-                "date": day.isoformat(),
-                "status": status,
-                "m1_rows": len(bars),
-                "requested_days": requested,
-                "downloaded_days": downloaded,
-                "cached_days": reused,
-                "missing_days": len(missing_days)
-            }), flush=True)
+        days.append(day)
         day += timedelta(days=1)
 
-    all_m1.sort(key=lambda x: x["time"])
-    dedup_m1 = []
-    last = None
-    for bar in all_m1:
-        if bar["time"] == last:
-            continue
-        dedup_m1.append(bar)
-        last = bar["time"]
+    all_m5 = []
+    missing_days = []
+    failures = []
+    requested = len(days)
+    reused = 0
+    downloaded = 0
+    completed = 0
+    incomplete_m5 = 0
+    m1_rows = 0
 
-    m5, incomplete_m5 = resample_m1_to_m5(dedup_m1)
-    if len(m5) < 200000:
-        raise RuntimeError(f"Insufficient XAUUSD M5 data: {len(m5)}")
+    max_workers = max(1, min(8, args.workers))
+    print(json.dumps({
+        "event": "start",
+        "requested_days": requested,
+        "workers": max_workers,
+        "start_date": start_day.isoformat(),
+        "end_date_exclusive": end_day.isoformat()
+    }), flush=True)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                process_day, current_day, cache_dir, args.retries, args.timeout, args.request_delay
+            ): current_day
+            for current_day in days
+        }
+        for future in as_completed(futures):
+            current_day = futures[future]
+            completed += 1
+            try:
+                result = future.result()
+                status = result["status"]
+                m1_rows += result["m1_rows"]
+                incomplete_m5 += result["incomplete_m5"]
+                all_m5.extend(result["m5"])
+                if status == "downloaded":
+                    downloaded += 1
+                elif status == "cached":
+                    reused += 1
+                elif status.startswith("missing"):
+                    missing_days.append(result["date"])
+                print(json.dumps({
+                    "event": "day",
+                    "date": result["date"],
+                    "status": status,
+                    "m1_rows": result["m1_rows"],
+                    "completed_days": completed,
+                    "requested_days": requested,
+                    "downloaded_days": downloaded,
+                    "cached_days": reused,
+                    "missing_days": len(missing_days),
+                    "failed_days": len(failures)
+                }), flush=True)
+            except Exception as exc:
+                failures.append({"date": current_day.isoformat(), "error": str(exc)})
+                print(json.dumps({
+                    "event": "failed_day",
+                    "date": current_day.isoformat(),
+                    "error": str(exc),
+                    "completed_days": completed,
+                    "requested_days": requested,
+                    "failed_days": len(failures)
+                }), flush=True)
+
+    if failures:
+        sample = failures[:10]
+        raise RuntimeError(f"Failed to fetch {len(failures)} XAUUSD days; sample={json.dumps(sample)}")
+
+    all_m5.sort(key=lambda x: x["time"])
+    dedup_m5 = []
+    seen = set()
+    for bar in all_m5:
+        ts = bar["time"]
+        if ts in seen:
+            continue
+        seen.add(ts)
+        dedup_m5.append(bar)
+
+    if len(dedup_m5) < 200000:
+        raise RuntimeError(f"Insufficient XAUUSD M5 data: {len(dedup_m5)}")
 
     non_weekend_gaps = 0
     max_gap = 0
-    for prev, cur in zip(m5, m5[1:]):
+    for prev, cur in zip(dedup_m5, dedup_m5[1:]):
         gap = cur["time"] - prev["time"]
         if gap > max_gap:
             max_gap = gap
@@ -214,7 +275,7 @@ def main() -> None:
             if prev_day < 5:
                 non_weekend_gaps += 1
 
-    payload = json.dumps(m5, separators=(",", ":"), ensure_ascii=False).encode()
+    payload = json.dumps(dedup_m5, separators=(",", ":"), ensure_ascii=False).encode()
     with gzip.open(output_file, "wb", compresslevel=9) as fh:
         fh.write(payload)
 
@@ -228,12 +289,13 @@ def main() -> None:
         "start_date_utc": start_day.isoformat(),
         "end_date_exclusive_utc": end_day.isoformat(),
         "requested_days": requested,
+        "workers": max_workers,
         "cached_days_reused": reused,
         "downloaded_days": downloaded,
         "missing_days_404_or_empty": len(missing_days),
         "missing_day_samples": missing_days[:20],
-        "m1_rows": len(dedup_m1),
-        "m5_rows": len(m5),
+        "m1_rows": m1_rows,
+        "m5_rows": len(dedup_m5),
         "incomplete_m5_groups_dropped": incomplete_m5,
         "non_weekend_gaps_gt_15m": non_weekend_gaps,
         "max_m5_gap_seconds": max_gap,
