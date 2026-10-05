@@ -1,0 +1,82 @@
+name: Gold V2 Resume Test
+
+on:
+  push:
+    paths:
+      - 'scripts/backtest-gold-v2-resumable.mjs'
+      - '.github/workflows/gold-v2-resume-test.yml'
+      - 'src/gold_strategy_v2.js'
+      - 'package.json'
+  workflow_dispatch:
+
+jobs:
+  resume-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Syntax check
+        run: node --check scripts/backtest-gold-v2-resumable.mjs
+      - name: Generate deterministic test data
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const n = 200500;
+          let price = 2300;
+          const rows = new Array(n);
+          for (let i = 0; i < n; i++) {
+            const wave = Math.sin(i / 37) * 0.18 + Math.sin(i / 113) * 0.11;
+            const drift = ((i % 997) - 498) / 498 * 0.015;
+            const open = price;
+            const close = Math.max(100, open + wave + drift);
+            const high = Math.max(open, close) + 0.08;
+            const low = Math.min(open, close) - 0.08;
+            rows[i] = { time: 1700000000 + i * 300, open, high, low, close, volume: 100 + (i % 17) };
+            price = close;
+          }
+          fs.mkdirSync('tmp-resume-test', { recursive: true });
+          fs.writeFileSync('tmp-resume-test/xauusd-m5.json', JSON.stringify(rows));
+          NODE
+      - name: Run first segment and force checkpoint stop
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/tmp-resume-test/xauusd-m5.json
+          GOLD_BACKTEST_OUTPUT_DIR: ${{ github.workspace }}/tmp-resume-test/resume
+          GOLD_BACKTEST_LOOKBACK_DAYS: 1825
+          GOLD_TEST_STOP_AFTER_BARS: 10000
+        run: node scripts/backtest-gold-v2-resumable.mjs
+      - name: Verify paused checkpoint
+        run: |
+          test -f tmp-resume-test/resume/gold_v2_resume_checkpoint.json
+          node -e "const x=require('./tmp-resume-test/resume/gold_v2_resume_checkpoint.json'); if(x.status!=='PAUSED') process.exit(1); if(!(x.next_index>250)) process.exit(1); console.log({status:x.status,next_index:x.next_index,trades:x.trades.length});"
+      - name: Resume to completion
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/tmp-resume-test/xauusd-m5.json
+          GOLD_BACKTEST_OUTPUT_DIR: ${{ github.workspace }}/tmp-resume-test/resume
+        run: node scripts/backtest-gold-v2-resumable.mjs
+      - name: Run clean baseline to completion
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/tmp-resume-test/xauusd-m5.json
+          GOLD_BACKTEST_OUTPUT_DIR: ${{ github.workspace }}/tmp-resume-test/full
+        run: node scripts/backtest-gold-v2-resumable.mjs
+      - name: Compare resumed result with clean result
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const resumed = JSON.parse(fs.readFileSync('tmp-resume-test/resume/gold_v2_resumed_trades.json'));
+          const full = JSON.parse(fs.readFileSync('tmp-resume-test/full/gold_v2_resumed_trades.json'));
+          if (JSON.stringify(resumed) !== JSON.stringify(full)) {
+            console.error('RESUME MISMATCH');
+            console.error({ resumed: resumed.length, full: full.length });
+            process.exit(1);
+          }
+          const cp = JSON.parse(fs.readFileSync('tmp-resume-test/resume/gold_v2_resume_checkpoint.json'));
+          if (cp.status !== 'COMPLETE') process.exit(1);
+          console.log('RESUME TEST PASS', { trades: resumed.length, finalStatus: cp.status });
+          NODE
