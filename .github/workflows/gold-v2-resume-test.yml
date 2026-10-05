@@ -10,20 +10,24 @@ on:
   workflow_dispatch:
 
 jobs:
-  resume-test:
+  checkpoint:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
       - name: Syntax check
         run: node --check scripts/backtest-gold-v2-resumable.mjs
+
       - name: Generate deterministic test data
         run: |
           node <<'NODE'
@@ -38,33 +42,76 @@ jobs:
             const close = Math.max(100, open + wave + drift);
             const high = Math.max(open, close) + 0.08;
             const low = Math.min(open, close) - 0.08;
-            rows[i] = { time: 1700000000 + i * 300, open, high, low, close, volume: 100 + (i % 17) };
+            rows[i] = {
+              time: 1700000000 + i * 300,
+              open,
+              high,
+              low,
+              close,
+              volume: 100 + (i % 17)
+            };
             price = close;
           }
           fs.mkdirSync('tmp-resume-test', { recursive: true });
           fs.writeFileSync('tmp-resume-test/xauusd-m5.json', JSON.stringify(rows));
           NODE
-      - name: Run first segment and force checkpoint stop
+
+      - name: Run first segment and create checkpoint
         env:
           GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/tmp-resume-test/xauusd-m5.json
           GOLD_BACKTEST_OUTPUT_DIR: ${{ github.workspace }}/tmp-resume-test/resume
           GOLD_BACKTEST_LOOKBACK_DAYS: 1825
           GOLD_TEST_STOP_AFTER_BARS: 10000
         run: node scripts/backtest-gold-v2-resumable.mjs
+
       - name: Verify paused checkpoint
         run: |
           test -f tmp-resume-test/resume/gold_v2_resume_checkpoint.json
           node -e "const x=require('./tmp-resume-test/resume/gold_v2_resume_checkpoint.json'); if(x.status!=='PAUSED') process.exit(1); if(!(x.next_index>250)) process.exit(1); console.log({status:x.status,next_index:x.next_index,trades:x.trades.length});"
+
+      # Cache the paused checkpoint and deterministic dataset so a separate job
+      # can resume from the saved state exactly as a future interrupted run would.
+      - name: Persist paused checkpoint for the next job
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: tmp-resume-test
+          key: gold-v2-resume-e2e-${{ github.run_id }}
+
+  resume:
+    needs: checkpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Restore paused checkpoint
+        uses: actions/cache/restore@v4
+        with:
+          path: tmp-resume-test
+          key: gold-v2-resume-e2e-${{ github.run_id }}
+
       - name: Resume to completion
         env:
           GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/tmp-resume-test/xauusd-m5.json
           GOLD_BACKTEST_OUTPUT_DIR: ${{ github.workspace }}/tmp-resume-test/resume
         run: node scripts/backtest-gold-v2-resumable.mjs
+
       - name: Run clean baseline to completion
         env:
           GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/tmp-resume-test/xauusd-m5.json
           GOLD_BACKTEST_OUTPUT_DIR: ${{ github.workspace }}/tmp-resume-test/full
         run: node scripts/backtest-gold-v2-resumable.mjs
+
       - name: Compare resumed result with clean result
         run: |
           node <<'NODE'
@@ -78,5 +125,5 @@ jobs:
           }
           const cp = JSON.parse(fs.readFileSync('tmp-resume-test/resume/gold_v2_resume_checkpoint.json'));
           if (cp.status !== 'COMPLETE') process.exit(1);
-          console.log('RESUME TEST PASS', { trades: resumed.length, finalStatus: cp.status });
+          console.log('CROSS-JOB RESUME TEST PASS', { trades: resumed.length, finalStatus: cp.status });
           NODE
