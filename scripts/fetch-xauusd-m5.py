@@ -199,12 +199,15 @@ def download_day(
     request_delay: float,
 ) -> dict:
     native_file = native_m5_dir / f"{day:%Y%m%d}.bi5"
+    m1_file = m1_dir / f"{day:%Y%m%d}.bi5"
+    missing_file = m1_dir / f"{day:%Y%m%d}.missing"
+
     if native_file.exists() and native_file.stat().st_size > 0:
         return {"day": day, "status": "cached_m5", "source": "M5"}
-
-    m1_file = m1_dir / f"{day:%Y%m%d}.bi5"
     if m1_file.exists() and m1_file.stat().st_size > 0:
         return {"day": day, "status": "cached_m1", "source": "M1"}
+    if missing_file.exists():
+        return {"day": day, "status": "cached_missing", "source": "NONE"}
 
     if not NATIVE_M5_DISABLED.is_set():
         status, raw = fetch_bytes(
@@ -218,203 +221,87 @@ def download_day(
                 if not bars:
                     raise RuntimeError("native M5 payload parsed to zero bars")
             except Exception as exc:
-                print(
-                    json.dumps(
-                        {
-                            "event": "native_m5_invalid",
-                            "date": day.isoformat(),
-                            "error": str(exc),
-                        }
-                    ),
-                    flush=True,
-                )
+                print(json.dumps({"event":"native_m5_invalid","date":day.isoformat(),"error":str(exc)}), flush=True)
                 NATIVE_M5_DISABLED.set()
             else:
                 native_file.write_bytes(raw)
                 if request_delay > 0:
                     time.sleep(request_delay)
-                return {
-                    "day": day,
-                    "status": "ok_m5",
-                    "source": "M5",
-                    "rows": len(bars),
-                }
-        elif status in {"missing", "transient_failed"}:
+                return {"day":day,"status":"ok_m5","source":"M5","rows":len(bars)}
+        elif status in {"missing","transient_failed"}:
             NATIVE_M5_DISABLED.set()
-            print(
-                json.dumps(
-                    {
-                        "event": "native_m5_circuit_open",
-                        "date": day.isoformat(),
-                        "status": status,
-                    }
-                ),
-                flush=True,
-            )
+            print(json.dumps({"event":"native_m5_circuit_open","date":day.isoformat(),"status":status}), flush=True)
 
-    # Native M5 is unavailable or unhealthy for this run; use the official M1
-    # file as a deterministic fallback and resample to M5 later.
-    status, raw = fetch_bytes(
-        bi5_url(day, 1),
-        retries=retries,
-        timeout=timeout,
-    )
+    status, raw = fetch_bytes(bi5_url(day, 1), retries=retries, timeout=timeout)
     if status == "ok":
         m1_file.write_bytes(raw)
         if request_delay > 0:
             time.sleep(request_delay)
-        return {"day": day, "status": "ok_m1_fallback", "source": "M1"}
+        return {"day":day,"status":"ok_m1_fallback","source":"M1"}
     if status == "missing":
-        return {"day": day, "status": "missing", "source": "NONE"}
-    return {"day": day, "status": "transient_failed", "source": "NONE"}
+        missing_file.touch()
+        return {"day":day,"status":"missing","source":"NONE"}
+    return {"day":day,"status":"transient_failed","source":"NONE"}
 
 
-def load_cached_source(day: date, native_m5_dir: Path, m1_dir: Path) -> tuple[str, bytes] | None:
-    native_file = native_m5_dir / f"{day:%Y%m%d}.bi5"
-    if native_file.exists() and native_file.stat().st_size > 0:
-        return "M5", native_file.read_bytes()
-    m1_file = m1_dir / f"{day:%Y%m%d}.bi5"
-    if m1_file.exists() and m1_file.stat().st_size > 0:
-        return "M1", m1_file.read_bytes()
-    return None
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--lookback-days", type=int, default=1825)
-    parser.add_argument(
-        "--cache-dir",
-        "--m1-cache-dir",
-        dest="cache_dir",
-        default="gold-xauusd-data/raw",
-    )
-    parser.add_argument(
-        "--native-m5-cache-dir",
-        "--native-cache-dir",
-        dest="native_m5_cache_dir",
-        default="gold-xauusd-data/raw-m5",
-    )
-    parser.add_argument("--output-file", default="gold-xauusd-data/xauusd-m5.json.gz")
-    parser.add_argument("--timeout", type=int, default=20)
-    parser.add_argument("--retries", type=int, default=4)
-    parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--rounds", type=int, default=3)
-    parser.add_argument("--request-delay", type=float, default=0.2)
-    parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args()
-
-    if args.self_test:
-        self_test()
-        return
-
+def resolve_date_range(args) -> tuple[date, date]:
+    if args.start_date or args.end_date:
+        if not (args.start_date and args.end_date):
+            raise ValueError("--start-date and --end-date must be supplied together")
+        start_day = date.fromisoformat(args.start_date)
+        end_day = date.fromisoformat(args.end_date)
+        if end_day <= start_day:
+            raise ValueError("--end-date must be after --start-date")
+        return start_day, end_day
     lookback_days = max(365, args.lookback_days)
     end_day = datetime.now(timezone.utc).date()
-    start_day = end_day - timedelta(days=lookback_days)
+    return end_day - timedelta(days=lookback_days), end_day
 
-    m1_dir = Path(args.cache_dir)
-    native_m5_dir = Path(args.native_m5_cache_dir)
-    m1_dir.mkdir(parents=True, exist_ok=True)
-    native_m5_dir.mkdir(parents=True, exist_ok=True)
-    output_file = Path(args.output_file)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
 
+def build_from_cache(start_day: date, end_day: date, native_m5_dir: Path, m1_dir: Path, output_file: Path) -> dict:
     days = []
     day = start_day
     while day < end_day:
         days.append(day)
         day += timedelta(days=1)
 
-    results_by_day: dict[date, dict] = {}
-    pending = days[:]
-
-    for round_no in range(1, max(1, args.rounds) + 1):
-        if not pending:
-            break
-        print(
-            json.dumps(
-                {
-                    "event": "download_round",
-                    "round": round_no,
-                    "pending_days": len(pending),
-                    "workers": max(1, args.workers),
-                }
-            ),
-            flush=True,
-        )
-        next_pending = []
-        with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
-            futures = {
-                executor.submit(
-                    download_day,
-                    d,
-                    native_m5_dir,
-                    m1_dir,
-                    args.retries,
-                    args.timeout,
-                    args.request_delay,
-                ): d
-                for d in pending
-            }
-            for future in as_completed(futures):
-                d = futures[future]
-                result = future.result()
-                results_by_day[d] = result
-                if result["status"] == "transient_failed":
-                    next_pending.append(d)
-                if len(results_by_day) % 25 == 0 or result["status"] != "cached_m5":
-                    print(
-                        json.dumps(
-                            {
-                                "event": "day",
-                                "date": d.isoformat(),
-                                "status": result["status"],
-                                "source": result["source"],
-                                "completed_days": len(results_by_day),
-                                "pending_after_round": len(next_pending),
-                            }
-                        ),
-                        flush=True,
-                    )
-        pending = sorted(next_pending)
-
-    if pending:
-        raise RuntimeError(
-            f"Unresolved transient download failures after {args.rounds} rounds: "
-            + ",".join(d.isoformat() for d in pending[:50])
-            + ("..." if len(pending) > 50 else "")
-        )
-
     all_m1 = []
     all_m5 = []
     missing_days = []
+    unresolved_days = []
     native_m5_days = 0
     m1_fallback_days = 0
     cached_days = 0
 
     for d in days:
         cached = load_cached_source(d, native_m5_dir, m1_dir)
-        result = results_by_day.get(d, {})
         if cached is None:
-            if result.get("status") == "missing":
+            marker = m1_dir / f"{d:%Y%m%d}.missing"
+            if marker.exists():
                 missing_days.append(d.isoformat())
-            elif result.get("status") == "cached_m5":
-                raise RuntimeError(f"Cache accounting inconsistency for {d}")
+            else:
+                unresolved_days.append(d.isoformat())
             continue
-
         source, raw = cached
         bars = parse_day(raw, d)
+        cached_days += 1
         if source == "M5":
             native_m5_days += 1
             all_m5.extend(bars)
         else:
             m1_fallback_days += 1
             all_m1.extend(bars)
-            if result.get("status") in {"cached_m1", "cached_m1_fallback"}:
-                cached_days += 1
+
+    if unresolved_days:
+        sample = ",".join(unresolved_days[:50])
+        raise RuntimeError(
+            "Unresolved cache gaps remain; refusing to build a partial dataset: "
+            + sample + ("..." if len(unresolved_days) > 50 else "")
+        )
 
     fallback_m5, incomplete_m5 = resample_m1_to_m5(all_m1)
     m5 = all_m5 + fallback_m5
-    m5.sort(key=lambda x: x["time"])
+    m5.sort(key=lambda x:x["time"])
 
     dedup_m5 = []
     last = None
@@ -431,21 +318,16 @@ def main() -> None:
     max_gap = 0
     for prev, cur in zip(dedup_m5, dedup_m5[1:]):
         gap = cur["time"] - prev["time"]
-        if gap > max_gap:
-            max_gap = gap
-        if gap > 900:
-            prev_day = datetime.fromtimestamp(prev["time"], timezone.utc).weekday()
-            if prev_day < 5:
-                non_weekend_gaps += 1
+        max_gap = max(max_gap, gap)
+        if gap > 900 and datetime.fromtimestamp(prev["time"], timezone.utc).weekday() < 5:
+            non_weekend_gaps += 1
 
-    payload = json.dumps(dedup_m5, separators=(",", ":"), ensure_ascii=False).encode()
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(output_file, "wb", compresslevel=9) as fh:
-        fh.write(payload)
+        fh.write(json.dumps(dedup_m5, separators=(",", ":"), ensure_ascii=False).encode())
 
     digest = hashlib.sha256(output_file.read_bytes()).hexdigest()
-    downloaded_m5 = sum(1 for r in results_by_day.values() if r.get("status") == "ok_m5")
-    downloaded_m1 = sum(1 for r in results_by_day.values() if r.get("status") == "ok_m1_fallback")
-
+    weekday_missing = sum(1 for iso in missing_days if date.fromisoformat(iso).weekday() < 5)
     manifest = {
         "instrument": SYMBOL,
         "provider": "Dukascopy Historical Data Feed",
@@ -457,10 +339,9 @@ def main() -> None:
         "requested_days": len(days),
         "native_m5_days": native_m5_days,
         "m1_fallback_days": m1_fallback_days,
-        "downloaded_native_m5_days": downloaded_m5,
-        "downloaded_m1_fallback_days": downloaded_m1,
-        "cached_days_reused": cached_days,
+        "cached_source_days": cached_days,
         "missing_days_404_or_empty": len(missing_days),
+        "missing_weekday_days": weekday_missing,
         "missing_day_samples": missing_days[:20],
         "m5_rows": len(dedup_m5),
         "m1_rows_fallback": len(all_m1),
@@ -471,10 +352,101 @@ def main() -> None:
         "native_m5_circuit_open": NATIVE_M5_DISABLED.is_set(),
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
-    manifest_path = output_file.with_name("xauusd_m5_manifest.json")
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    output_file.with_name("xauusd_m5_manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    print(json.dumps({"event":"complete",**manifest}, indent=2), flush=True)
 
-    print(json.dumps({"event": "complete", **manifest}, indent=2), flush=True)
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--lookback-days", type=int, default=1825)
+    parser.add_argument("--start-date", default=None)
+    parser.add_argument("--end-date", default=None)
+    parser.add_argument("--cache-dir","--m1-cache-dir",dest="cache_dir",default="gold-xauusd-data/raw")
+    parser.add_argument("--native-m5-cache-dir","--native-cache-dir",dest="native_m5_cache_dir",default="gold-xauusd-data/raw-m5")
+    parser.add_argument("--output-file",default="gold-xauusd-data/xauusd-m5.json.gz")
+    parser.add_argument("--timeout",type=int,default=20)
+    parser.add_argument("--retries",type=int,default=4)
+    parser.add_argument("--workers",type=int,default=4)
+    parser.add_argument("--rounds",type=int,default=3)
+    parser.add_argument("--request-delay",type=float,default=0.2)
+    parser.add_argument("--download-only",action="store_true")
+    parser.add_argument("--build-only",action="store_true")
+    parser.add_argument("--self-test",action="store_true")
+    args = parser.parse_args()
+
+    if args.self_test:
+        self_test()
+        return
+    if args.download_only and args.build_only:
+        raise ValueError("--download-only and --build-only are mutually exclusive")
+
+    start_day, end_day = resolve_date_range(args)
+    m1_dir = Path(args.cache_dir)
+    native_m5_dir = Path(args.native_m5_cache_dir)
+    m1_dir.mkdir(parents=True, exist_ok=True)
+    native_m5_dir.mkdir(parents=True, exist_ok=True)
+    output_file = Path(args.output_file)
+
+    days = []
+    day = start_day
+    while day < end_day:
+        days.append(day)
+        day += timedelta(days=1)
+
+    if not args.build_only:
+        pending = days[:]
+        results_by_day = {}
+        for round_no in range(1, max(1,args.rounds)+1):
+            if not pending:
+                break
+            next_pending = []
+            print(json.dumps({
+                "event":"download_round","round":round_no,"pending_days":len(pending),
+                "workers":max(1,args.workers),
+                "start_date":start_day.isoformat(),
+                "end_date_exclusive":end_day.isoformat(),
+            }), flush=True)
+            with ThreadPoolExecutor(max_workers=max(1,args.workers)) as executor:
+                futures = {
+                    executor.submit(download_day,d,native_m5_dir,m1_dir,args.retries,args.timeout,args.request_delay): d
+                    for d in pending
+                }
+                for future in as_completed(futures):
+                    d = futures[future]
+                    result = future.result()
+                    results_by_day[d] = result
+                    if result["status"] == "transient_failed":
+                        next_pending.append(d)
+                    if len(results_by_day) % 25 == 0 or result["status"] in {"ok_m5","ok_m1_fallback","missing"}:
+                        print(json.dumps({
+                            "event":"day","date":d.isoformat(),"status":result["status"],
+                            "source":result["source"],"completed_days":len(results_by_day),
+                            "pending_after_round":len(next_pending)
+                        }), flush=True)
+            pending = sorted(next_pending)
+        if pending:
+            raise RuntimeError(
+                f"Unresolved transient download failures after {args.rounds} rounds: "
+                + ",".join(d.isoformat() for d in pending[:50])
+                + ("..." if len(pending)>50 else "")
+            )
+
+    if args.download_only:
+        cached = sum(1 for d in days if load_cached_source(d,native_m5_dir,m1_dir) is not None)
+        missing = sum(1 for d in days if (m1_dir/f"{d:%Y%m%d}.missing").exists())
+        print(json.dumps({
+            "event":"download_only_complete",
+            "start_date":start_day.isoformat(),
+            "end_date_exclusive":end_day.isoformat(),
+            "requested_days":len(days),
+            "cached_source_days":cached,
+            "missing_404_days":missing,
+        }, indent=2), flush=True)
+        return
+
+    build_from_cache(start_day,end_day,native_m5_dir,m1_dir,output_file)
 
 
 if __name__ == "__main__":

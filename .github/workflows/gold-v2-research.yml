@@ -17,42 +17,177 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
   prepare-data:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
-      - name: Restore XAUUSD M1 cache
-        id: xau-cache-restore
+      - name: Restore XAUUSD resumable cache
         uses: actions/cache/restore@v4
         with:
           path: |
             gold-xauusd-data/raw
-            gold-xauusd-data/raw_m5
-          key: xauusd-v3-${{ runner.os }}-${{ github.run_id }}
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-initial
           restore-keys: |
+            xauusd-v4-${{ runner.os }}-
             xauusd-v3-${{ runner.os }}-
             xauusd-m1-v2-${{ runner.os }}-
-      - name: Prepare five-year XAUUSD M5 dataset
+
+      - name: Freeze research date range
         run: |
-          python3 scripts/fetch-xauusd-m5.py --self-test
-          python3 scripts/fetch-xauusd-m5.py --lookback-days 1825 --native-cache-dir gold-xauusd-data/raw_m5 --m1-cache-dir gold-xauusd-data/raw --output-file gold-xauusd-data/xauusd-m5.json.gz --request-delay 0.2 --workers 5
-      - name: Save XAUUSD M1 cache for resumability
+          echo "RESEARCH_END_DATE=$(date -u +%F)" >> "$GITHUB_ENV"
+          echo "RESEARCH_START_DATE=$(date -u -d '1825 days ago' +%F)" >> "$GITHUB_ENV"
+
+      - name: Validate downloader
+        run: python3 scripts/fetch-xauusd-m5.py --self-test
+
+      - name: GOLD data checkpoint 01
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 1825 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 1645 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 01
         if: always()
         uses: actions/cache/save@v4
         with:
           path: |
             gold-xauusd-data/raw
-            gold-xauusd-data/raw_m5
-          key: xauusd-v3-${{ runner.os }}-${{ github.run_id }}
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-01
+
+      - name: GOLD data checkpoint 02
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 1645 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 1465 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 02
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-02
+
+      - name: GOLD data checkpoint 03
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 1465 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 1285 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 03
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-03
+
+      - name: GOLD data checkpoint 04
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 1285 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 1105 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 04
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-04
+
+      - name: GOLD data checkpoint 05
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 1105 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 925 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 05
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-05
+
+      - name: GOLD data checkpoint 06
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 925 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 745 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 06
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-06
+
+      - name: GOLD data checkpoint 07
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 745 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 565 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 07
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-07
+
+      - name: GOLD data checkpoint 08
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 565 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 385 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 08
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-08
+
+      - name: GOLD data checkpoint 09
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 385 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 205 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 09
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-09
+
+      - name: GOLD data checkpoint 10
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 205 days" +%F)" --end-date "$(date -u -d "$RESEARCH_END_DATE - 25 days" +%F)" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 10
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-10
+
+      - name: GOLD data checkpoint 11
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$(date -u -d "$RESEARCH_END_DATE - 25 days" +%F)" --end-date "$RESEARCH_END_DATE" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --download-only --request-delay 0.4 --workers 4 --retries 6 --rounds 4
+      - name: Save GOLD cache checkpoint 11
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/raw
+            gold-xauusd-data/raw-m5
+          key: xauusd-v4-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-11
+
+      - name: Build final five-year XAUUSD M5 dataset
+        run: |
+          python3 scripts/fetch-xauusd-m5.py --start-date "$RESEARCH_START_DATE" --end-date "$RESEARCH_END_DATE" --cache-dir gold-xauusd-data/raw --native-m5-cache-dir gold-xauusd-data/raw-m5 --output-file gold-xauusd-data/xauusd-m5.json.gz --build-only
+
       - name: Upload prepared XAUUSD M5 dataset
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: gold-xauusd-m5-1825d
-          path: gold-xauusd-data/xauusd-m5.json.gz
+          path: |
+            gold-xauusd-data/xauusd-m5.json.gz
+            gold-xauusd-data/xauusd_m5_manifest.json
           retention-days: 7
-
   research:
     needs: prepare-data
     runs-on: ubuntu-latest
