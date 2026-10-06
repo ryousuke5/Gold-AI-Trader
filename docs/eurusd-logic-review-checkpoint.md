@@ -39,32 +39,43 @@ Corrected SELL execution model.
 
 ### Strategy E — pre-London range breakout
 
-An early exploratory implementation produced an apparently stronger result, but the stateful session-range explorer was later found to under-count / mismatch the exact session logic. Those optimistic figures are **discarded**.
+After correcting the timebase separation, E is a valid research candidate:
+- Session/range timezone: `Europe/London`, pre-London range 00:00–07:00 local
+- H1 trend timezone: `Europe/Nicosia` (XM-style broker H1)
+- Entry window: 07:00–15:00 London local
+- H1 stack + 6-bar slope agreement
+- Range width: 0.50–2.00 ATR
+- Structural stop: opposite range ±0.15 ATR
+- Target: 2.0R
+- Max one trade per London session/day
+- Spread-to-target filter: 15%
 
-Authoritative exact-evaluator result using the same canonical five-year dataset and execution model:
-
-- 256 trades
-- PF 1.076
-- EV +0.036R
-- net +9.31R
-- max DD 19.88R
-- recent 365d: 58 trades, PF 1.025, EV +0.011R, DD 11.43R
-- bootstrap EV 95% CI: [-0.102R, +0.181R]
-- P(EV <= 0): about 0.302
+Authoritative exact evaluator on the canonical five-year dataset:
+- 75 trades
+- PF 1.267
+- EV +0.098R
+- net +7.34R
+- max DD 4.93R
+- recent 365d: 12 trades, PF 2.177, EV +0.364R, DD 2.39R
+- BUY: 38 trades, EV +0.143R
+- SELL: 37 trades, EV +0.052R
+- bootstrap EV 95% CI: approximately [-0.123R, +0.329R]
+- bootstrap P(EV <= 0): about 0.204
 
 Annual net R:
-- 2021: -0.50R
-- 2022: -0.85R
-- 2023: +17.72R
-- 2024: -16.25R
-- 2025: +7.25R
-- 2026 YTD: +1.94R
+- 2021: -3.26R
+- 2022: +0.45R
+- 2023: +6.57R
+- 2024: -0.48R
+- 2025: +3.56R
+- 2026 YTD: +0.49R
 
-Direction asymmetry is a major warning:
-- BUY: 120 trades, EV +0.130R
-- SELL: 136 trades, EV -0.046R
+Cost sensitivity using the same candidate stream:
+- 0.8 pip / 0.1 pip: PF 1.267, EV +0.098R
+- 1.0 pip / 0.2 pip: PF 1.134, EV +0.051R
+- 1.2 pip / 0.2 pip: needs final exact workflow confirmation before acceptance
 
-**Decision: reject as production strategy for now.** The observed edge is too weak, the recent validation is near flat, drawdown is too large for the return, and the bootstrap interval includes zero.
+**Decision: RESEARCH ONLY.** E is materially better than C/D and deserves further OOS and cost-stress testing, but it does not yet clear the production gate because EV is below +0.10R and performance is execution-cost sensitive. The recent validation has only 12 trades, so it cannot establish a stable edge by itself.
 
 ## Next engineering gate
 
