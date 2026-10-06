@@ -41,7 +41,7 @@ test('E rejects excessive spread',()=>{
 test('E produces BUY only when H1 trend and range breakout align',()=>{
   const f=featureAt(8,1.1012);
   f.recentM15=f.recentM15.map((b,i)=>i<28?{...b,high:1.1004,low:1.0996,open:1.1000,close:1.1000}:b);
-  const s=buildEurUsdSessionRangeBreakoutSetupE(f,{sessionTimeZone:'Europe/London',minRangeAtr:0.5,maxRangeAtr:2.0,minH1Agreement:0.67});
+  const s=buildEurUsdSessionRangeBreakoutSetupE(f,{sessionTimeZone:'Europe/London',minRangeAtr:0.5,maxRangeAtr:2.0,minH1Agreement:0.67,maxSpreadToTpPct:100});
   assert.equal(s.candidate,'BUY');
   assert.equal(s.setup_type,'LONDON_SESSION_RANGE_BREAKOUT_E');
 });
@@ -51,7 +51,7 @@ test('E can produce SELL when H1 trend and downside breakout align',()=>{
   f.h1={close:1.0900,ema20:1.0950,ema50:1.1000,ema200:1.1050,atr14:0.002};
   f.m15={ema20:1.1000,ema50:1.1010,rsi14:42,atr14:0.001};
   f.recentM15=f.recentM15.map((b,i)=>i<28?{...b,high:1.1004,low:1.0996,open:1.1000,close:1.1000}:b);
-  const s=buildEurUsdSessionRangeBreakoutSetupE(f,{sessionTimeZone:'Europe/London',minRangeAtr:0.5,maxRangeAtr:2.0,minH1Agreement:0.67});
+  const s=buildEurUsdSessionRangeBreakoutSetupE(f,{sessionTimeZone:'Europe/London',minRangeAtr:0.5,maxRangeAtr:2.0,minH1Agreement:0.67,maxSpreadToTpPct:100});
   assert.equal(s.candidate,'SELL');
   assert.equal(s.setup_type,'LONDON_SESSION_RANGE_BREAKOUT_E');
 });
