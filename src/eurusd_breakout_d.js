@@ -36,7 +36,7 @@ export function buildEurUsdBreakoutSetupD(f,options={}){
   const minScore=Number(options.minScore??process.env.EURUSD_BREAKOUT_D_MIN_SCORE??80);
   const trend=eurUsdH1TrendBreakoutDTrend(f,options),bars=sortBars(f.recentM15||[]);
   if(bars.length<rangeBars+1)return waitResult(trend,['insufficient_recent_m15_bars']);
-  const latest=bars.at(-1),range=bars.slice(-(rangeBars+1,-1));
+  const latest=bars.at(-1);
   const prior=bars.slice(-(rangeBars+1)).slice(0,-1);
   if(f.barTime>0&&latest.time!==f.barTime)return waitResult(trend,['m15_bar_time_mismatch']);
   if(prior.length!==rangeBars)return waitResult(trend,['invalid_range_window']);
