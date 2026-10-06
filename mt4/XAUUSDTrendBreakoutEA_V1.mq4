@@ -96,9 +96,9 @@ bool InSession()
       return true;
 
    if(SessionStartHour < SessionEndHour)
-      return h >= SessionStartHour && h <= SessionEndHour;
+      return h >= SessionStartHour && h < SessionEndHour;
 
-   return h >= SessionStartHour || h <= SessionEndHour;
+   return h >= SessionStartHour || h < SessionEndHour;
 }
 
 //---------------------------------------------------------
@@ -333,6 +333,9 @@ double NormalizeLot(string sym, double lots)
    else if(step >= 0.1) lotDigits = 1;
    else if(step < 0.01) lotDigits = 3;
 
+   if(normalized < minLot - 1e-12)
+      return 0.0;
+
    return NormalizeDouble(normalized, lotDigits);
 }
 
@@ -359,7 +362,12 @@ double CalculateLots(string sym, double entry, double stop)
    if(moneyRisk <= 0.0 || riskPerLot <= 0.0)
       return 0.0;
 
-   return NormalizeLot(sym, moneyRisk / riskPerLot);
+   double rawLots = moneyRisk / riskPerLot;
+   double minLot = MarketInfo(sym, MODE_MINLOT);
+   if(rawLots < minLot - 1e-12)
+      return 0.0;
+
+   return NormalizeLot(sym, rawLots);
 }
 
 bool StopsMeetBrokerRules(string sym, int type, double entry, double stop, double target)
@@ -663,6 +671,18 @@ bool ExecuteSignal(string sym, int signalType, double entry, double stop, double
    if(OpenPositions(sym) >= MathMax(1, MaxOpenPositions))
    {
       Print("XAUUSD EA: max open positions reached.");
+      return false;
+   }
+
+   if(!IsTradeAllowed())
+   {
+      Print("XAUUSD EA: terminal/broker trade permission is not available.");
+      return false;
+   }
+
+   if((int)MarketInfo(sym, MODE_TRADEALLOWED) == 0)
+   {
+      Print("XAUUSD EA: symbol trade permission is not available.");
       return false;
    }
 
