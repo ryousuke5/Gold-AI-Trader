@@ -1,3 +1,7 @@
+import crypto from 'node:crypto';
+
+function fingerprint(value){return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');}
+
 const schema={
   type:'object',additionalProperties:false,
   properties:{
@@ -32,7 +36,9 @@ export async function analyzeHistoricalEnvironment({snapshot,context={},model=pr
     'Evaluate regime, volatility, trend persistence, breakout quality context, session/liquidity context, and supplied fundamental evidence when available.',
     'Give conservative judgments. Missing historical news is not neutral; it is missing evidence.'
   ].join('\n');
+  const promptFingerprint=fingerprint(system);
   const input={asof_time:asof,asof_iso:new Date(asof*1000).toISOString(),candidate_snapshot:snapshot,historical_context:context};
+  const contextFingerprint=fingerprint(context);
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),Math.max(5000,Number(process.env.OPENAI_TIMEOUT_MS||60000)));
   try{
     const response=await fetch('https://api.openai.com/v1/responses',{
@@ -50,7 +56,7 @@ export async function analyzeHistoricalEnvironment({snapshot,context={},model=pr
     if(!raw)throw new Error('empty_structured_output');
     const decision=JSON.parse(raw);
     if(decision.source_ids.some(id=>!sources.some(s=>String(s.id)===String(id))))throw new Error('unverified_source_id');
-    return {decision,responseId:envelope?.id||null,model};
+    return {decision,responseId:envelope?.id||null,model,promptFingerprint,contextFingerprint};
   }catch(e){if(e?.name==='AbortError')throw new Error('OpenAI request timed out');throw e;}
   finally{clearTimeout(timeout);}
 }
