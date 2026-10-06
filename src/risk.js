@@ -41,6 +41,20 @@ export function evaluateRisk({ decision, features, account, signalCreatedAt = Da
   if (direction !== 'WAIT' && !(Number(d.confidence) >= limits.minConfidence && Number(d.confidence) <= 1)) reasons.push('confidence_out_of_range_or_below_threshold');
   if (direction !== 'WAIT' && !(Number(d.risk_reward) >= limits.minRR)) reasons.push('rr_below_threshold');
   if (direction !== 'WAIT' && d.candidate && direction !== String(d.candidate).toUpperCase()) reasons.push('ai_direction_conflicts_with_candidate');
+  const envFilterEnabled = String(process.env.AI_ENV_FILTER_ENABLED || 'true').toLowerCase() !== 'false';
+  const envFilter = d.environment_filter || {};
+  if (direction !== 'WAIT' && envFilterEnabled) {
+    const fd = String(envFilter.decision || 'UNCLEAR').toUpperCase();
+    const fa = String(envFilter.candidate_alignment || 'UNCLEAR').toUpperCase();
+    const score = Number(envFilter.score);
+    if (!['APPROVE','REJECT','UNCLEAR'].includes(fd)) reasons.push('invalid_environment_filter_decision');
+    if (!['ALIGNED','CONFLICTING','UNCLEAR'].includes(fa)) reasons.push('invalid_environment_filter_alignment');
+    if (!(Number.isFinite(score) && score >= 0 && score <= 1)) reasons.push('invalid_environment_filter_score');
+    const minScore = Math.min(1, Math.max(0.5, envNum('AI_ENV_FILTER_MIN_SCORE', 0.70)));
+    if (fd !== 'APPROVE') reasons.push('ai_environment_filter_'+fd.toLowerCase());
+    if (fa === 'CONFLICTING') reasons.push('ai_environment_filter_candidate_conflict');
+    if (score < minScore) reasons.push('ai_environment_filter_score_below_threshold');
+  }
   const fundamental = d.fundamental || {};
   const fundamentalBias = String(fundamental.bias || 'INSUFFICIENT').toUpperCase();
   const fundamentalConfidence = Number(fundamental.confidence);
@@ -93,7 +107,14 @@ export function safeDecision(decision={}) {
   const fundamentalConfidence=Number(fundamental.confidence);
   return {
     decision:String(decision.decision||'WAIT').toUpperCase(), confidence:Number.isFinite(confidence)?confidence:0,
-    market_regime:String(decision.market_regime||'UNCLEAR').toUpperCase(), entry:Number(decision.entry||0), stop_loss:Number(decision.stop_loss||0),
+    market_regime:String(decision.market_regime||'UNCLEAR').toUpperCase(),
+    environment_filter:{
+      decision:String(decision.environment_filter?.decision||'UNCLEAR').toUpperCase(),
+      score:Number.isFinite(Number(decision.environment_filter?.score))?Number(decision.environment_filter.score):0,
+      candidate_alignment:String(decision.environment_filter?.candidate_alignment||'UNCLEAR').toUpperCase(),
+      regime_fit:String(decision.environment_filter?.regime_fit||'UNCLEAR').toUpperCase(),
+      reasons:Array.isArray(decision.environment_filter?.reasons)?decision.environment_filter.reasons.map(String):[]
+    }, entry:Number(decision.entry||0), stop_loss:Number(decision.stop_loss||0),
     take_profit:Number(decision.take_profit||0), risk_reward:Number(decision.risk_reward||0), reason:String(decision.reason||''),
     invalid_reasons:Array.isArray(decision.invalid_reasons)?decision.invalid_reasons.map(String):[],
     fundamental:{
