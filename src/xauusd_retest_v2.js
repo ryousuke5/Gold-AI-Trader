@@ -183,6 +183,25 @@ export function findXauRetestSetup(features = {}, options = {}) {
     const direction = isBuyBreak ? 'BUY' : 'SELL';
     const level = direction === 'BUY' ? rangeHigh : rangeLow;
 
+    let pathIntact = true;
+    for (let k = bi + 1; k < retestIndex; k += 1) {
+      const mid = bars[k];
+      if (!isValidBar(mid)) {
+        pathIntact = false;
+        break;
+      }
+      if (direction === 'BUY') {
+        if (mid.close < level - cfg.maxPenetrationAtr * atr) {
+          pathIntact = false;
+          break;
+        }
+      } else if (mid.close > level + cfg.maxPenetrationAtr * atr) {
+        pathIntact = false;
+        break;
+      }
+    }
+    if (!pathIntact) continue;
+
     const retestTouch = direction === 'BUY'
       ? retest.low <= level + cfg.retestToleranceAtr * atr &&
         retest.low >= level - cfg.maxPenetrationAtr * atr &&
