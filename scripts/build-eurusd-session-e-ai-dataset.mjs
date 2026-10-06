@@ -14,8 +14,8 @@ function atr(b,p){const o=new Array(b.length).fill(null);if(b.length<=p)return o
 function indicators(b){const c=b.map(x=>x.close),e20=ema(c,20),e50=ema(c,50),e200=ema(c,200),rr=rsi(c,14),a=atr(b,14);return b.map((x,i)=>({...x,ema20:e20[i],ema50:e50[i],ema200:e200[i],rsi14:rr[i],atr14:a[i]}));}
 function localParts(ts){return new Intl.DateTimeFormat('en-GB',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',weekday:'short',hourCycle:'h23'}).formatToParts(new Date(ts*1000)).reduce((o,p)=>{if(p.type!=='literal')o[p.type]=p.value;return o;},{});}
 function localKey(ts){const p=localParts(ts);return `${p.year}-${p.month}-${p.day}`;}
-function h1Start(ts){const p=localParts(ts);const hh=Number(p.hour);return Date.parse(`${p.year}-${p.month}-${p.day}T${String(hh).padStart(2,'0')}:00:00Z`) / 1000;}
-function h1Agg(m){const map=new Map();for(const b of m){const k=h1Start(b.time),x=map.get(k);if(!x)map.set(k,{time:k,open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume});else{x.high=Math.max(x.high,b.high);x.low=Math.min(x.low,b.low);x.close=b.close;x.volume+=b.volume;}}return [...map.values()].sort((a,b)=>a.time-b.time);}
+function h1Key(ts){const p=localParts(ts);return String(p.year)+'-'+String(p.month)+'-'+String(p.day)+'-'+String(p.hour);}
+function h1Agg(m){const map=new Map();for(const b of m){const k=h1Key(b.time),x=map.get(k);if(!x)map.set(k,{time:b.time,open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume});else{x.high=Math.max(x.high,b.high);x.low=Math.min(x.low,b.low);x.close=b.close;x.volume+=b.volume;}}return [...map.values()].sort((a,b)=>a.time-b.time);}
 function latestCompletedH1(h,t){let lo=0,hi=h.length-1,ans=-1;while(lo<=hi){const m=Math.floor((lo+hi)/2);if(h[m].time+3600<=t){ans=m;lo=m+1;}else hi=m-1;}return ans;}
 function futureOutcome(bars,i,dir,entry,stop,target){
   const spread=SPREAD*0.0001,sl=SLIP*0.0001,end=Math.min(bars.length-1,i+HOLD);
