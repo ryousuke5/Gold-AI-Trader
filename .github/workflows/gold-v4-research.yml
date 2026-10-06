@@ -1,0 +1,329 @@
+name: GOLD V4 Research
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'config/gold-v4-data-window.json'
+      - 'src/gold_strategy_v4.js'
+      - 'scripts/backtest-gold-v4.mjs'
+      - 'scripts/backtest-gold-v4-walkforward.mjs'
+      - 'scripts/fetch-xauusd-m5-chunk.py'
+      - 'scripts/assemble-xauusd-m5.py'
+      - 'tests/gold_strategy_v4.test.js'
+      - '.github/workflows/gold-v4-research.yml'
+  workflow_dispatch:
+    inputs:
+      end_date_utc:
+        description: 'UTC cutoff date (exclusive), YYYY-MM-DD. Blank = committed V4 window.'
+        required: false
+        default: ''
+
+concurrency:
+  group: gold-v4-research
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      chunks: \${{ steps.plan.outputs.chunks }}
+      start_date: \${{ steps.plan.outputs.start_date }}
+      end_date: \${{ steps.plan.outputs.end_date }}
+      lookback_days: \${{ steps.plan.outputs.lookback_days }}
+      cache_version: \${{ steps.plan.outputs.cache_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build resumable V4 14-day chunk plan
+        id: plan
+        env:
+          END_DATE_INPUT: \${{ inputs.end_date_utc }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from datetime import date, timedelta
+          with open("config/gold-v4-data-window.json","r",encoding="utf-8") as fh:
+              cfg=json.load(fh)
+          lookback_days=int(cfg["lookback_days"])
+          chunk_days=int(cfg["chunk_days"])
+          cache_version=str(cfg["cache_version"]).strip()
+          configured_end=str(cfg["end_date_utc"]).strip()
+          requested=os.environ.get("END_DATE_INPUT","").strip()
+          end_day=date.fromisoformat(requested or configured_end)
+          start_day=end_day-timedelta(days=lookback_days)
+          if lookback_days<365 or not (1<=chunk_days<=31) or not cache_version:
+              raise SystemExit("Invalid V4 data-window configuration")
+          chunks=[]
+          cursor=start_day
+          index=1
+          while cursor<end_day:
+              chunk_end=min(cursor+timedelta(days=chunk_days),end_day)
+              chunks.append({"index":index,"id":f"{cursor:%Y%m%d}_{chunk_end:%Y%m%d}","start":cursor.isoformat(),"end":chunk_end.isoformat()})
+              cursor=chunk_end; index+=1
+          if len(chunks)>256:
+              raise SystemExit(f"Too many chunks: {len(chunks)}")
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as fh:
+              fh.write("chunks="+json.dumps(chunks,separators=(",",":"))+"\\n")
+              fh.write(f"start_date={start_day.isoformat()}\\n")
+              fh.write(f"end_date={end_day.isoformat()}\\n")
+              fh.write(f"lookback_days={lookback_days}\\n")
+              fh.write(f"cache_version={cache_version}\\n")
+          print(json.dumps({"window_start":start_day.isoformat(),"window_end_exclusive":end_day.isoformat(),"chunk_count":len(chunks),"cache_version":cache_version},indent=2))
+          PY
+
+  prepare:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        chunk: \${{ fromJSON(needs.plan.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore completed V4 M5 chunk
+        id: m5cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            gold-xauusd-data/chunks/xauusd-m5-\${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m5-\${{ matrix.chunk.id }}.manifest.json
+          key: xauusd-v4-m5-\${{ needs.plan.outputs.cache_version }}-\${{ runner.os }}-\${{ matrix.chunk.id }}
+      - name: Restore V4 raw M1 checkpoint
+        if: steps.m5cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: gold-xauusd-data/raw/\${{ matrix.chunk.id }}
+          key: xauusd-v4-m1-\${{ needs.plan.outputs.cache_version }}-\${{ runner.os }}-\${{ matrix.chunk.id }}-\${{ github.run_id }}
+          restore-keys: |
+            xauusd-v4-m1-\${{ needs.plan.outputs.cache_version }}-\${{ runner.os }}-\${{ matrix.chunk.id }}-
+      - name: Prepare directories
+        run: |
+          mkdir -p "gold-xauusd-data/raw/\${{ matrix.chunk.id }}" gold-xauusd-data/chunks
+      - name: Validate resumable downloader
+        if: steps.m5cache.outputs.cache-hit != 'true'
+        run: python3 scripts/fetch-xauusd-m5-chunk.py --self-test
+      - name: Download or resume V4 chunk
+        if: steps.m5cache.outputs.cache-hit != 'true'
+        run: |
+          python3 scripts/fetch-xauusd-m5-chunk.py \
+            --start-date "\${{ matrix.chunk.start }}" \
+            --end-date "\${{ matrix.chunk.end }}" \
+            --cache-dir "gold-xauusd-data/raw/\${{ matrix.chunk.id }}" \
+            --output-file "gold-xauusd-data/chunks/xauusd-m5-\${{ matrix.chunk.id }}.json.gz" \
+            --manifest-file "gold-xauusd-data/chunks/xauusd-m5-\${{ matrix.chunk.id }}.manifest.json" \
+            --request-delay 1.5 --timeout 30 --retries 8
+      - name: Save V4 raw M1 checkpoint
+        if: always() && steps.m5cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: gold-xauusd-data/raw/\${{ matrix.chunk.id }}
+          key: xauusd-v4-m1-\${{ needs.plan.outputs.cache_version }}-\${{ runner.os }}-\${{ matrix.chunk.id }}-\${{ github.run_id }}
+      - name: Save completed V4 M5 chunk
+        if: success() && steps.m5cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/chunks/xauusd-m5-\${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m5-\${{ matrix.chunk.id }}.manifest.json
+          key: xauusd-v4-m5-\${{ needs.plan.outputs.cache_version }}-\${{ runner.os }}-\${{ matrix.chunk.id }}
+      - name: Upload completed V4 chunk
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v4-xauusd-m5-chunk-\${{ matrix.chunk.id }}
+          path: |
+            gold-xauusd-data/chunks/xauusd-m5-\${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m5-\${{ matrix.chunk.id }}.manifest.json
+          retention-days: 7
+
+  assemble:
+    needs: [plan, prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      lookback_days: \${{ needs.plan.outputs.lookback_days }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download completed V4 chunks
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gold-v4-xauusd-m5-chunk-*
+          path: gold-xauusd-data/chunks
+          merge-multiple: true
+      - name: Assemble and validate V4 dataset
+        run: |
+          python3 scripts/assemble-xauusd-m5.py \
+            --input-dir gold-xauusd-data/chunks \
+            --output-file gold-xauusd-data/xauusd-m5.json.gz \
+            --manifest-file gold-xauusd-data/xauusd_m5_manifest.json \
+            --start-date "\${{ needs.plan.outputs.start_date }}" \
+            --end-date "\${{ needs.plan.outputs.end_date }}" \
+            --min-bars 200000
+      - name: Upload V4 prepared dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v4-xauusd-m5-\${{ needs.plan.outputs.lookback_days }}d
+          path: |
+            gold-xauusd-data/xauusd-m5.json.gz
+            gold-xauusd-data/xauusd_m5_manifest.json
+          retention-days: 7
+
+  research:
+    needs: assemble
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline
+            range_lookback: "12"
+            min_range_atr: "0.60"
+            max_range_atr: "2.40"
+            breakout_atr: "0.10"
+            breakout_body_atr: "0.45"
+            breakout_close_location: "0.70"
+            breakout_volume_ratio: "1.15"
+            max_retest_bars: "4"
+            retest_tolerance_atr: "0.20"
+            max_retest_depth_atr: "0.35"
+            retest_body_atr: "0.15"
+            retest_close_location: "0.60"
+            confirmation_buffer_atr: "0.05"
+            max_extension_atr: "1.30"
+            session_start: "7"
+            session_end: "20"
+          - name: strict
+            range_lookback: "12"
+            min_range_atr: "0.70"
+            max_range_atr: "2.20"
+            breakout_atr: "0.15"
+            breakout_body_atr: "0.50"
+            breakout_close_location: "0.75"
+            breakout_volume_ratio: "1.25"
+            max_retest_bars: "3"
+            retest_tolerance_atr: "0.15"
+            max_retest_depth_atr: "0.25"
+            retest_body_atr: "0.20"
+            retest_close_location: "0.65"
+            confirmation_buffer_atr: "0.05"
+            max_extension_atr: "1.10"
+            session_start: "7"
+            session_end: "17"
+          - name: balanced_ny
+            range_lookback: "12"
+            min_range_atr: "0.60"
+            max_range_atr: "2.40"
+            breakout_atr: "0.10"
+            breakout_body_atr: "0.45"
+            breakout_close_location: "0.70"
+            breakout_volume_ratio: "1.15"
+            max_retest_bars: "4"
+            retest_tolerance_atr: "0.20"
+            max_retest_depth_atr: "0.35"
+            retest_body_atr: "0.15"
+            retest_close_location: "0.60"
+            confirmation_buffer_atr: "0.05"
+            max_extension_atr: "1.30"
+            session_start: "12"
+            session_end: "20"
+          - name: patient
+            range_lookback: "18"
+            min_range_atr: "0.50"
+            max_range_atr: "2.80"
+            breakout_atr: "0.15"
+            breakout_body_atr: "0.50"
+            breakout_close_location: "0.75"
+            breakout_volume_ratio: "1.20"
+            max_retest_bars: "5"
+            retest_tolerance_atr: "0.25"
+            max_retest_depth_atr: "0.40"
+            retest_body_atr: "0.15"
+            retest_close_location: "0.60"
+            confirmation_buffer_atr: "0.05"
+            max_extension_atr: "1.20"
+            session_start: "7"
+            session_end: "20"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: gold-v4-xauusd-m5-\${{ needs.assemble.outputs.lookback_days }}d
+          path: gold-xauusd-data
+      - name: Run tests
+        run: npm test
+      - name: Run V4 five-year backtest
+        env:
+          GOLD_BACKTEST_LOOKBACK_DAYS: "\${{ needs.assemble.outputs.lookback_days }}"
+          GOLD_BACKTEST_INITIAL_EQUITY: "100000"
+          GOLD_BACKTEST_RISK_PCT: "0.25"
+          GOLD_BACKTEST_SPREAD_PRICE: "0.50"
+          GOLD_BACKTEST_SLIPPAGE_PRICE: "0.05"
+          GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: "2"
+          GOLD_BACKTEST_MAX_DRAWDOWN_PCT: "5"
+          GOLD_BACKTEST_MAX_HOLD_BARS: "96"
+          GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: "0.50"
+          GOLD_BACKTEST_MIN_EFFECTIVE_RR: "1.50"
+          GOLD_RANGE_LOOKBACK: "\${{ matrix.range_lookback }}"
+          GOLD_MIN_RANGE_ATR: "\${{ matrix.min_range_atr }}"
+          GOLD_MAX_RANGE_ATR: "\${{ matrix.max_range_atr }}"
+          GOLD_BREAKOUT_ATR: "\${{ matrix.breakout_atr }}"
+          GOLD_BREAKOUT_BODY_ATR: "\${{ matrix.breakout_body_atr }}"
+          GOLD_BREAKOUT_CLOSE_LOCATION: "\${{ matrix.breakout_close_location }}"
+          GOLD_BREAKOUT_VOLUME_RATIO: "\${{ matrix.breakout_volume_ratio }}"
+          GOLD_MAX_RETEST_BARS: "\${{ matrix.max_retest_bars }}"
+          GOLD_RETEST_TOLERANCE_ATR: "\${{ matrix.retest_tolerance_atr }}"
+          GOLD_MAX_RETEST_DEPTH_ATR: "\${{ matrix.max_retest_depth_atr }}"
+          GOLD_RETEST_BODY_ATR: "\${{ matrix.retest_body_atr }}"
+          GOLD_RETEST_CLOSE_LOCATION: "\${{ matrix.retest_close_location }}"
+          GOLD_CONFIRMATION_BUFFER_ATR: "\${{ matrix.confirmation_buffer_atr }}"
+          GOLD_MAX_EXTENSION_ATR: "\${{ matrix.max_extension_atr }}"
+          GOLD_SESSION_START_UTC: "\${{ matrix.session_start }}"
+          GOLD_SESSION_END_UTC: "\${{ matrix.session_end }}"
+          GOLD_BACKTEST_DATA_FILE: "gold-xauusd-data/xauusd-m5.json.gz"
+          GOLD_BACKTEST_OUTPUT_DIR: "gold-v4-backtest-output"
+        run: node scripts/backtest-gold-v4.mjs
+      - name: Upload V4 result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v4-\${{ matrix.name }}
+          path: gold-v4-backtest-output/
+          retention-days: 30
+          if-no-files-found: warn
+
+  walkforward:
+    needs: [assemble, research]
+    if: \${{ always() && needs.assemble.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: gold-v4-xauusd-m5-\${{ needs.assemble.outputs.lookback_days }}d
+          path: gold-xauusd-data
+      - name: Run fixed 3y IS / 2y OOS V4 validation
+        env:
+          GOLD_BACKTEST_DATA_FILE: "gold-xauusd-data/xauusd-m5.json.gz"
+          GOLD_V4_WALKFORWARD_OUTPUT_DIR: "gold-v4-walkforward-output"
+        run: node scripts/backtest-gold-v4-walkforward.mjs
+      - name: Upload V4 walk-forward report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v4-walkforward
+          path: gold-v4-walkforward-output/
+          retention-days: 30
+          if-no-files-found: warn

@@ -1,0 +1,7 @@
+{
+  "end_date_utc": "2026-10-05",
+  "lookback_days": 1825,
+  "chunk_days": 14,
+  "cache_version": "v4-r1",
+  "purpose": "Fixed XAUUSD M5 research window for GOLD V4 breakout-retest validation; independent cache namespace, resumable chunk/checkpoint acquisition."
+}
