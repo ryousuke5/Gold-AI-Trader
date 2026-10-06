@@ -1,0 +1,107 @@
+name: EURUSD Strategy D Research Backtest
+
+on:
+  push:
+    branches: [research/eurusd-logic-review-v4]
+    paths:
+      - 'src/eurusd_breakout_d.js'
+      - 'scripts/prepare-eurusd-m15-data.mjs'
+      - 'scripts/backtest-eurusd-breakout-d.mjs'
+      - '.github/workflows/eurusd-strategy-d-backtest.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-strategy-d-research
+  cancel-in-progress: true
+
+jobs:
+  prepare-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Prepare canonical EURUSD dataset
+        env:
+          EURUSD_DATA_LOOKBACK_DAYS: '1825'
+          EURUSD_DATA_OUTPUT: eurusd-m15-bid.json
+        run: node scripts/prepare-eurusd-m15-data.mjs
+      - name: Upload canonical EURUSD dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-m15-bid-dataset
+          path: eurusd-m15-bid.json
+          retention-days: 30
+
+  backtest:
+    needs: prepare-data
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: d_baseline
+            min_range: '0.55'
+            max_range: '1.80'
+            break_buffer: '0.05'
+            trigger_range: '0.75'
+            min_body: '0.30'
+            close_location: '0.70'
+            atr_expansion: '0.95'
+            min_score: '80'
+          - name: d_looser
+            min_range: '0.40'
+            max_range: '2.20'
+            break_buffer: '0.02'
+            trigger_range: '0.60'
+            min_body: '0.25'
+            close_location: '0.62'
+            atr_expansion: '0.90'
+            min_score: '75'
+          - name: d_quality
+            min_range: '0.70'
+            max_range: '1.50'
+            break_buffer: '0.08'
+            trigger_range: '0.90'
+            min_body: '0.35'
+            close_location: '0.75'
+            atr_expansion: '1.05'
+            min_score: '85'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: eurusd-m15-bid-dataset
+          path: data
+      - name: Run Strategy D five-year backtest
+        env:
+          PULLBACK_BACKTEST_DATA_FILE: data/eurusd-m15-bid.json
+          PULLBACK_BACKTEST_SERVER_TIMEZONE: Europe/Nicosia
+          PULLBACK_BACKTEST_SPREAD_PIPS: '0.8'
+          PULLBACK_BACKTEST_SLIPPAGE_PIPS: '0.1'
+          PULLBACK_BACKTEST_MAX_HOLD_BARS: '96'
+          PULLBACK_BACKTEST_COOLDOWN_BARS: '2'
+          PULLBACK_BACKTEST_D_RANGE_BARS: '8'
+          PULLBACK_BACKTEST_D_MIN_RANGE_ATR: '${{ matrix.min_range }}'
+          PULLBACK_BACKTEST_D_MAX_RANGE_ATR: '${{ matrix.max_range }}'
+          PULLBACK_BACKTEST_D_BREAK_BUFFER_ATR: '${{ matrix.break_buffer }}'
+          PULLBACK_BACKTEST_D_MIN_TRIGGER_RANGE_ATR: '${{ matrix.trigger_range }}'
+          PULLBACK_BACKTEST_D_MIN_TRIGGER_BODY_ATR: '${{ matrix.min_body }}'
+          PULLBACK_BACKTEST_D_MIN_CLOSE_LOCATION: '${{ matrix.close_location }}'
+          PULLBACK_BACKTEST_D_MIN_ATR_EXPANSION: '${{ matrix.atr_expansion }}'
+          PULLBACK_BACKTEST_D_MIN_SCORE: '${{ matrix.min_score }}'
+          PULLBACK_BACKTEST_OUTPUT_DIR: d-backtest-output
+        run: node scripts/backtest-eurusd-breakout-d.mjs
+      - name: Upload Strategy D results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-strategy-d-${{ matrix.name }}
+          path: d-backtest-output/
+          retention-days: 30
