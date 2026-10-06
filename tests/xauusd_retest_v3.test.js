@@ -32,7 +32,8 @@ test('V3 accepts range -> breakout -> retest -> delayed reclaim confirmation',()
   bars.push(bar(t0+26*300,101.8,102.5,101.9,102.1));
   bars.push(bar(t0+27*300,102.1,103.1,102.0,102.95));
 
-  const setup=findXauRetestSetupV3(features(bars),{
+  const debug={targetRetestIndex:25};
+  const setup=findXauRetestSetupV3(features(bars),{debug,...
     breakoutLookback:12,
     minRangeAtr:0.55,maxRangeAtr:3.5,
     breakoutAtr:0.05,breakoutBodyAtr:0.25,breakoutCloseLocation:0.58,
@@ -44,6 +45,7 @@ test('V3 accepts range -> breakout -> retest -> delayed reclaim confirmation',()
     h1BuyRsiMin:45,h1BuyRsiMax:75,h1SellRsiMin:25,h1SellRsiMax:55,
     maxSpreadPrice:0.60
   });
+  console.log('V3 DEBUG',JSON.stringify(debug));
   assert.equal(setup.candidate,'BUY');
   assert.equal(setup.setup_type,'H1_RANGE_BREAK_RETEST_RECLAIM_V3');
   assert.equal(setup.diagnostics.breakout_time,bars[24].time);
