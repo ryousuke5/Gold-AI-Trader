@@ -20,7 +20,7 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     env:
-      V3_CI_CHECKPOINT: '2026-10-06-v3-fixture-ohcl-fixed'
+      V3_CI_CHECKPOINT: '2026-10-07-v3-fixed-prepared-data'
     strategy:
       fail-fast: false
       matrix:
@@ -70,9 +70,21 @@ jobs:
         run: node --check src/xauusd_retest_v3.js && node --check scripts/backtest-xauusd-retest-v3.mjs
       - name: Run V3 unit tests
         run: node --test tests/xauusd_retest_v3.test.js
+      - name: Download validated GOLD V2 prepared dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          repository: ${{ github.repository }}
+          run-id: 37459802618
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate prepared dataset exists
+        run: test -s gold-xauusd-data/xauusd-m5.json.gz
       - name: Run 365-day V3 smoke backtest
         env:
           XAU_V3_DAYS: '365'
+          XAU_V3_END_UTC: '2026-10-05T00:00:00Z'
+          XAU_V3_DATA_FILE: 'gold-xauusd-data/xauusd-m5.json.gz'
           XAU_V3_TIMEZONE: 'Europe/Nicosia'
           XAU_V3_SPREAD_PRICE: '0.55'
           XAU_V3_SLIPPAGE_PRICE: '0.10'
