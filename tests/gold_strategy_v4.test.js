@@ -61,9 +61,8 @@ test('GOLD V4 rejects missing retest', () => {
 
 test('GOLD V4 rejects out-of-session signal', () => {
   const f = buyFeatures();
-  const d = new Date(f.recentM5.at(-1).time * 1000);
-  d.setUTCHours(3, 0, 0, 0);
-  f.recentM5.at(-1).time = Math.floor(d.getTime() / 1000);
+  const end = Date.parse('2026-01-12T03:00:00Z') / 1000;
+  f.recentM5 = f.recentM5.map((bar, i) => ({ ...bar, time: end - (14 - i) * 300 }));
   const result = buildGoldV4Setup(f);
   assert.equal(result.candidate, 'WAIT');
   assert.equal(result.reason, 'session_filter');
