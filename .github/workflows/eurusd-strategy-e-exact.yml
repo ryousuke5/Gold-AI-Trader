@@ -1,0 +1,120 @@
+name: EURUSD Strategy E Exact Research Backtest
+
+on:
+  push:
+    branches: [research/eurusd-logic-review-v4]
+    paths:
+      - 'src/eurusd_session_breakout_e.js'
+      - 'scripts/prepare-eurusd-m15-data.mjs'
+      - 'scripts/backtest-eurusd-session-e-exact.mjs'
+      - '.github/workflows/eurusd-strategy-e-exact.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-strategy-e-exact
+  cancel-in-progress: true
+
+jobs:
+  prepare-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Prepare canonical EURUSD dataset
+        env:
+          EURUSD_DATA_LOOKBACK_DAYS: '1825'
+          EURUSD_DATA_OUTPUT: eurusd-m15-bid.json
+        run: node scripts/prepare-eurusd-m15-data.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-e-exact-dataset
+          path: eurusd-m15-bid.json
+          retention-days: 30
+  backtest:
+    needs: prepare-data
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline_08_01
+            spread: '0.8'
+            slip: '0.1'
+            min_range: '0.50'
+            max_range: '2.00'
+            stop_buffer: '0.15'
+            tp: '2.00'
+            h1_agree: '0.67'
+          - name: cost_10_02
+            spread: '1.0'
+            slip: '0.2'
+            min_range: '0.50'
+            max_range: '2.00'
+            stop_buffer: '0.15'
+            tp: '2.00'
+            h1_agree: '0.67'
+          - name: cost_12_02
+            spread: '1.2'
+            slip: '0.2'
+            min_range: '0.50'
+            max_range: '2.00'
+            stop_buffer: '0.15'
+            tp: '2.00'
+            h1_agree: '0.67'
+          - name: neighbor_looser
+            spread: '0.8'
+            slip: '0.1'
+            min_range: '0.45'
+            max_range: '2.20'
+            stop_buffer: '0.15'
+            tp: '2.00'
+            h1_agree: '0.67'
+          - name: neighbor_tighter
+            spread: '0.8'
+            slip: '0.1'
+            min_range: '0.55'
+            max_range: '1.80'
+            stop_buffer: '0.15'
+            tp: '2.00'
+            h1_agree: '0.67'
+          - name: neighbor_h1_relaxed
+            spread: '0.8'
+            slip: '0.1'
+            min_range: '0.50'
+            max_range: '2.00'
+            stop_buffer: '0.15'
+            tp: '2.00'
+            h1_agree: '0.60'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: eurusd-e-exact-dataset
+          path: data
+      - name: Run exact Strategy E backtest
+        env:
+          EURUSD_E_DATA_FILE: data/eurusd-m15-bid.json
+          EURUSD_E_SPREAD_PIPS: '${{ matrix.spread }}'
+          EURUSD_E_SLIPPAGE_PIPS: '${{ matrix.slip }}'
+          EURUSD_E_MIN_RANGE_ATR: '${{ matrix.min_range }}'
+          EURUSD_E_MAX_RANGE_ATR: '${{ matrix.max_range }}'
+          EURUSD_E_STOP_BUFFER_ATR: '${{ matrix.stop_buffer }}'
+          EURUSD_E_TP_R: '${{ matrix.tp }}'
+          EURUSD_E_H1_AGREEMENT: '${{ matrix.h1_agree }}'
+          EURUSD_E_MAX_SPREAD_TO_TP_PCT: '15'
+          EURUSD_E_OUTPUT_DIR: e-exact-output
+        run: node scripts/backtest-eurusd-session-e-exact.mjs
+      - name: Upload exact Strategy E results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-strategy-e-exact-${{ matrix.name }}
+          path: e-exact-output/
+          retention-days: 30
