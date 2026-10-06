@@ -38,8 +38,10 @@ input int    SlippagePoints = 30;
 input int    MaxOpenPositions = 1;
 input int    CooldownBars = 2;
 input bool   UseSessionFilter = true;
-input int    SessionStartHour = 17;
-input int    SessionEndHour = 20;
+input int    SessionStartJstHour = 21;
+input int    SessionStartJstMinute = 0;
+input int    SessionEndJstHour = 0;
+input int    SessionEndJstMinute = 0;
 input bool   AllowAutoOrders = false;
 input bool   CloseOnOppositeSignal = false;
 input int    MagicNumber = 26100601;
@@ -85,20 +87,75 @@ bool IsNewSignalBar(string sym)
    return true;
 }
 
-bool InSession()
+bool IsLastSunday(int year, int month, datetime day)
+{
+   MqlDateTime dt;
+   TimeToStruct(day, dt);
+   int days = TimeDay(day);
+   int dow = TimeDayOfWeek(day);
+   return dow == 0 && days >= 25;
+}
+
+int LastSundayDay(int year, int month)
+{
+   int lastDay = 31;
+   if(month == 4 || month == 6 || month == 9 || month == 11) lastDay = 30;
+   if(month == 2) lastDay = ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) ? 29 : 28;
+   for(int d = lastDay; d >= lastDay - 6; d--)
+   {
+      datetime t = StringToTime(IntegerToString(year) + "." +
+                                StringFormat("%02d", month) + "." +
+                                StringFormat("%02d", d) + " 00:00");
+      if(TimeDayOfWeek(t) == 0)
+         return d;
+   }
+   return lastDay;
+}
+
+int XmServerUtcOffsetHours(datetime serverTime)
+{
+   MqlDateTime dt;
+   TimeToStruct(serverTime, dt);
+   int year = dt.year;
+   int marchSunday = LastSundayDay(year, 3);
+   int octoberSunday = LastSundayDay(year, 10);
+
+   datetime dstStart = StringToTime(IntegerToString(year) + ".03." +
+                                    StringFormat("%02d", marchSunday) + " 04:00");
+   datetime dstEnd = StringToTime(IntegerToString(year) + ".10." +
+                                  StringFormat("%02d", octoberSunday) + " 04:00");
+
+   return (serverTime >= dstStart && serverTime < dstEnd) ? 3 : 2;
+}
+
+bool InSession(datetime signalBarOpen)
 {
    if(!UseSessionFilter)
       return true;
 
-   int h = TimeHour(TimeCurrent());
+   if(SessionStartJstHour < 0 || SessionStartJstHour > 23 ||
+      SessionEndJstHour < 0 || SessionEndJstHour > 23 ||
+      SessionStartJstMinute < 0 || SessionStartJstMinute > 59 ||
+      SessionEndJstMinute < 0 || SessionEndJstMinute > 59)
+      return false;
 
-   if(SessionStartHour == SessionEndHour)
+   int offset = XmServerUtcOffsetHours(signalBarOpen);
+   datetime utc = signalBarOpen - offset * 3600;
+   datetime jst = utc + 9 * 3600;
+
+   MqlDateTime dt;
+   TimeToStruct(jst, dt);
+   int currentMinutes = dt.hour * 60 + dt.min;
+   int startMinutes = SessionStartJstHour * 60 + SessionStartJstMinute;
+   int endMinutes = SessionEndJstHour * 60 + SessionEndJstMinute;
+
+   if(startMinutes == endMinutes)
       return true;
 
-   if(SessionStartHour < SessionEndHour)
-      return h >= SessionStartHour && h < SessionEndHour;
+   if(startMinutes < endMinutes)
+      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
 
-   return h >= SessionStartHour || h < SessionEndHour;
+   return currentMinutes >= startMinutes || currentMinutes < endMinutes;
 }
 
 //---------------------------------------------------------
@@ -439,7 +496,7 @@ int GetSignal(string sym, double &entry, double &stop, double &target, double &a
       return -1;
    }
 
-   if(UseSessionFilter && !InSession())
+   if(UseSessionFilter && !InSession(signalOpen))
    {
       reason = "outside_session";
       return 0;
@@ -817,7 +874,7 @@ int OnInit()
          " trendTF=", TrendTimeframe,
          " riskPct=", DoubleToString(RiskPercent, 3),
          " maxSpread=", DoubleToString(MaxSpreadPrice, 2),
-         " session=", UseSessionFilter ? "on" : "off",
+         " session_jst=21:00-00:00", 
          " autoOrders=", AllowAutoOrders ? "ON" : "OFF");
 
    if(!IsGoldSymbol(sym))
