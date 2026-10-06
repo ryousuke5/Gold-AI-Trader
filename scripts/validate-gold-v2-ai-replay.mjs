@@ -11,22 +11,24 @@ const rows=await lines(DATA), ctx=await lines(CONTEXT);
 if(!rows.length)throw new Error('Replay dataset empty');
 const candidateTimes=new Map(rows.map(x=>[String(x.candidate_id),Number(x.asof_time)]));
 const contextTimes=new Set();
-const sourceIds=new Set();
+const sourceIdsByContext=new Map();
 let sources=0,future=0,invalid=0,duplicateContext=0,duplicateSource=0;
 for(const item of ctx){
   const asof=Number(item.asof_time);
   if(!Number.isFinite(asof)||asof<=0){invalid++;continue;}
   const key=String(asof);
   if(contextTimes.has(key))duplicateContext++;contextTimes.add(key);
+  const localSourceIds=new Set();
   for(const s of Array.isArray(item.sources)?item.sources:[]){
     sources++;
     const id=String(s?.id||'');
     const published=Number(s?.published_at);
-    if(!id||sourceIds.has(id))duplicateSource++;
-    if(id)sourceIds.add(id);
+    if(!id||localSourceIds.has(id))duplicateSource++;
+    if(id)localSourceIds.add(id);
     if(!Number.isFinite(published)||published>asof)future++;
     if(s?.event_time!==undefined && !Number.isFinite(Number(s.event_time)))invalid++;
   }
+  sourceIdsByContext.set(key,localSourceIds.size);
 }
 const results=await lines(RESULTS).catch(e=>e.code==='ENOENT'?[]:Promise.reject(e));
 const resultIds=new Set();
