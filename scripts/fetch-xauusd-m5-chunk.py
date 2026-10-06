@@ -144,6 +144,13 @@ def parse_day(raw: bytes, day: date) -> list[dict]:
     return bars
 
 
+def is_inactive_flat_bar(bar: dict) -> bool:
+    return (
+        float(bar.get("volume", 0) or 0) == 0
+        and bar["open"] == bar["high"] == bar["low"] == bar["close"]
+    )
+
+
 def resample_m1_to_m5(m1: list[dict]) -> tuple[list[dict], int]:
     grouped: dict[int, list[dict]] = defaultdict(list)
     for bar in m1:
@@ -427,7 +434,9 @@ def main() -> None:
         dedup_m1.append(bar)
         last_ts = bar["time"]
 
-    m5, incomplete_m5 = resample_m1_to_m5(dedup_m1)
+    inactive_flat_m1 = sum(1 for bar in dedup_m1 if is_inactive_flat_bar(bar))
+    active_m1 = [bar for bar in dedup_m1 if not is_inactive_flat_bar(bar)]
+    m5, incomplete_m5 = resample_m1_to_m5(active_m1)
     if not m5:
         raise RuntimeError(
             f"No XAUUSD M5 data for chunk {start_day.isoformat()}..{end_day.isoformat()}"
@@ -454,7 +463,7 @@ def main() -> None:
     manifest = {
         "instrument": SYMBOL,
         "provider": "Dukascopy Historical Data Feed",
-        "base_resolution": "M1 BID",
+        "base_resolution": "M1 BID (inactive zero-volume flat placeholders removed)",
         "derived_resolution": "M5",
         "price_scale": PRICE_SCALE,
         "chunk_start_date_utc": start_day.isoformat(),
@@ -466,6 +475,8 @@ def main() -> None:
         "missing_day_samples": missing_days[:20],
         "transient_failed_days": transient_failed_days,
         "m1_rows": len(dedup_m1),
+        "inactive_zero_volume_flat_m1_removed": inactive_flat_m1,
+        "active_m1_rows_used_for_resampling": len(active_m1),
         "m5_rows": len(m5),
         "incomplete_m5_groups_dropped": incomplete_m5,
         "non_weekend_gaps_gt_15m": non_weekend_gaps,
