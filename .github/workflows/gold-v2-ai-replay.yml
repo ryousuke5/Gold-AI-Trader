@@ -1,0 +1,44 @@
+name: Gold V2 AI Replay Validation
+
+on:
+  push:
+    paths:
+      - 'src/gold_ai_replay.js'
+      - 'src/ai.js'
+      - 'src/risk.js'
+      - 'scripts/build-gold-v2-ai-replay-dataset.mjs'
+      - 'scripts/run-gold-v2-ai-replay.mjs'
+      - 'scripts/report-gold-v2-ai-replay.mjs'
+      - 'scripts/validate-gold-v2-ai-replay.mjs'
+      - 'scripts/analyze-gold-v2-ai-walkforward.mjs'
+      - 'tests/gold_ai_replay.test.js'
+      - 'package.json'
+      - '.github/workflows/gold-v2-ai-replay.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install --no-audit --no-fund
+
+      - name: Syntax checks
+        run: |
+          node --check src/gold_ai_replay.js
+          node --check src/ai.js
+          node --check src/risk.js
+          node --check scripts/build-gold-v2-ai-replay-dataset.mjs
+          node --check scripts/run-gold-v2-ai-replay.mjs
+          node --check scripts/report-gold-v2-ai-replay.mjs
+          node --check scripts/validate-gold-v2-ai-replay.mjs
+          node --check scripts/analyze-gold-v2-ai-walkforward.mjs
+
+      - name: Unit tests
+        run: npm test
