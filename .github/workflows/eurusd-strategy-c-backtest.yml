@@ -1,0 +1,84 @@
+name: EURUSD Strategy C Research Backtest
+
+on:
+  push:
+    branches: [research/eurusd-logic-review-v4]
+    paths:
+      - 'src/eurusd_pullback_c.js'
+      - 'src/eurusd_features.js'
+      - 'scripts/backtest-eurusd-pullback-c.mjs'
+      - 'tests/**'
+      - '.github/workflows/eurusd-strategy-c-backtest.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-strategy-c-research
+  cancel-in-progress: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: c_baseline
+            min_retrace: '0.20'
+            max_retrace: '0.90'
+            min_impulse: '0.40'
+            min_pullback: '0.08'
+            break_buffer: '0.03'
+            tp_r: '1.50'
+            min_body: '0.30'
+            close_location: '0.68'
+          - name: c_looser
+            min_retrace: '0.15'
+            max_retrace: '1.00'
+            min_impulse: '0.30'
+            min_pullback: '0.06'
+            break_buffer: '0.02'
+            tp_r: '1.50'
+            min_body: '0.25'
+            close_location: '0.62'
+          - name: c_quality
+            min_retrace: '0.25'
+            max_retrace: '0.80'
+            min_impulse: '0.50'
+            min_pullback: '0.10'
+            break_buffer: '0.04'
+            tp_r: '1.50'
+            min_body: '0.35'
+            close_location: '0.72'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run all unit tests
+        run: npm test
+      - name: Run Strategy C five-year backtest
+        env:
+          PULLBACK_BACKTEST_LOOKBACK_DAYS: '1825'
+          PULLBACK_BACKTEST_SPREAD_PIPS: '0.8'
+          PULLBACK_BACKTEST_SLIPPAGE_PIPS: '0.1'
+          PULLBACK_BACKTEST_MAX_HOLD_BARS: '96'
+          PULLBACK_BACKTEST_COOLDOWN_BARS: '2'
+          PULLBACK_BACKTEST_C_MIN_RETRACE_RATIO: '${{ matrix.min_retrace }}'
+          PULLBACK_BACKTEST_C_MAX_RETRACE_RATIO: '${{ matrix.max_retrace }}'
+          PULLBACK_BACKTEST_C_MIN_IMPULSE_ATR: '${{ matrix.min_impulse }}'
+          PULLBACK_BACKTEST_C_MIN_PULLBACK_ATR: '${{ matrix.min_pullback }}'
+          PULLBACK_BACKTEST_C_BREAK_BUFFER_ATR: '${{ matrix.break_buffer }}'
+          PULLBACK_BACKTEST_C_TAKE_PROFIT_R: '${{ matrix.tp_r }}'
+          PULLBACK_BACKTEST_C_MIN_BODY_ATR: '${{ matrix.min_body }}'
+          PULLBACK_BACKTEST_C_MIN_CLOSE_LOCATION: '${{ matrix.close_location }}'
+          PULLBACK_BACKTEST_OUTPUT_DIR: c-backtest-output
+        run: node scripts/backtest-eurusd-pullback-c.mjs
+      - name: Upload Strategy C results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-strategy-c-${{ matrix.name }}
+          path: c-backtest-output/
+          retention-days: 30
