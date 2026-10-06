@@ -1,0 +1,113 @@
+name: XAUUSD Retest Reclaim V3 Smoke
+
+on:
+  push:
+    branches: [research/xauusd-retest-v3-reclaim]
+    paths:
+      - 'src/xauusd_retest_v3.js'
+      - 'scripts/backtest-xauusd-retest-v3.mjs'
+      - 'mt4/XAUUSDTrendRetestEA_V3.mq4'
+      - 'scripts/validate-xauusd-retest-v3.mjs'
+      - 'tests/xauusd_retest_v3.test.js'
+      - '.github/workflows/xauusd-retest-v3-smoke.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: xauusd-retest-v3-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: discovery
+            min_range_atr: '0.35'
+            max_range_atr: '5.00'
+            breakout_atr: '0.03'
+            breakout_body_atr: '0.20'
+            breakout_close_location: '0.55'
+            max_retest_bars: '6'
+            max_confirm_bars: '3'
+            retest_tolerance_atr: '0.30'
+            penetration_atr: '0.30'
+            confirm_body_atr: '0.20'
+            confirm_close_location: '0.55'
+            min_stop_atr: '0.40'
+            max_stop_atr: '3.00'
+            tp_r: '1.50'
+          - name: baseline
+            min_range_atr: '0.55'
+            max_range_atr: '3.50'
+            breakout_atr: '0.05'
+            breakout_body_atr: '0.25'
+            breakout_close_location: '0.58'
+            max_retest_bars: '6'
+            max_confirm_bars: '3'
+            retest_tolerance_atr: '0.25'
+            penetration_atr: '0.25'
+            confirm_body_atr: '0.20'
+            confirm_close_location: '0.55'
+            min_stop_atr: '0.60'
+            max_stop_atr: '2.20'
+            tp_r: '1.80'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Validate V3 EA
+        run: node scripts/validate-xauusd-retest-v3.mjs
+      - name: Syntax check
+        run: node --check src/xauusd_retest_v3.js && node --check scripts/backtest-xauusd-retest-v3.mjs
+      - name: Run V3 unit tests
+        run: node --test tests/xauusd_retest_v3.test.js
+      - name: Run 365-day V3 smoke backtest
+        env:
+          XAU_V3_DAYS: '365'
+          XAU_V3_TIMEZONE: 'Europe/Nicosia'
+          XAU_V3_SPREAD_PRICE: '0.55'
+          XAU_V3_SLIPPAGE_PRICE: '0.10'
+          XAU_V3_MAX_HOLD_BARS: '96'
+          XAU_V3_COOLDOWN_BARS: '2'
+          XAU_V3_BREAKOUT_LOOKBACK: '12'
+          XAU_V3_MIN_RANGE_ATR: '${{ matrix.min_range_atr }}'
+          XAU_V3_MAX_RANGE_ATR: '${{ matrix.max_range_atr }}'
+          XAU_V3_BREAKOUT_ATR: '${{ matrix.breakout_atr }}'
+          XAU_V3_BREAKOUT_BODY_ATR: '${{ matrix.breakout_body_atr }}'
+          XAU_V3_BREAKOUT_CLOSE_LOCATION: '${{ matrix.breakout_close_location }}'
+          XAU_V3_MAX_BREAKOUT_BODY_ATR: '1.80'
+          XAU_V3_MAX_RETEST_BARS: '${{ matrix.max_retest_bars }}'
+          XAU_V3_MAX_CONFIRM_BARS: '${{ matrix.max_confirm_bars }}'
+          XAU_V3_RETEST_TOLERANCE_ATR: '${{ matrix.retest_tolerance_atr }}'
+          XAU_V3_MAX_PENETRATION_ATR: '${{ matrix.penetration_atr }}'
+          XAU_V3_RETEST_CLOSE_BUFFER_ATR: '0.08'
+          XAU_V3_CONFIRM_BUFFER_ATR: '0.02'
+          XAU_V3_CONFIRM_BODY_ATR: '${{ matrix.confirm_body_atr }}'
+          XAU_V3_CONFIRM_CLOSE_LOCATION: '${{ matrix.confirm_close_location }}'
+          XAU_V3_MAX_CONFIRM_BODY_ATR: '1.50'
+          XAU_V3_MIN_STOP_ATR: '${{ matrix.min_stop_atr }}'
+          XAU_V3_MAX_STOP_ATR: '${{ matrix.max_stop_atr }}'
+          XAU_V3_STOP_BUFFER_ATR: '0.12'
+          XAU_V3_TAKE_PROFIT_R: '${{ matrix.tp_r }}'
+          XAU_V3_MAX_ENTRY_DISTANCE_ATR: '0.25'
+          XAU_V3_MAX_EXTENSION_ATR: '1.80'
+          XAU_V3_MIN_H1_AGREEMENT: '0.60'
+          XAU_V3_H1_BUY_RSI_MIN: '45'
+          XAU_V3_H1_BUY_RSI_MAX: '75'
+          XAU_V3_H1_SELL_RSI_MIN: '25'
+          XAU_V3_H1_SELL_RSI_MAX: '55'
+          XAU_V3_USE_VOLUME_FILTER: 'false'
+          XAU_V3_OUTPUT_DIR: 'xauusd-retest-v3-smoke-output'
+        run: node scripts/backtest-xauusd-retest-v3.mjs
+      - name: Upload V3 smoke result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-retest-v3-smoke-${{ matrix.name }}
+          path: xauusd-retest-v3-smoke-output/
+          retention-days: 14
