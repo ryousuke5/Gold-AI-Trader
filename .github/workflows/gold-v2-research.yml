@@ -138,6 +138,8 @@ jobs:
         with:
           path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
           key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+          restore-keys: |
+            xauusd-m1-
 
       - name: Prepare chunk directories
         run: |
