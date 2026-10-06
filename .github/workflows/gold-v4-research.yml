@@ -82,7 +82,7 @@ jobs:
   prepare:
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Dukascopy retrieval can legitimately exceed 20 minutes for a 14-day chunk;\n    # resumable checkpoints make a longer single attempt preferable to repeated timeouts.\n    timeout-minutes: 60
     strategy:
       fail-fast: false
       max-parallel: 2
