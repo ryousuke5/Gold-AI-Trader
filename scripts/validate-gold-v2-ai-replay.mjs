@@ -12,7 +12,7 @@ if(!rows.length)throw new Error('Replay dataset empty');
 const candidateTimes=new Map(rows.map(x=>[String(x.candidate_id),Number(x.asof_time)]));
 const contextTimes=new Set();
 const sourceIdsByContext=new Map();
-let sources=0,future=0,invalid=0,duplicateContext=0,duplicateSource=0;
+let sources=0,future=0,invalid=0,duplicateContext=0,duplicateSource=0,orphanContext=0,missingContext=0;
 for(const item of ctx){
   const asof=Number(item.asof_time);
   if(!Number.isFinite(asof)||asof<=0){invalid++;continue;}
@@ -30,6 +30,8 @@ for(const item of ctx){
   }
   sourceIdsByContext.set(key,localSourceIds.size);
 }
+for(const key of contextTimes)if(!candidateTimes.has(key))orphanContext++;
+for(const key of candidateTimes.keys())if(!contextTimes.has(key))missingContext++;
 const results=await lines(RESULTS).catch(e=>e.code==='ENOENT'?[]:Promise.reject(e));
 const resultIds=new Set();
 let duplicateResults=0,orphanResults=0;
@@ -46,11 +48,15 @@ if(invalid>0)throw new Error('Historical context/result validation errors: '+inv
 if(duplicateSource>0)throw new Error('Duplicate source IDs: '+duplicateSource);
 if(duplicateResults>0)throw new Error('Duplicate AI result candidate IDs: '+duplicateResults);
 if(orphanResults>0)throw new Error('AI results reference unknown candidate IDs: '+orphanResults);
+if(orphanContext>0)throw new Error('Historical context references unknown candidate timestamps: '+orphanContext);
+if(missingContext>0)throw new Error('Historical context missing candidate timestamps: '+missingContext);
 console.log(JSON.stringify({
   dataset_candidates:rows.length,
   context_rows:ctx.length,
   source_count:sources,
   duplicate_context_rows:duplicateContext,
   ai_results:results.length,
+  orphan_context_rows:orphanContext,
+  missing_context_rows:missingContext,
   validation:'PASS'
 },null,2));
