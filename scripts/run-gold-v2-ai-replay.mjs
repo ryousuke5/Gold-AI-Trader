@@ -32,7 +32,7 @@ try{
       const result=await analyzeHistoricalEnvironment({snapshot:row,context:ctx,model});
       const d=result.decision;
       const gate=d.decision==='APPROVE'&&Number(d.score)>=MIN_SCORE&&d.candidate_alignment==='ALIGNED';
-      const record={candidate_id:row.candidate_id,asof_time:row.asof_time,candidate:row.candidate,replay:{decision:d.decision,score:d.score,gate_approved:gate,candidate_alignment:d.candidate_alignment,regime_fit:d.regime_fit,evidence_quality:d.evidence_quality,reasons:d.reasons,source_ids:d.source_ids},openai:{response_id:result.responseId,model:result.model},latency_ms:Date.now()-started};
+      const record={candidate_id:row.candidate_id,asof_time:row.asof_time,candidate:row.candidate,replay:{decision:d.decision,score:d.score,gate_approved:gate,candidate_alignment:d.candidate_alignment,regime_fit:d.regime_fit,evidence_quality:d.evidence_quality,reasons:d.reasons,source_ids:d.source_ids},openai:{response_id:result.responseId,model:result.model,prompt_fingerprint:result.promptFingerprint,context_fingerprint:result.contextFingerprint},latency_ms:Date.now()-started};
       await out.write(JSON.stringify(record)+'\n');done.add(String(row.candidate_id));calls++;
       if(gate)approved++;else if(d.decision==='REJECT')rejected++;else unclear++;
       if(calls%25===0)console.log(JSON.stringify({calls,approved,rejected,unclear,skipped}));
