@@ -27,8 +27,8 @@ const CFG = {
   maxStopAtr: Number(process.env.XAU_MAX_STOP_ATR || 2.00),
   tpR: Number(process.env.XAU_TAKE_PROFIT_R || 2.00),
   maxEntryDistanceAtr: Number(process.env.XAU_MAX_ENTRY_DISTANCE_ATR || 0.20),
-  sessionStartHour: Number(process.env.XAU_SESSION_START_HOUR || 17),
-  sessionEndHour: Number(process.env.XAU_SESSION_END_HOUR || 20)
+  sessionStartUtcHour: Number(process.env.XAU_SESSION_START_UTC || 12),
+  sessionEndUtcHour: Number(process.env.XAU_SESSION_END_UTC || 15)
 };
 
 function ema(values, period) {
@@ -99,10 +99,13 @@ function localParts(ts, timezone) {
 }
 
 function inSession(ts) {
-  const h = localParts(ts, CFG.timezone).hour;
-  if (CFG.sessionStartHour === CFG.sessionEndHour) return true;
-  if (CFG.sessionStartHour < CFG.sessionEndHour) return h >= CFG.sessionStartHour && h <= CFG.sessionEndHour;
-  return h >= CFG.sessionStartHour || h <= CFG.sessionEndHour;
+  const d = new Date(ts * 1000);
+  const minutes = d.getUTCHours() * 60 + d.getUTCMinutes();
+  const start = CFG.sessionStartUtcHour * 60;
+  const end = CFG.sessionEndUtcHour * 60;
+  if (start === end) return true;
+  if (start < end) return minutes >= start && minutes < end;
+  return minutes >= start || minutes < end;
 }
 
 function hourStart(ts, timezone) {
@@ -298,7 +301,7 @@ async function main() {
   const m15 = indicators(await fetchBars());
   const h1 = indicators(aggregateH1(m15, CFG.timezone));
   const trades = [];
-  const diagnostics = { evaluated: 0, candidates: 0, h1_up: 0, h1_down: 0, wait_by_reason: {} };
+  const diagnostics = { evaluated: 0, candidates: 0, h1_up: 0, h1_down: 0, outside_session: 0, wait_by_reason: {} };
   let nextEligible = 0;
 
   for (let i = 250; i < m15.length - 2; i++) {
@@ -307,6 +310,10 @@ async function main() {
     const h1i = latestCompletedH1(h1, signalClose);
     if (h1i < 200) continue;
     diagnostics.evaluated++;
+    if (!inSession(signalClose)) {
+      diagnostics.outside_session++;
+      continue;
+    }
     const h = h1[h1i];
     const up = h.close > h.ema20 && h.ema20 > h.ema50 && h.ema50 > h.ema200 && h.rsi14 >= CFG.buyRsiMin && h.rsi14 <= CFG.buyRsiMax;
     const down = h.close < h.ema20 && h.ema20 < h.ema50 && h.ema50 < h.ema200 && h.rsi14 >= CFG.sellRsiMin && h.rsi14 <= CFG.sellRsiMax;
@@ -334,6 +341,8 @@ async function main() {
   const development = trades.filter(t => Date.parse(t.signal_time) < cutoff);
   const summary = {
     strategy: 'XAUUSD M5/H1 Trend Compression Breakout EA V1',
+    session_definition: '21:00-00:00 JST == 12:00-15:00 UTC',
+
     lookback_days: CFG.days,
     source: 'Dukascopy historical XAUUSD M5 bid data',
     timezone_for_session: CFG.timezone,
