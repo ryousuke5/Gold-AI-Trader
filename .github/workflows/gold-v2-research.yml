@@ -166,7 +166,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
-          key: xauusd-m1-v5-${{ runner.os }}-${{ matrix.chunk.id }}
+          key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
 
       - name: Save completed M5 chunk
         if: success() && steps.m5cache.outputs.cache-hit != 'true'
@@ -175,7 +175,7 @@ jobs:
           path: |
             gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
             gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
-          key: xauusd-m5-v5-${{ runner.os }}-${{ matrix.chunk.id }}
+          key: xauusd-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
 
       - name: Upload chunk for assembly
         if: success()
