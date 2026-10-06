@@ -54,12 +54,12 @@ function variantEnv(v) {
   };
 }
 
-function runBacktest(sliceFile, days, v, outDir) {
+async function runBacktest(sliceFile, days, v, outDir) {
   const env = {...process.env, ...variantEnv(v), GOLD_BACKTEST_DATA_FILE:sliceFile, GOLD_BACKTEST_OUTPUT_DIR:outDir};
   execFileSync(process.execPath, [path.join(ROOT,'scripts','backtest-gold-v2.mjs'), '--lookback-days='+days], {
     cwd:ROOT, env, stdio:'pipe'
   });
-  const report = JSON.parse(fs.readFileSync(path.join(outDir,'gold_v2_backtest_report.json'),'utf8'));
+  const report = JSON.parse(await fs.readFile(path.join(outDir,'gold_v2_backtest_report.json'),'utf8'));
   return report;
 }
 
@@ -99,7 +99,7 @@ async function main() {
   for(const v of VARIANTS){
     const out=path.join(OUTPUT_DIR,'is-'+v.name);
     await fs.mkdir(out,{recursive:true});
-    const report=runBacktest(isFile,isDays,v,out);
+    const report=await runBacktest(isFile,isDays,v,out);
     isReports.push({variant:v.name,results:report.results});
   }
   const winner=selectIsWinner(isReports);
@@ -108,7 +108,7 @@ async function main() {
   if(winnerVariant){
     const out=path.join(OUTPUT_DIR,'oos-selected-'+winnerVariant.name);
     await fs.mkdir(out,{recursive:true});
-    const report=runBacktest(oosFile,oosDays,winnerVariant,out);
+    const report=await runBacktest(oosFile,oosDays,winnerVariant,out);
     oos={variant:winnerVariant.name,results:report.results};
   }
 
