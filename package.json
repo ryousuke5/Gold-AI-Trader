@@ -8,7 +8,10 @@
     "test": "node --test tests/*.test.js",
     "test:mt4": "node scripts/validate-eurusd-mt4-monitor.mjs",
     "test:mt4:pullback": "node scripts/validate-eurusd-pullback-monitor.mjs mt4/EURUSDTrendPullbackMonitor.mq4",
-    "test:pullback:gate": "node scripts/validate-eurusd-pullback-gate.mjs"
+    "test:pullback:gate": "node scripts/validate-eurusd-pullback-gate.mjs",
+    "replay:build": "node scripts/build-gold-v2-ai-replay-dataset.mjs",
+    "replay:run": "node scripts/run-gold-v2-ai-replay.mjs",
+    "replay:report": "node scripts/report-gold-v2-ai-replay.mjs"
   },
   "engines": {
     "node": ">=20"
