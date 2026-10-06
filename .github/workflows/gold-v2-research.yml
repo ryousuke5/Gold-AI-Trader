@@ -6,6 +6,7 @@ name: GOLD V2 Five-Year Research
 # - Each chunk has its own stable M1/M5 cache key.
 # - A new run on the same window reuses completed chunks.
 # - Research uses the original detailed backtester so PF/DD/yearly/cost reports are preserved.
+# - A successful run is the immutable data source for the downstream 3y IS / 2y OOS workflow.
 
 on:
   push:
