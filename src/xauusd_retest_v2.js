@@ -259,8 +259,9 @@ export function findXauRetestSetup(features = {}, options = {}) {
       : entry - stopDistance * cfg.takeProfitR;
 
     const signalClose = confirmation.close;
+    const spreadAdjustedDistance = Math.max(0, Math.abs(entry - signalClose) - spread);
     if (cfg.maxEntryDistanceAtr > 0 &&
-        Math.abs(entry - signalClose) > cfg.maxEntryDistanceAtr * atr) {
+        spreadAdjustedDistance > cfg.maxEntryDistanceAtr * atr) {
       continue;
     }
 
