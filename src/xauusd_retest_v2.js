@@ -261,8 +261,7 @@ export function findXauRetestSetup(features = {}, options = {}) {
       : entry - stopDistance * cfg.takeProfitR;
 
     const signalClose = confirmation.close;
-    const driftReference = direction === 'BUY' ? num(features.bid) : num(features.bid);
-    const spreadAdjustedDistance = Math.max(0, Math.abs(driftReference - signalClose));
+    const spreadAdjustedDistance = Math.max(0, Math.abs(num(features.bid) - signalClose));
     if (cfg.maxEntryDistanceAtr > 0 &&
         spreadAdjustedDistance > cfg.maxEntryDistanceAtr * atr) {
       continue;
