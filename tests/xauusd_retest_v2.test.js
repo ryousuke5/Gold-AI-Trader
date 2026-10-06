@@ -91,8 +91,8 @@ test('normal spread does not by itself fail the entry drift filter', () => {
   const t0 = 1_700_100_000;
   for (let i = 0; i < 12; i += 1) bars.push(makeBar(t0 + i * 300, 100, 101.5, 98.5, 100));
   bars.push(makeBar(t0 + 12 * 300, 101.0, 103.0, 100.7, 102.7));
-  bars.push(makeBar(t0 + 13 * 300, 102.7, 102.9, 101.35, 101.6));
-  bars.push(makeBar(t0 + 14 * 300, 101.6, 103.0, 101.5, 102.75));
+  bars.push(makeBar(t0 + 13 * 300, 102.7, 102.9, 101.6, 101.8));
+  bars.push(makeBar(t0 + 14 * 300, 101.8, 103.1, 101.7, 102.95));
 
   const h1 = [];
   for (let i = 0; i < 5; i += 1) h1.push(makeBar(t0 + i * 3600, 100 + i, 101 + i, 99 + i, 100 + i));
