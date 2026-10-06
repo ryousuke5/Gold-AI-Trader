@@ -24,7 +24,7 @@ const checks = [
   ['terminal trade permission', /IsTradeAllowed\(\)/],
   ['one position guard', /MaxOpenPositions/],
   ['restart-safe processed bar state', /ProcessedBarKey/],
-  ['restart-safe trade history', /LastTradeOpenTime/],
+  ['restart-safe trade history', /LastTradeCloseTime/],
   ['JST session conversion', /XmServerUtcOffsetHours/],
   ['live order execution', /OrderSend\s*\(/],
   ['orders off by default', /input bool\s+AllowAutoOrders\s*=\s*false/]
