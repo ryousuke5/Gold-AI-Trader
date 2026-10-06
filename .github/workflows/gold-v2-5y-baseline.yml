@@ -73,6 +73,9 @@ jobs:
             if(m[k]===null || m[k]===undefined || Number.isNaN(Number(m[k]))) throw new Error('Invalid metric: '+k);
           }
           console.log('GOLD V2 FIVE-YEAR BASELINE PASS');
+          console.log('COMMIT_SHA', process.env.GITHUB_SHA);
+          console.log('RUN_ID', process.env.GITHUB_RUN_ID);
+          console.log('ARTIFACT', 'gold-v2-5y-baseline');
           console.log(JSON.stringify(m,null,2));
           NODE
 
