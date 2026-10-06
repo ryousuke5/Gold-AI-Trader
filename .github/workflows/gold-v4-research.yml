@@ -26,7 +26,7 @@ on:
         default: ''
 
 concurrency:
-  group: gold-v4-research
+  group: gold-v4-research-${{ github.run_id }}
   # Do not cancel an active research run. A later run can reuse completed chunk caches.
   cancel-in-progress: false
 
