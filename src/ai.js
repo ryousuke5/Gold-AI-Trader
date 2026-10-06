@@ -11,6 +11,18 @@ const decisionSchema = {
     risk_reward: { type: 'number', minimum: 0 },
     reason: { type: 'string' },
     invalid_reasons: { type: 'array', items: { type: 'string' } },
+    environment_filter: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        decision: { type: 'string', enum: ['APPROVE', 'REJECT', 'UNCLEAR'] },
+        score: { type: 'number', minimum: 0, maximum: 1 },
+        candidate_alignment: { type: 'string', enum: ['ALIGNED', 'CONFLICTING', 'UNCLEAR'] },
+        regime_fit: { type: 'string', enum: ['STRONG', 'MODERATE', 'WEAK', 'UNCLEAR'] },
+        reasons: { type: 'array', items: { type: 'string' } }
+      },
+      required: ['decision', 'score', 'candidate_alignment', 'regime_fit', 'reasons']
+    },
     fundamental: {
       type: 'object',
       additionalProperties: false,
@@ -152,6 +164,12 @@ export async function analyzeWithOpenAI({ features, candidate, symbol, model = p
     'The deterministic risk engine will independently validate every price and risk constraint.',
     'Prefer WAIT when evidence conflicts, is stale, or is insufficient.',
     'A rule-based candidate has already been generated: ' + candidate + '.',
+    'The environment_filter is a GATE for the existing candidate, not a new direction predictor.',
+    'Do not reverse BUY to SELL or SELL to BUY. Evaluate only whether the existing candidate is favorable in the current environment.',
+    'environment_filter.score is compatibility confidence, NOT a probability of profit and NOT a backtested expectancy.',
+    'APPROVE only when current regime, volatility, session/liquidity context, and current fundamental evidence support the existing V2 candidate.',
+    'REJECT for material regime mismatch, strong fundamental conflict, abnormal volatility, or conditions likely to degrade breakout quality.',
+    'Use UNCLEAR when evidence is insufficient; never invent certainty.',
     'Do not create a BUY/SELL trade against a WAIT candidate.',
     'For BUY: stop_loss must be below entry and take_profit above entry.',
     'For SELL: stop_loss must be above entry and take_profit below entry.',
