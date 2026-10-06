@@ -4,33 +4,111 @@ on:
   workflow_run:
     workflows: ["GOLD V2 Five-Year Research"]
     types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/backtest-gold-v2-walkforward.mjs'
+      - '.github/workflows/gold-v2-walkforward.yml'
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Successful GOLD V2 Research workflow run ID to use as the fixed data source. Blank = latest successful run.'
+        required: false
+        default: ''
 
 jobs:
   walk-forward:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Resolve source GOLD V2 research run
+        id: source
+        env:
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.source_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${EVENT_RUN_ID:-}" ]; then
+            RUN_ID="$EVENT_RUN_ID"
+          elif [ -n "${INPUT_RUN_ID:-}" ]; then
+            RUN_ID="$INPUT_RUN_ID"
+          else
+            RUN_ID="$(gh run list \
+              --workflow 'GOLD V2 Five-Year Research' \
+              --limit 50 \
+              --json databaseId,status,conclusion \
+              --jq '.[] | select(.status == "completed" and .conclusion == "success") | .databaseId' \
+              | head -n 1)"
+          fi
+
+          if [ -z "$RUN_ID" ]; then
+            echo "No successful GOLD V2 Research workflow run found." >&2
+            exit 1
+          fi
+
+          echo "Using GOLD V2 Research run: $RUN_ID"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
       - name: Download prepared XAUUSD M5 dataset
         uses: actions/download-artifact@v4
         with:
           name: gold-xauusd-m5-1825d
           path: gold-xauusd-data
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ steps.source.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate fixed research window
+        run: |
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          from pathlib import Path
+
+          cfg = json.loads(Path("config/gold-v2-data-window.json").read_text(encoding="utf-8"))
+          manifest = json.loads(Path("gold-xauusd-data/xauusd_m5_manifest.json").read_text(encoding="utf-8"))
+
+          expected_start = (
+              dt.date.fromisoformat(cfg["end_date_utc"])
+              - dt.timedelta(days=int(cfg["lookback_days"]))
+          ).isoformat()
+          expected_end = cfg["end_date_utc"]
+
+          if manifest["requested_start_date_utc"] != expected_start:
+              raise SystemExit(f"Unexpected data start: {manifest['requested_start_date_utc']} != {expected_start}")
+          if manifest["requested_end_date_exclusive_utc"] != expected_end:
+              raise SystemExit(f"Unexpected data end: {manifest['requested_end_date_exclusive_utc']} != {expected_end}")
+          if int(manifest["m5_rows"]) < 200000:
+              raise SystemExit(f"Insufficient M5 rows: {manifest['m5_rows']}")
+
+          print(json.dumps({
+              "window_start": manifest["requested_start_date_utc"],
+              "window_end_exclusive": manifest["requested_end_date_exclusive_utc"],
+              "m5_rows": manifest["m5_rows"],
+              "output_sha256": manifest["output_sha256"]
+          }, indent=2))
+          PY
+
       - name: Validate walk-forward script
         run: node --check scripts/backtest-gold-v2-walkforward.mjs
+
       - name: Run fixed 3y IS / 2y OOS validation
         env:
           GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
           GOLD_WALKFORWARD_OUTPUT_DIR: gold-walkforward-output
         run: node scripts/backtest-gold-v2-walkforward.mjs
+
       - name: Upload walk-forward results
         if: always()
         uses: actions/upload-artifact@v4
