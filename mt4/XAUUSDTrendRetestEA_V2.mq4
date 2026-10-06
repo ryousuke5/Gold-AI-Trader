@@ -55,14 +55,14 @@ input int    SessionEndJstMinute = 0;
 input bool   AllowAutoOrders = false;
 input bool   CloseOnOppositeSignal = false;
 input int    MagicNumber = 26100601;
-input string OrderComment = "XAUUSD-EA-V1";
+input string OrderComment = "XAUUSD-RETEST-V2";
 
 datetime g_lastSignalBarOpen = 0;
 bool g_sessionWarned = false;
 
 string ProcessedBarKey(string sym)
 {
-   return "XAUUSD_EA_V1:ProcessedBar:" + IntegerToString(AccountNumber()) + ":" + sym;
+   return "XAUUSD_EA_V2:ProcessedBar:" + IntegerToString(AccountNumber()) + ":" + sym;
 }
 
 datetime LastTradeOpenTime(string sym)
@@ -227,7 +227,7 @@ bool InSession(datetime signalBarOpen)
 //---------------------------------------------------------
 string PeakEquityKey(string sym)
 {
-   return "XAUUSD_EA_V1:PeakEquity:" + IntegerToString(AccountNumber()) + ":" + sym;
+   return "XAUUSD_EA_V2:PeakEquity:" + IntegerToString(AccountNumber()) + ":" + sym;
 }
 
 double PeakEquity(string sym)
