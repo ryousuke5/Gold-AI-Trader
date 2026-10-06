@@ -6,6 +6,7 @@ import gzip
 import hashlib
 import json
 import lzma
+import signal
 import struct
 import time
 from collections import defaultdict
@@ -19,6 +20,7 @@ PRICE_SCALE = 1000.0
 RECORD = struct.Struct(">IIIIIf")
 BASE_URL = "https://datafeed.dukascopy.com/datafeed"
 USER_AGENT = "Gold-AI-Trader/1.1 resumable-historical-research"
+CHECKPOINT_VERSION = 1
 
 
 def bi5_url(day: date) -> str:
@@ -182,6 +184,17 @@ def atomic_write_bytes(path: Path, payload: bytes) -> None:
             tmp.unlink()
 
 
+def atomic_write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
 def atomic_write_gzip_json(path: Path, payload: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -259,11 +272,58 @@ def main() -> None:
         else output_file.with_suffix(".manifest.json")
     )
     manifest_file.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_file = cache_dir / "checkpoint.json"
 
     all_m1: list[dict] = []
     missing_days: list[str] = []
     transient_failed_days: list[str] = []
     requested = reused = downloaded = 0
+    progress: dict[str, dict] = {}
+
+    if checkpoint_file.exists():
+        try:
+            saved = json.loads(checkpoint_file.read_text(encoding="utf-8"))
+            if (
+                saved.get("version") == CHECKPOINT_VERSION
+                and saved.get("chunk_start_date_utc") == start_day.isoformat()
+                and saved.get("chunk_end_date_exclusive_utc") == end_day.isoformat()
+                and isinstance(saved.get("days"), dict)
+            ):
+                progress = {str(k): v for k, v in saved["days"].items() if isinstance(v, dict)}
+                print(json.dumps({
+                    "event": "resume_checkpoint_loaded",
+                    "state": saved.get("state"),
+                    "completed_days": sum(1 for v in progress.values() if v.get("status") == "complete"),
+                    "tracked_days": len(progress),
+                    "checkpoint_file": str(checkpoint_file),
+                }), flush=True)
+        except (OSError, ValueError, TypeError):
+            print(json.dumps({"event": "checkpoint_invalid_ignored", "checkpoint_file": str(checkpoint_file)}), flush=True)
+
+    def persist_checkpoint(state: str, error: str | None = None) -> None:
+        atomic_write_json(checkpoint_file, {
+            "version": CHECKPOINT_VERSION,
+            "instrument": SYMBOL,
+            "chunk_start_date_utc": start_day.isoformat(),
+            "chunk_end_date_exclusive_utc": end_day.isoformat(),
+            "state": state,
+            "completed_days": sum(1 for v in progress.values() if v.get("status") == "complete"),
+            "missing_days": sum(1 for v in progress.values() if v.get("status") == "missing"),
+            "transient_failed_days": sum(1 for v in progress.values() if v.get("status") == "transient_failed"),
+            "days": progress,
+            "error": error,
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        })
+
+    def handle_signal(signum, _frame) -> None:
+        message = f"received signal {signum}"
+        persist_checkpoint("interrupted", error=message)
+        print(json.dumps({"event": "checkpoint_saved_on_signal", "signal": signum}), flush=True)
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+    persist_checkpoint("running")
 
     day = start_day
     while day < end_day:
@@ -273,6 +333,8 @@ def main() -> None:
 
         if missing_marker.exists():
             missing_days.append(day.isoformat())
+            progress[day.isoformat()] = {"status": "missing", "source": "NONE"}
+            persist_checkpoint("running")
             day += timedelta(days=1)
             continue
 
@@ -311,6 +373,8 @@ def main() -> None:
                 continue
             if status != "ok" or not raw:
                 transient_failed_days.append(day.isoformat())
+                progress[day.isoformat()] = {"status": "transient_failed", "source": "NONE"}
+                persist_checkpoint("running")
                 day += timedelta(days=1)
                 continue
 
@@ -320,6 +384,13 @@ def main() -> None:
             time.sleep(max(0.0, args.request_delay))
 
         all_m1.extend(bars)
+        progress[day.isoformat()] = {
+            "status": "complete",
+            "source": "M1",
+            "m1_rows": len(bars),
+            "cache_file": str(cache_file),
+        }
+        persist_checkpoint("running")
 
         print(
             json.dumps(
@@ -337,6 +408,8 @@ def main() -> None:
             flush=True,
         )
         day += timedelta(days=1)
+
+    persist_checkpoint("building")
 
     if transient_failed_days:
         sample = ", ".join(transient_failed_days[:20])
@@ -401,6 +474,7 @@ def main() -> None:
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     manifest_file.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    persist_checkpoint("complete")
 
     print(json.dumps({"event": "complete", **manifest}, indent=2), flush=True)
 
