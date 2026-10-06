@@ -605,7 +605,8 @@ int GetSignal(string sym, double &entry, double &stop, double &target, double &a
       return -1;
    }
 
-   if(UseSessionFilter && !InSession(signalOpen))
+   datetime entryBarOpen = signalOpen + 300;
+   if(UseSessionFilter && (!InSession(signalOpen) || !InSession(entryBarOpen)))
    {
       reason = "outside_session";
       return 0;
