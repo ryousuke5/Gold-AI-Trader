@@ -49,8 +49,7 @@ jobs:
               --workflow 'GOLD V2 Five-Year Research' \
               --limit 50 \
               --json databaseId,status,conclusion \
-              --jq '.[] | select(.status == "completed" and .conclusion == "success") | .databaseId' \
-              | head -n 1)"
+              --jq '[.[] | select(.status == "completed" and .conclusion == "success") | .databaseId] | .[0]')"
           fi
 
           if [ -z "$RUN_ID" ]; then
