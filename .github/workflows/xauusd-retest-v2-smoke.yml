@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/xauusd_retest_v2.js'
       - 'scripts/backtest-xauusd-retest-v2.mjs'
+      - 'scripts/backtest-xauusd-retest-v2-smoke.mjs'
       - 'mt4/XAUUSDTrendRetestEA_V2.mq4'
       - 'tests/xauusd_retest_v2.test.js'
       - 'scripts/validate-xauusd-retest-v2.mjs'
@@ -28,7 +29,7 @@ jobs:
       - name: Validate V2 EA safety contract
         run: node scripts/validate-xauusd-retest-v2.mjs
       - name: Syntax check
-        run: node --check src/xauusd_retest_v2.js && node --check scripts/backtest-xauusd-retest-v2.mjs
+        run: node --check src/xauusd_retest_v2.js && node --check scripts/backtest-xauusd-retest-v2-smoke.mjs
       - name: Run XAUUSD strategy tests
         run: node --test tests/xauusd_retest_v2.test.js
       - name: Run 365-day smoke backtest
@@ -67,7 +68,7 @@ jobs:
           XAU_RETEST_H1_SELL_RSI_MAX: '55'
           XAU_RETEST_USE_VOLUME_FILTER: 'false'
           XAU_RETEST_OUTPUT_DIR: 'xauusd-retest-v2-smoke-output'
-        run: node scripts/backtest-xauusd-retest-v2.mjs
+        run: node scripts/backtest-xauusd-retest-v2-smoke.mjs
       - name: Upload smoke result
         if: always()
         uses: actions/upload-artifact@v4
