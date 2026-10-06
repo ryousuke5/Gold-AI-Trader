@@ -40,6 +40,7 @@ input double MinStopAtr = 0.80;
 input double MaxStopAtr = 2.00;
 input double TakeProfitR = 2.00;
 input int    MaxHoldBars = 96;
+input bool   UseTimeExit = true;
 input double MaxEntryDistanceAtr = 0.20;
 
 // --- Execution safety
@@ -65,7 +66,7 @@ string ProcessedBarKey(string sym)
    return "XAUUSD_EA_V2:ProcessedBar:" + IntegerToString(AccountNumber()) + ":" + sym;
 }
 
-datetime LastTradeOpenTime(string sym)
+datetime LastTradeCloseTime(string sym)
 {
    datetime latest = 0;
 
@@ -81,24 +82,8 @@ datetime LastTradeOpenTime(string sym)
       if(type != OP_BUY && type != OP_SELL)
          continue;
 
-      if(OrderOpenTime() > latest)
-         latest = OrderOpenTime();
-   }
-
-   for(int j = OrdersTotal() - 1; j >= 0; j--)
-   {
-      if(!OrderSelect(j, SELECT_BY_POS, MODE_TRADES))
-         continue;
-
-      if(OrderSymbol() != sym || OrderMagicNumber() != MagicNumber)
-         continue;
-
-      int liveType = OrderType();
-      if(liveType != OP_BUY && liveType != OP_SELL)
-         continue;
-
-      if(OrderOpenTime() > latest)
-         latest = OrderOpenTime();
+      if(OrderCloseTime() > latest)
+         latest = OrderCloseTime();
    }
 
    return latest;
@@ -529,18 +514,12 @@ bool CooldownAllowed()
    if(CooldownBars <= 0)
       return true;
 
-   string sym = TradeSymbol();
-   datetime lastTradeOpen = LastTradeOpenTime(sym);
-   if(lastTradeOpen <= 0)
+   datetime lastTradeClose = LastTradeCloseTime(TradeSymbol());
+   if(lastTradeClose <= 0)
       return true;
 
-   int lastShift = iBarShift(sym, SignalTimeframe, lastTradeOpen, false);
-   int currentShift = iBarShift(sym, SignalTimeframe, iTime(sym, SignalTimeframe, 1), false);
-
-   if(lastShift < 0 || currentShift < 0)
-      return true;
-
-   return (lastShift - currentShift) >= CooldownBars + 1;
+   int requiredSeconds = CooldownBars * 300;
+   return (TimeCurrent() - lastTradeClose) >= requiredSeconds;
 }
 
 //---------------------------------------------------------
@@ -1015,12 +994,61 @@ bool ExecuteSignal(string sym, int signalType, double entry, double stop, double
    return true;
 }
 
+bool ManageOpenPositions(string sym)
+{
+   if(!AllowAutoOrders || !UseTimeExit || MaxHoldBars <= 0)
+      return true;
+
+   bool ok = true;
+   int maxAgeSeconds = MaxHoldBars * 300;
+
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+         continue;
+
+      if(OrderSymbol() != sym || OrderMagicNumber() != MagicNumber)
+         continue;
+
+      int type = OrderType();
+      if(type != OP_BUY && type != OP_SELL)
+         continue;
+
+      if((TimeCurrent() - OrderOpenTime()) < maxAgeSeconds)
+         continue;
+
+      RefreshRates();
+
+      double closePrice = type == OP_BUY
+         ? MarketInfo(sym, MODE_BID)
+         : MarketInfo(sym, MODE_ASK);
+
+      ResetLastError();
+      if(!OrderClose(OrderTicket(), OrderLots(), closePrice, SlippagePoints, clrNONE))
+      {
+         int errorCode = GetLastError();
+         Print("XAUUSD EA: max-hold time exit failed. ticket=", OrderTicket(),
+               " error=", errorCode);
+         ok = false;
+      }
+      else
+      {
+         Print("XAUUSD EA: max-hold time exit executed. ticket=", OrderTicket(),
+               " age_seconds=", TimeCurrent() - OrderOpenTime());
+      }
+   }
+
+   return ok;
+}
+
 //---------------------------------------------------------
 // Monitoring
 //---------------------------------------------------------
 void Evaluate()
 {
    string sym = TradeSymbol();
+
+   ManageOpenPositions(sym);
 
    if(!IsGoldSymbol(sym))
       return;
@@ -1073,6 +1101,8 @@ int OnInit()
          " trendTF=", TrendTimeframe,
          " riskPct=", DoubleToString(RiskPercent, 3),
          " maxSpread=", DoubleToString(MaxSpreadPrice, 2),
+         " maxHoldBars=", MaxHoldBars,
+         " timeExit=", UseTimeExit ? "on" : "off",
          " session_jst=21:00-00:00", 
          " autoOrders=", AllowAutoOrders ? "ON" : "OFF");
 
