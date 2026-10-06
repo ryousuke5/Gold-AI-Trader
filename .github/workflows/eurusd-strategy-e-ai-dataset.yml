@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  prepare-data:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,12 +22,30 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
-      - name: Download canonical dataset
-        uses: actions/download-artifact@v4
+      - name: Prepare canonical EURUSD dataset
+        env:
+          EURUSD_DATA_LOOKBACK_DAYS: '1825'
+          EURUSD_DATA_OUTPUT: eurusd-m15-bid.json
+        run: node scripts/prepare-eurusd-m15-data.mjs
+      - name: Upload canonical dataset
+        uses: actions/upload-artifact@v4
         with:
-          name: eurusd-m15-bid-dataset
-          repository: ryousuke5/Gold-AI-Trader
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: eurusd-m15-bid-dataset-ai
+          path: eurusd-m15-bid.json
+          retention-days: 30
+
+  build:
+    needs: prepare-data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: eurusd-m15-bid-dataset-ai
           path: data
       - name: Build point-in-time AI dataset
         env:
