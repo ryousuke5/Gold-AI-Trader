@@ -33,7 +33,7 @@ test('V3 accepts range -> breakout -> retest -> delayed reclaim confirmation',()
   bars.push(bar(t0+27*300,102.1,103.1,102.0,102.95));
 
   const debug={targetRetestIndex:25};
-  const setup=findXauRetestSetupV3(features(bars),{debug,...
+  const setup=findXauRetestSetupV3(features(bars),{debug,
     breakoutLookback:12,
     minRangeAtr:0.55,maxRangeAtr:3.5,
     breakoutAtr:0.05,breakoutBodyAtr:0.25,breakoutCloseLocation:0.58,
