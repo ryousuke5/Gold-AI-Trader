@@ -94,6 +94,7 @@ jobs:
               fh.write(f"start_date={start_day.isoformat()}\n")
               fh.write(f"end_date={end_day.isoformat()}\n")
               fh.write(f"lookback_days={lookback_days}\n")
+              fh.write(f"cache_version={cache_version}\n")
 
           print(json.dumps({
               "lookback_days": lookback_days,
