@@ -19,6 +19,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: discovery
+            min_range_atr: '0.30'
+            max_range_atr: '5.00'
+            breakout_atr: '0.02'
+            min_body_atr: '0.20'
+            close_location: '0.55'
+            volume_ratio: '0.80'
           - name: baseline
             min_range_atr: '0.80'
             max_range_atr: '2.80'
@@ -77,8 +84,8 @@ jobs:
           XAU_MAX_STOP_ATR: '2.00'
           XAU_TAKE_PROFIT_R: '2.00'
           XAU_MAX_ENTRY_DISTANCE_ATR: '0.20'
-          XAU_SESSION_START_HOUR: '17'
-          XAU_SESSION_END_HOUR: '20'
+          XAU_SESSION_START_UTC: '12'
+          XAU_SESSION_END_UTC: '15'
           XAU_BACKTEST_OUTPUT_DIR: 'xauusd-ea-v1-output'
         run: node scripts/backtest-xauusd-ea-v1.mjs
       - name: Upload XAUUSD results
