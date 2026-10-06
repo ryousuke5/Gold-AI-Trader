@@ -67,7 +67,7 @@ export function findXauRetestSetupV3(features={},options={}){
 
   for(let retestIndex=lastRetest;retestIndex>=firstRetest;retestIndex-=1){
     const retest=all[retestIndex];
-    if (debug) debug.last = { retestIndex, validRetest: validBar(retest) };
+    if (debug && retestIndex === debug.targetRetestIndex) debug.last = { retestIndex, validRetest: validBar(retest) };
     if(!validBar(retest))continue;
     const breakoutMin=Math.max(cfg.breakoutLookback,retestIndex-cfg.maxRetestBars);
     const breakoutMax=retestIndex-cfg.minRetestBars;
