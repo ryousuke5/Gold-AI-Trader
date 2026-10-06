@@ -8,6 +8,7 @@ on:
       - 'scripts/backtest-xauusd-retest-v2.mjs'
       - 'mt4/XAUUSDTrendRetestEA_V2.mq4'
       - 'scripts/validate-xauusd-retest-v2.mjs'
+      - 'tests/xauusd_retest_v2.test.js'
       - '.github/workflows/xauusd-retest-v2-backtest.yml'
   workflow_dispatch:
 
