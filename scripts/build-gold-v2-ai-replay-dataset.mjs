@@ -70,9 +70,17 @@ const m=indicators(raw),h=indicators(h1(raw));const sourceFingerprint=sha256(raw
 await fs.mkdir(OUT,{recursive:true});
 const file=path.join(OUT,'gold_v2_ai_replay_dataset.jsonl');
 const manifest=path.join(OUT,'manifest.json');
-await fs.writeFile(file,'');
-let candidates=0,eligible=0,wins=0,losses=0;
-for(let i=250;i<m.length-1;i++){
+const checkpoint=path.join(OUT,'build_checkpoint.json');
+const stopAfter=Math.max(0,Number(process.env.GOLD_AI_REPLAY_BUILD_STOP_AFTER_CANDIDATES||0));
+let cp=null;try{cp=JSON.parse(await fs.readFile(checkpoint,'utf8'));}catch{}
+const identity=sha256(JSON.stringify({sourceFingerprint,config:CONFIG,strategy:STRATEGY}));
+if(cp&&cp.identity!==identity)throw new Error('Replay build checkpoint identity mismatch; refusing unsafe resume');
+if(!cp)await fs.writeFile(file,'');
+let candidates=cp?.candidates||0,eligible=cp?.eligible||0,wins=cp?.wins||0,losses=cp?.losses||0;
+let processedCandidates=0;
+const existingIds=new Set();
+if(cp){try{for(const line of (await fs.readFile(file,'utf8')).split(/\r?\n/).filter(Boolean)){try{existingIds.add(String(JSON.parse(line).candidate_id));}catch{}}}catch{}}
+for(let i=cp?.next_index??250;i<m.length-1;i++){
   const s=m[i],st=s.time+300,hi=h1idx(h,st),hv=h[hi];
   if(!hv||![s.ema20,s.ema50,s.rsi14,s.atr14,hv.close,hv.ema20,hv.ema50,hv.ema200,hv.rsi14,hv.atr14].every(Number.isFinite))continue;
   const recentM5=recent(m,i,Math.max(80,STRATEGY.rangeLookback+1));
@@ -83,7 +91,11 @@ for(let i=250;i<m.length-1;i++){
   const outcome=executableOutcome(s,m[i+1],m.slice(i+1),setup);
   const id=sha256([sourceFingerprint,s.time,setup.candidate,setup.entry_reference,setup.stop_loss,setup.take_profit].join('|')).slice(0,24);
   const row={schema_version:1,candidate_id:id,asof_time:st,asof_iso:new Date(st*1000).toISOString(),symbol:'XAUUSD',candidate:setup.candidate,features,setup,execution:outcome,historical_context:{news_snapshot_required:true,web_search_forbidden_during_replay:true}};
-  await fs.appendFile(file,JSON.stringify(row)+'\n');candidates++;if(outcome.eligible){eligible++;if(outcome.net_r>0)wins++;if(outcome.net_r<0)losses++;}
+  if(!existingIds.has(id)){await fs.appendFile(file,JSON.stringify(row)+'\n');existingIds.add(id);candidates++;if(outcome.eligible){eligible++;if(outcome.net_r>0)wins++;if(outcome.net_r<0)losses++;}processedCandidates++;}
+  if(processedCandidates>0&&(processedCandidates%100===0||(stopAfter>0&&processedCandidates>=stopAfter)))await fs.writeFile(checkpoint,JSON.stringify({schema_version:1,identity,next_index:i+1,candidates,eligible,wins,losses,updated_at:new Date().toISOString()},null,2));
+  if(stopAfter>0&&processedCandidates>=stopAfter){await fs.writeFile(checkpoint,JSON.stringify({schema_version:1,identity,next_index:i+1,candidates,eligible,wins,losses,updated_at:new Date().toISOString(),status:'PAUSED'},null,2));console.log('PAUSED_FOR_TEST',i+1);process.exit(0);}
 }
 const meta={schema_version:1,created_at:new Date().toISOString(),source_data:{path:path.resolve(INPUT),rows:raw.length,content_sha256:sourceFingerprint},period:{start_utc:START||null,end_utc:END||null},config:CONFIG,strategy:STRATEGY,counts:{candidates,eligible,wins,losses}};
-await fs.writeFile(manifest,JSON.stringify(meta,null,2));console.log(JSON.stringify(meta,null,2));
+await fs.writeFile(manifest,JSON.stringify(meta,null,2));
+await fs.writeFile(checkpoint,JSON.stringify({schema_version:1,identity,next_index:m.length,candidates,eligible,wins,losses,updated_at:new Date().toISOString(),status:'COMPLETE'},null,2));
+console.log(JSON.stringify(meta,null,2));
