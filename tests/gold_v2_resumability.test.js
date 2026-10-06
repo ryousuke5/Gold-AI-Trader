@@ -1,1 +1,22 @@
-import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport { fileURLToPath } from 'node:url';\n\nconst ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');\nconst WORKFLOW = fs.readFileSync(\n  path.join(ROOT, '.github/workflows/gold-v2-research.yml'),\n  'utf8'\n);\n\ntest('GOLD V2 raw checkpoint cache advances across repeated interruptions', () => {\n  const rawKey = 'key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}';\n  const rawRestore = 'xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-';\n  const stableM5Key = 'key: xauusd-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}';\n\n  assert.ok(WORKFLOW.includes(rawKey), 'raw cache save/restore key must include github.run_id');\n  assert.ok(WORKFLOW.includes('restore-keys: |'), 'raw cache must define a restore prefix');\n  assert.ok(WORKFLOW.includes(rawRestore), 'restore prefix must be scoped to the same chunk');\n  assert.match(WORKFLOW, /- name: Save raw M1 checkpoint[\\s\\S]*?if: always\\(\\)/);\n  assert.ok(WORKFLOW.includes(stableM5Key), 'completed M5 cache key must remain stable per chunk');\n});\n
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const WORKFLOW = fs.readFileSync(
+  path.join(ROOT, '.github/workflows/gold-v2-research.yml'),
+  'utf8'
+);
+
+test('GOLD V2 raw checkpoint cache advances across repeated interruptions', () => {
+  const rawKey = 'key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}';
+  const rawRestore = 'xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-';
+  const stableM5Key = 'key: xauusd-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}';
+
+  assert.ok(WORKFLOW.includes(rawKey), 'raw cache save key must include github.run_id');
+  assert.ok(WORKFLOW.includes(rawRestore), 'restore prefix must be scoped to the same chunk');
+  assert.match(WORKFLOW, /- name: Save raw M1 checkpoint[\s\S]*?if: always\(\)/);
+  assert.ok(WORKFLOW.includes(stableM5Key), 'completed M5 cache key must remain stable per chunk');
+});
