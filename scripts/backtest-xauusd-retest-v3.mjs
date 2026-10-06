@@ -173,8 +173,9 @@ async function fetchBars() {
     volumes: true,
     format: 'array'
   });
-  if (!Array.isArray(rows) || rows.length < 100000) {
-    throw new Error('Insufficient XAUUSD M5 coverage: ' + (rows?.length || 0));
+  const minCoverage = Math.max(50000, CFG.days * 100);
+  if (!Array.isArray(rows) || rows.length < minCoverage) {
+    throw new Error('Insufficient XAUUSD M5 coverage: ' + (rows?.length || 0) + ' < ' + minCoverage);
   }
   const now = Date.now();
   return rows.map(r => ({
@@ -397,7 +398,7 @@ async function main() {
     if (h1i < 20) continue;
 
     const f = buildFeatures(m5, i, h1, h1i);
-    const setup = findXauRetestSetup(f, strategyOptions);
+    const setup = findXauRetestSetupV3(f, strategyOptions);
     if (setup.trend === 'UP') diagnostics.h1_up++;
     else if (setup.trend === 'DOWN') diagnostics.h1_down++;
     if (setup.candidate === 'WAIT') {
@@ -424,9 +425,9 @@ async function main() {
   const development = trades.filter(t => Date.parse(t.signal_time) < cutoff);
 
   const summary = {
-    strategy: 'XAUUSD M5/H1 Range Breakout Retest V2',
+    strategy: 'XAUUSD M5/H1 Range Breakout Retest Reclaim V3',
     design: {
-      sequence: 'range -> confirmed breakout -> retest -> confirmation candle -> next-bar entry',
+      sequence: 'range -> confirmed breakout -> retest -> reclaim confirmation (1-3 bars) -> next-bar entry',
       no_lookahead: true,
       session: '21:00-00:00 JST',
       data_source: 'Dukascopy historical XAUUSD M5 bid data'
