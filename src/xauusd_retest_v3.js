@@ -46,8 +46,10 @@ export function findXauRetestSetupV3(features={},options={}){
     minVolumeRatio:n(options.minVolumeRatio,0.90),
     maxSpreadPrice:n(options.maxSpreadPrice,0.60)
   };
+  const debug = options.debug && typeof options.debug === 'object' ? options.debug : null;
   const trend=xauH1RetestTrendV3(features,cfg);
   const m5=features.m5||{},all=bars(features.recentM5||[]);
+  if (debug) debug.trend = trend;
   if(all.length<cfg.breakoutLookback+cfg.maxRetestBars+cfg.maxConfirmBars+3)return wait(trend,'insufficient_recent_m5_bars');
   const confirmationIndex=all.length-1,confirmation=all[confirmationIndex];
   if(!validBar(confirmation))return wait(trend,'invalid_confirmation_bar');
@@ -56,6 +58,7 @@ export function findXauRetestSetupV3(features={},options={}){
   if(!(atr>0))return wait(trend,'invalid_m5_atr');
   if(spread>cfg.maxSpreadPrice)return wait(trend,'spread_filter_failed',{spread_price:spread});
   const h1Agreement=trend==='UP'?agreement(features.recentH1,'UP',5):trend==='DOWN'?agreement(features.recentH1,'DOWN',5):0;
+  if (debug) debug.h1Agreement = h1Agreement;
   if(trend==='RANGE')return wait(trend,'h1_trend_not_clear',{h1_slope_agreement:h1Agreement});
 
   let selected=null;
@@ -64,6 +67,7 @@ export function findXauRetestSetupV3(features={},options={}){
 
   for(let retestIndex=lastRetest;retestIndex>=firstRetest;retestIndex-=1){
     const retest=all[retestIndex];
+    if (debug) debug.last = { retestIndex, validRetest: validBar(retest) };
     if(!validBar(retest))continue;
     const breakoutMin=Math.max(cfg.breakoutLookback,retestIndex-cfg.maxRetestBars);
     const breakoutMax=retestIndex-cfg.minRetestBars;
@@ -74,6 +78,7 @@ export function findXauRetestSetupV3(features={},options={}){
       if(rangeBars.length!==cfg.breakoutLookback||rangeBars.some(x=>!validBar(x)))continue;
       const rangeHigh=Math.max(...rangeBars.map(x=>x.high)),rangeLow=Math.min(...rangeBars.map(x=>x.low));
       const rangeWidth=rangeHigh-rangeLow,rangeAtr=rangeWidth/atr;
+      if (debug && retestIndex === debug.targetRetestIndex) debug.last.range = { bi, rangeHigh, rangeLow, rangeWidth, rangeAtr, pass: rangeWidth>0&&rangeAtr>=cfg.minRangeAtr&&rangeAtr<=cfg.maxRangeAtr };
       if(!(rangeWidth>0&&rangeAtr>=cfg.minRangeAtr&&rangeAtr<=cfg.maxRangeAtr))continue;
 
       const bRange=breakout.high-breakout.low;
@@ -82,6 +87,7 @@ export function findXauRetestSetupV3(features={},options={}){
       const bCloseLoc=(breakout.close-breakout.low)/bRange;
       const buyBreak=trend==='UP'&&m5.ema20>m5.ema50&&breakout.close>breakout.open&&breakout.close>=rangeHigh+cfg.breakoutAtr*atr&&bCloseLoc>=cfg.breakoutCloseLocation;
       const sellBreak=trend==='DOWN'&&m5.ema20<m5.ema50&&breakout.close<breakout.open&&breakout.close<=rangeLow-cfg.breakoutAtr*atr&&bCloseLoc<=1-cfg.breakoutCloseLocation;
+      if (debug && retestIndex === debug.targetRetestIndex) debug.last.breakout = { bi, bBodyAtr, bCloseLoc, buyBreak, sellBreak };
       if(!buyBreak&&!sellBreak)continue;
 
       const direction=buyBreak?'BUY':'SELL',level=direction==='BUY'?rangeHigh:rangeLow;
@@ -93,11 +99,13 @@ export function findXauRetestSetupV3(features={},options={}){
         if(direction==='BUY'&&mid.close<level-cfg.maxPenetrationAtr*atr){intact=false;break;}
         if(direction==='SELL'&&mid.close>level+cfg.maxPenetrationAtr*atr){intact=false;break;}
       }
+      if (debug && retestIndex === debug.targetRetestIndex) debug.last.pathIntact = intact;
       if(!intact)continue;
 
       const retestTouch=direction==='BUY'
         ?retest.low<=level+cfg.retestToleranceAtr*atr&&retest.low>=level-cfg.maxPenetrationAtr*atr&&retest.close>=level-cfg.retestCloseBufferAtr*atr
         :retest.high>=level-cfg.retestToleranceAtr*atr&&retest.high<=level+cfg.maxPenetrationAtr*atr&&retest.close<=level+cfg.retestCloseBufferAtr*atr;
+      if (debug && retestIndex === debug.targetRetestIndex) debug.last.retestTouch = retestTouch;
       if(!retestTouch)continue;
 
       let confirmPath=true;
@@ -107,18 +115,22 @@ export function findXauRetestSetupV3(features={},options={}){
         if(direction==='BUY'&&mid.close<level-cfg.maxPenetrationAtr*atr){confirmPath=false;break;}
         if(direction==='SELL'&&mid.close>level+cfg.maxPenetrationAtr*atr){confirmPath=false;break;}
       }
+      if (debug && retestIndex === debug.targetRetestIndex) debug.last.confirmPath = confirmPath;
       if(!confirmPath)continue;
 
       const cRange=confirmation.high-confirmation.low;
       const cBodyAtr=Math.abs(confirmation.close-confirmation.open)/atr;
+      if (debug && retestIndex === debug.targetRetestIndex) debug.last.confirmBody = { cRange, cBodyAtr, pass:cRange>0&&cBodyAtr>=cfg.confirmBodyAtr&&cBodyAtr<=cfg.maxConfirmBodyAtr };
       if(!(cRange>0&&cBodyAtr>=cfg.confirmBodyAtr&&cBodyAtr<=cfg.maxConfirmBodyAtr))continue;
       const cCloseLoc=(confirmation.close-confirmation.low)/cRange;
       const confirmOk=direction==='BUY'
         ?confirmation.close>level+cfg.confirmBufferAtr*atr&&confirmation.close>confirmation.open&&confirmation.close>retest.close&&cCloseLoc>=cfg.minConfirmCloseLocation
         :confirmation.close<level-cfg.confirmBufferAtr*atr&&confirmation.close<confirmation.open&&confirmation.close<retest.close&&cCloseLoc<=1-cfg.minConfirmCloseLocation;
+      if (debug && retestIndex === debug.targetRetestIndex) debug.last.confirmOk = confirmOk;
       if(!confirmOk)continue;
 
       const extension=direction==='BUY'?(confirmation.close-m5.ema20)/atr:(m5.ema20-confirmation.close)/atr;
+      if (debug && retestIndex === debug.targetRetestIndex) debug.last.extension = extension;
       if(extension<-0.50||extension>cfg.maxExtensionAtr)continue;
 
       const vols=rangeBars.map(x=>n(x.volume)).filter(v=>v>=0),avgVolume=vols.length?vols.reduce((s,v)=>s+v,0)/vols.length:0;
@@ -128,6 +140,7 @@ export function findXauRetestSetupV3(features={},options={}){
       const entry=direction==='BUY'?n(features.ask):n(features.bid);
       const stop=direction==='BUY'?retest.low-cfg.stopBufferAtr*atr:retest.high+cfg.stopBufferAtr*atr;
       const stopDistance=Math.abs(entry-stop),stopAtr=stopDistance/atr;
+      if (debug && retestIndex === debug.targetRetestIndex) debug.last.stop = { entry, stop, stopDistance, stopAtr };
       if(!(stopDistance>0&&stopAtr>=cfg.minStopAtr&&stopAtr<=cfg.maxStopAtr))continue;
 
       const target=direction==='BUY'?entry+stopDistance*cfg.takeProfitR:entry-stopDistance*cfg.takeProfitR;
