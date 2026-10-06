@@ -763,6 +763,37 @@ int GetSignal(string sym, double &entry, double &stop, double &target, double &a
       int type = buyBreak ? OP_BUY : OP_SELL;
       double level = buyBreak ? rangeHigh : rangeLow;
 
+      bool pathIntact = true;
+      for(int midShift = breakoutShift - 1; midShift > retestShift; midShift--)
+      {
+         double midClose = iClose(sym, SignalTimeframe, midShift);
+         if(midClose <= 0.0)
+         {
+            pathIntact = false;
+            break;
+         }
+
+         if(buyBreak)
+         {
+            if(midClose < level - MaxPenetrationAtr * m5Atr)
+            {
+               pathIntact = false;
+               break;
+            }
+         }
+         else
+         {
+            if(midClose > level + MaxPenetrationAtr * m5Atr)
+            {
+               pathIntact = false;
+               break;
+            }
+         }
+      }
+
+      if(!pathIntact)
+         continue;
+
       bool retestTouch = buyBreak
          ? retestLow <= level + RetestToleranceAtr * m5Atr &&
            retestLow >= level - MaxPenetrationAtr * m5Atr &&
