@@ -24,6 +24,9 @@ const pf = grossLoss > 0 ? grossWin / grossLoss : Infinity;
 const winRate = wins.length / trades.length;
 const avgWin = wins.length ? grossWin / wins.length : 0;
 const avgLoss = losses.length ? grossLoss / losses.length : 0;
+const effectiveRRValues = trades.map(t => Number(t.effective_rr)).filter(Number.isFinite);
+const avgEffectiveRR = effectiveRRValues.length ? effectiveRRValues.reduce((s,x)=>s+x,0)/effectiveRRValues.length : null;
+const minEffectiveRR = effectiveRRValues.length ? Math.min(...effectiveRRValues) : null;
 
 let equity = initialEquity;
 let peak = equity;
@@ -93,6 +96,8 @@ const out={
   avgWin,
   avgLoss,
   payoffRatio:avgLoss?avgWin/avgLoss:null,
+  avgEffectiveRR,
+  minEffectiveRR,
   maxDrawdown:maxDd,
   maxDrawdownPct:maxDdPct,
   maxDrawdownDurationDays:maxDdDurationMs/86400000,
