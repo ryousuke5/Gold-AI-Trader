@@ -168,12 +168,14 @@ export function findXauRetestSetup(features = {}, options = {}) {
 
     const isBuyBreak =
       trend === 'UP' &&
+      m5.ema20 > m5.ema50 &&
       breakout.close > breakout.open &&
       breakout.close >= rangeHigh + cfg.breakoutAtr * atr &&
       breakoutCloseLocation >= cfg.breakoutCloseLocation;
 
     const isSellBreak =
       trend === 'DOWN' &&
+      m5.ema20 < m5.ema50 &&
       breakout.close < breakout.open &&
       breakout.close <= rangeLow - cfg.breakoutAtr * atr &&
       breakoutCloseLocation <= 1 - cfg.breakoutCloseLocation;
@@ -259,7 +261,8 @@ export function findXauRetestSetup(features = {}, options = {}) {
       : entry - stopDistance * cfg.takeProfitR;
 
     const signalClose = confirmation.close;
-    const spreadAdjustedDistance = Math.max(0, Math.abs(entry - signalClose) - spread);
+    const driftReference = direction === 'BUY' ? num(features.bid) : num(features.bid);
+    const spreadAdjustedDistance = Math.max(0, Math.abs(driftReference - signalClose));
     if (cfg.maxEntryDistanceAtr > 0 &&
         spreadAdjustedDistance > cfg.maxEntryDistanceAtr * atr) {
       continue;
