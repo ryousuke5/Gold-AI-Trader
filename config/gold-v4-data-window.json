@@ -4,6 +4,6 @@
   "chunk_days": 14,
   "cache_version": "v4-r1",
   "purpose": "Fixed XAUUSD M5 research window for GOLD V4 breakout-retest validation; independent cache namespace, resumable chunk/checkpoint acquisition.",
-  "strategy_version": "4.0.0",
+  "strategy_version": "4.0.1",
   "data_contract": "Dukascopy M1 BID -> active M5 only, 14-day resumable chunks"
 }
