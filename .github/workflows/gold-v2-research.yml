@@ -28,7 +28,8 @@ on:
         default: ''
 
 concurrency:
-  group: gold-v2-research-v4
+  # Use the legacy group so this resumable pipeline supersedes any stale monolithic run.
+  group: gold-v2-research
   cancel-in-progress: true
 
 jobs:
