@@ -47,6 +47,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - name: Validate XAUUSD EA safety contract
+        run: node scripts/validate-xauusd-ea-v1.mjs
       - name: Run repository tests
         run: npm test
       - name: Run XAUUSD five-year backtest
