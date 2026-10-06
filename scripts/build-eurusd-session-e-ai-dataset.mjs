@@ -40,7 +40,7 @@ async function main(){
   const file=process.env.EURUSD_AI_DATASET_INPUT||'data/eurusd-m15-bid.json';
   const payload=JSON.parse(await fs.readFile(file,'utf8'));
   if(!Array.isArray(payload.bars)||payload.bars.length<100000)throw new Error('Dataset safety check failed');
-  const m=indicators(payload.bars),h=indicators(h1Agg(m)),rows=[];
+  const m=indicators(payload.bars),h=indicators(h1Agg(m)),rows=[],seen=new Set();
   for(let i=500;i<m.length-HOLD-2;i++){
     const t=m[i].time+900,hi=latestCompletedH1(h,t);if(hi<200)continue;
     const b=m[i],sp=SPREAD*0.0001;
@@ -53,46 +53,37 @@ async function main(){
     };
     const s=buildEurUsdSessionRangeBreakoutSetupE(features);
     if(s.candidate==='WAIT')continue;
-    const lp=localParts(t),dayOfWeek=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(lp.weekday);
-    const trendDir=s.candidate==='BUY'?1:-1;
-    const triggerRange=Math.max(1e-12,b.high-b.low);
-    const pWidth=s.range_width_atr;
-    const breakoutDist=s.candidate==='BUY'?(b.close-s.range_high)/b.atr14:(s.range_low-b.close)/b.atr14;
+    if(seen.has(s.session_key))continue;
+    const spread=SPREAD*0.0001,sl=SLIP*0.0001,dir=s.candidate;
+    const execEntry=dir==='BUY'?m[i+1].open+spread+sl:m[i+1].open-sl;
+    const stop=Number(s.stop_loss),risk=Math.abs(execEntry-stop);
+    if(!(risk>0))continue;
+    const execTarget=dir==='BUY'?execEntry+risk*s.risk_reward:execEntry-risk*s.risk_reward;
+    const split=t < (Date.parse(payload.last_bar_time)-365*86400000)/1000 ? 'development':'validation_recent_365d';
+    const label=futureOutcome(m,i,dir,execEntry,stop,execTarget);
+    const stopAtr=risk/b.atr14;
+    const spreadToTpPct=spread/(risk*s.risk_reward)*100;
+    const lp=londonParts=t; const triggerRange=Math.max(1e-12,b.high-b.low);
+    const breakoutDist=dir==='BUY'?(b.close-s.range_high)/b.atr14:(s.range_low-b.close)/b.atr14;
     const h1Ext=h[hi].atr14>0?Math.abs(h[hi].close-h[hi].ema50)/h[hi].atr14:null;
     const bodyAtr=Math.abs(b.close-b.open)/b.atr14;
-    const closeLoc=s.candidate==='BUY'?(b.close-b.low)/triggerRange:(b.high-b.close)/triggerRange;
-    const entry=s.entry,stop=s.stop_loss,target=s.take_profit;
-    const label=futureOutcome(m,i,s.candidate,entry,stop,target);
-    const split=t < Date.parse(new Date(Date.parse(payload.last_bar_time)-365*86400000).toISOString())/1000 ? 'development':'validation_recent_365d';
+    const closeLoc=dir==='BUY'?(b.close-b.low)/triggerRange:(b.high-b.close)/triggerRange;
     rows.push({
-      schema_version:'eurusd_session_e_ai_v1',
-      split,
-      signal_time:new Date(t*1000).toISOString(),
-      session_key:s.session_key,
-      direction:s.candidate,
+      schema_version:'eurusd_session_e_ai_v2',
+      split,signal_time:new Date(t*1000).toISOString(),session_key:s.session_key,direction:dir,
       point_in_time_features:{
-        direction:trendDir,
-        london_hour:Number(lp.hour),
-        day_of_week:dayOfWeek,
-        spread_pips:s.spread_pips,
-        range_width_atr:pWidth,
-        breakout_distance_atr:breakoutDist,
-        h1_slope_agreement:s.h1_slope_agreement,
-        h1_extension_atr:h1Ext,
-        m15_rsi14:b.rsi14,
-        m15_ema20_distance_atr:(b.close-b.ema20)/b.atr14,
-        m15_ema50_distance_atr:(b.close-b.ema50)/b.atr14,
-        m15_body_atr:bodyAtr,
-        m15_close_location:closeLoc,
-        m15_range_atr:triggerRange/b.atr14,
-        stop_atr:s.stop_atr,
-        spread_to_tp_pct:s.spread_to_tp_pct,
-        range_high:s.range_high,
-        range_low:s.range_low
+        direction:dir==='BUY'?1:-1,london_hour:Number(lp.hour),day_of_week:dayOfWeek,
+        spread_pips:s.spread_pips,range_width_atr:s.range_width_atr,breakout_distance_atr:breakoutDist,
+        h1_slope_agreement:s.h1_slope_agreement,h1_extension_atr:h1Ext,m15_rsi14:b.rsi14,
+        m15_ema20_distance_atr:(b.close-b.ema20)/b.atr14,m15_ema50_distance_atr:(b.close-b.ema50)/b.atr14,
+        m15_body_atr:bodyAtr,m15_close_location:closeLoc,m15_range_atr:triggerRange/b.atr14,
+        stop_atr:stopAtr,spread_to_tp_pct:spreadToTpPct,range_high:s.range_high,range_low:s.range_low
       },
-      decision_context:{setup_type:s.setup_type,trend:s.trend,take_profit_r:s.risk_reward,max_trades_per_session:s.max_trades_per_session},
+      decision_context:{setup_type:s.setup_type,trend:s.trend,take_profit_r:s.risk_reward,max_trades_per_session:1,
+        execution_entry:execEntry,stop_loss:stop,take_profit:execTarget},
       label
     });
+    seen.add(s.session_key);
   }
   await fs.mkdir(path.dirname(OUTPUT)==='.'?'.':path.dirname(OUTPUT),{recursive:true});
   const text=rows.map(r=>JSON.stringify(r)).join('\n')+'\n';
