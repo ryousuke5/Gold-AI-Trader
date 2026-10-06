@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGoldV4Setup } from '../src/gold_strategy_v4.js';
@@ -126,4 +127,21 @@ test('GOLD V4 safely rejects insufficient history', () => {
   const result = buildGoldV4Setup(f);
   assert.equal(result.candidate, 'WAIT');
   assert.equal(result.reason, 'missing_or_invalid_features');
+});
+
+
+test('GOLD V4 workflow preserves resumable cache and parameter wiring', async () => {
+  const workflow = await fs.readFile(new URL('../.github/workflows/gold-v4-research.yml', import.meta.url), 'utf8');
+  for (const token of [
+    'cancel-in-progress: false',
+    'xauusd-v4-m5-',
+    'xauusd-m5-v5-',
+    'xauusd-v4-m1-',
+    'GOLD_BREAKOUT_BODY_ATR',
+    'GOLD_MAX_RETEST_BARS',
+    'GOLD_MAX_RETEST_DEPTH_ATR',
+    'GOLD_BACKTEST_MIN_EFFECTIVE_RR'
+  ]) {
+    assert.ok(workflow.includes(token), 'missing workflow token: ' + token);
+  }
 });
