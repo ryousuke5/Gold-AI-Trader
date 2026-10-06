@@ -16,7 +16,7 @@ test('XAUUSD V2 detects range -> breakout -> retest -> confirmation', () => {
   }
 
   // Confirmed breakout.
-  bars.push(makeBar(t0 + 12 * 300, 101, 103.4, 100.8, 103.0));
+  bars.push(makeBar(t0 + 12 * 300, 101.3, 103.4, 100.8, 103.0));
 
   // Retest of range high without structural invalidation.
   bars.push(makeBar(t0 + 13 * 300, 103.0, 103.2, 101.85, 102.0));
@@ -90,7 +90,7 @@ test('normal spread does not by itself fail the entry drift filter', () => {
   const bars = [];
   const t0 = 1_700_100_000;
   for (let i = 0; i < 12; i += 1) bars.push(makeBar(t0 + i * 300, 100, 102, 98, 100));
-  bars.push(makeBar(t0 + 12 * 300, 101, 103.4, 100.8, 103));
+  bars.push(makeBar(t0 + 12 * 300, 101.3, 103.4, 100.8, 103));
   bars.push(makeBar(t0 + 13 * 300, 103, 103.2, 101.85, 102));
   bars.push(makeBar(t0 + 14 * 300, 102, 103.5, 101.9, 103.25));
 
@@ -109,5 +109,6 @@ test('normal spread does not by itself fail the entry drift filter', () => {
   };
 
   const setup = findXauRetestSetup(f);
+  assert.equal(setup.candidate, 'BUY');
   assert.notEqual(setup.reasons?.[0], 'entry_drift_filter');
 });
