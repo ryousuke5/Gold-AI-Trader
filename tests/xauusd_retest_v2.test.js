@@ -19,10 +19,10 @@ test('XAUUSD V2 detects range -> breakout -> retest -> confirmation', () => {
   bars.push(makeBar(t0 + 12 * 300, 101.0, 103.0, 100.7, 102.7));
 
   // Retest of range high without structural invalidation.
-  bars.push(makeBar(t0 + 13 * 300, 102.7, 102.9, 101.35, 101.6));
+  bars.push(makeBar(t0 + 13 * 300, 102.7, 102.9, 101.6, 101.8));
 
   // Confirmation above retest high.
-  bars.push(makeBar(t0 + 14 * 300, 101.6, 103.0, 101.5, 102.75));
+  bars.push(makeBar(t0 + 14 * 300, 101.8, 103.1, 101.7, 102.95));
 
   const recentH1 = [];
   for (let i = 0; i < 5; i += 1) {
@@ -31,8 +31,8 @@ test('XAUUSD V2 detects range -> breakout -> retest -> confirmation', () => {
 
   const features = {
     barTime: bars.at(-1).time,
-    bid: 102.75,
-    ask: 103.30,
+    bid: 102.95,
+    ask: 103.50,
     spread: 0.55,
     m5: {
       ema20: 102.4,
