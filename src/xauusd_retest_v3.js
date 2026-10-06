@@ -65,7 +65,9 @@ export function findXauRetestSetupV3(features={},options={}){
   const firstRetest=Math.max(0,confirmationIndex-cfg.maxConfirmBars);
   const lastRetest=confirmationIndex-1;
 
-  for(let retestIndex=lastRetest;retestIndex>=firstRetest;retestIndex-=1){
+  // Prefer the first valid retest after the breakout, not a later secondary touch.
+  // This keeps the setup anchored to the initial break -> retest -> reclaim sequence.
+  for(let retestIndex=firstRetest;retestIndex<=lastRetest;retestIndex+=1){
     const retest=all[retestIndex];
     if (debug && retestIndex === debug.targetRetestIndex) debug.last = { retestIndex, validRetest: validBar(retest) };
     if(!validBar(retest))continue;
