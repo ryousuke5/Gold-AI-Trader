@@ -22,7 +22,12 @@ const required = [
   ['broker stop level guard', /MODE_STOPLEVEL/],
   ['minimum-lot risk protection', /rawLots\s*<\s*minLot/],
   ['market order execution', /OrderSend\s*\(/],
-  ['auto orders disabled by default', /input bool\s+AllowAutoOrders\s*=\s*false/]
+  ['auto orders disabled by default', /input bool\s+AllowAutoOrders\s*=\s*false/],
+  ['JST session conversion', /XmServerUtcOffsetHours\s*\(/],
+  ['persistent processed bar state', /GlobalVariableSet\s*\(/],
+  ['restart-safe trade history cooldown', /LastTradeOpenTime\s*\(/],
+  ['execution-time spread recheck', /execution spread widened above limit/]
+
 ];
 
 const failures = required.filter(([, rx]) => !rx.test(source)).map(([name]) => name);
