@@ -76,6 +76,7 @@ jobs:
           console.log('COMMIT_SHA', process.env.GITHUB_SHA);
           console.log('RUN_ID', process.env.GITHUB_RUN_ID);
           console.log('ARTIFACT', 'gold-v2-5y-baseline');
+          fs.writeFileSync('gold-backtest-output/baseline_run_manifest.json', JSON.stringify({commit_sha:process.env.GITHUB_SHA,run_id:process.env.GITHUB_RUN_ID,workflow:'Gold V2 5Y Baseline',artifact:'gold-v2-5y-baseline',generated_at:new Date().toISOString(),metrics:m},null,2));
           console.log(JSON.stringify(m,null,2));
           NODE
 
