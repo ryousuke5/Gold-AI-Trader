@@ -112,6 +112,24 @@ jobs:
           GOLD_BACKTEST_OUTPUT_DIR: ${{ github.workspace }}/tmp-resume-test/full
         run: node scripts/backtest-gold-v2-resumable.mjs
 
+      - name: Verify dataset identity mismatch is rejected
+        run: |
+          cp tmp-resume-test/resume/gold_v2_resume_checkpoint.json tmp-resume-test/resume/mismatch.json
+          node <<'NODE'
+          const fs=require('fs');
+          const p='tmp-resume-test/resume/gold_v2_resume_checkpoint.json';
+          const x=JSON.parse(fs.readFileSync(p));
+          x.identity='INTENTIONALLY_INVALID';
+          fs.writeFileSync(p,JSON.stringify(x,null,2));
+          NODE
+          set +e
+          GOLD_BACKTEST_DATA_FILE="${{ github.workspace }}/tmp-resume-test/xauusd-m5.json" GOLD_BACKTEST_OUTPUT_DIR="${{ github.workspace }}/tmp-resume-test/resume" node scripts/backtest-gold-v2-resumable.mjs > tmp-resume-test/mismatch.log 2>&1
+          code=$?
+          set -e
+          grep -q 'Checkpoint identity mismatch; refusing unsafe resume' tmp-resume-test/mismatch.log
+          test "$code" -ne 0
+          mv tmp-resume-test/resume/mismatch.json tmp-resume-test/resume/gold_v2_resume_checkpoint.json
+
       - name: Compare resumed result with clean result
         run: |
           node <<'NODE'
