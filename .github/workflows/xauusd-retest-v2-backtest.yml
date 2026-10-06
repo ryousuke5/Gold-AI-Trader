@@ -7,6 +7,7 @@ on:
       - 'src/xauusd_retest_v2.js'
       - 'scripts/backtest-xauusd-retest-v2.mjs'
       - 'mt4/XAUUSDTrendRetestEA_V2.mq4'
+      - 'scripts/validate-xauusd-retest-v2.mjs'
       - '.github/workflows/xauusd-retest-v2-backtest.yml'
   workflow_dispatch:
 
@@ -70,6 +71,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - name: Validate V2 EA safety contract
+        run: node scripts/validate-xauusd-retest-v2.mjs
       - name: Syntax check research strategy
         run: |
           node --check src/xauusd_retest_v2.js
