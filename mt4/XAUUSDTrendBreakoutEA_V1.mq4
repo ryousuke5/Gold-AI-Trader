@@ -1,0 +1,842 @@
+#property strict
+#property version   "1.0"
+#property description "XAUUSD M5/H1 trend-compression breakout EA. Auto orders are disabled by default."
+
+input string SymbolName = "";
+input int    SignalTimeframe = PERIOD_M5;
+input int    TrendTimeframe = PERIOD_H1;
+
+// --- Entry logic
+input int    RangeLookbackBars = 12;
+input double MinRangeAtr = 0.80;
+input double MaxRangeAtr = 2.80;
+input double BreakoutBufferAtr = 0.10;
+input double MinBodyAtr = 0.40;
+input double MinCloseLocation = 0.65;
+input double MinVolumeRatio = 1.10;
+input double BuyRsiMin = 52.0;
+input double BuyRsiMax = 75.0;
+input double SellRsiMin = 25.0;
+input double SellRsiMax = 48.0;
+input double MaxExtensionAtr = 1.50;
+
+// --- Risk / exit
+input double RiskPercent = 0.25;
+input double MaxDailyLossPercent = 1.50;
+input double MaxAccountDrawdownPercent = 8.00;
+input double StopBufferAtr = 0.15;
+input double TriggerStopPadAtr = 0.05;
+input double MinStopAtr = 0.80;
+input double MaxStopAtr = 2.00;
+input double TakeProfitR = 2.00;
+input int    MaxHoldBars = 96;
+input double MaxEntryDistanceAtr = 0.20;
+
+// --- Execution safety
+input double MaxSpreadPrice = 0.60;
+input int    SlippagePoints = 30;
+input int    MaxOpenPositions = 1;
+input int    CooldownBars = 2;
+input bool   UseSessionFilter = true;
+input int    SessionStartHour = 17;
+input int    SessionEndHour = 20;
+input bool   AllowAutoOrders = false;
+input bool   CloseOnOppositeSignal = false;
+input int    MagicNumber = 26100601;
+input string OrderComment = "XAUUSD-EA-V1";
+
+datetime g_lastSignalBarOpen = 0;
+datetime g_lastOrderBarOpen = 0;
+datetime g_lastTradeCloseTime = 0;
+bool g_sessionWarned = false;
+
+//---------------------------------------------------------
+// Symbol / time helpers
+//---------------------------------------------------------
+string TradeSymbol()
+{
+   string configured = SymbolName;
+   StringTrimLeft(configured);
+   StringTrimRight(configured);
+   if(StringLen(configured) > 0)
+      return configured;
+   return Symbol();
+}
+
+bool IsGoldSymbol(string sym)
+{
+   return StringFind(sym, "XAU") >= 0 ||
+          StringFind(sym, "xau") >= 0 ||
+          StringFind(sym, "GOLD") >= 0 ||
+          StringFind(sym, "Gold") >= 0 ||
+          StringFind(sym, "gold") >= 0;
+}
+
+bool IsNewSignalBar(string sym)
+{
+   datetime openTime = iTime(sym, SignalTimeframe, 1);
+   if(openTime <= 0)
+      return false;
+
+   if(openTime == g_lastSignalBarOpen)
+      return false;
+
+   g_lastSignalBarOpen = openTime;
+   return true;
+}
+
+bool InSession()
+{
+   if(!UseSessionFilter)
+      return true;
+
+   int h = TimeHour(TimeCurrent());
+
+   if(SessionStartHour == SessionEndHour)
+      return true;
+
+   if(SessionStartHour < SessionEndHour)
+      return h >= SessionStartHour && h <= SessionEndHour;
+
+   return h >= SessionStartHour || h <= SessionEndHour;
+}
+
+//---------------------------------------------------------
+// Account / risk helpers
+//---------------------------------------------------------
+string PeakEquityKey(string sym)
+{
+   return "XAUUSD_EA_V1:PeakEquity:" + IntegerToString(AccountNumber()) + ":" + sym;
+}
+
+double PeakEquity(string sym)
+{
+   double equity = AccountEquity();
+   string key = PeakEquityKey(sym);
+
+   if(!GlobalVariableCheck(key))
+   {
+      GlobalVariableSet(key, equity);
+      return equity;
+   }
+
+   double peak = GlobalVariableGet(key);
+   if(equity > peak)
+   {
+      peak = equity;
+      GlobalVariableSet(key, peak);
+   }
+
+   return peak;
+}
+
+double DailyRealizedPnl(string sym)
+{
+   datetime dayStart = StrToTime(TimeToString(TimeCurrent(), TIME_DATE));
+   double realized = 0.0;
+
+   for(int i = OrdersHistoryTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY))
+         continue;
+
+      if(OrderSymbol() != sym || OrderMagicNumber() != MagicNumber)
+         continue;
+
+      if(OrderCloseTime() < dayStart)
+         continue;
+
+      int type = OrderType();
+      if(type != OP_BUY && type != OP_SELL)
+         continue;
+
+      realized += OrderProfit() + OrderSwap() + OrderCommission();
+   }
+
+   return realized;
+}
+
+double DailyPnlPercent(string sym)
+{
+   double balance = AccountBalance();
+   double realized = DailyRealizedPnl(sym);
+   double dayStartBalance = balance - realized;
+
+   if(dayStartBalance <= 0.0)
+      return 0.0;
+
+   return ((AccountEquity() - dayStartBalance) / dayStartBalance) * 100.0;
+}
+
+double AccountDrawdownPercent(string sym)
+{
+   double peak = PeakEquity(sym);
+   double equity = AccountEquity();
+
+   if(peak <= 0.0)
+      return 0.0;
+
+   return ((peak - equity) / peak) * 100.0;
+}
+
+int OpenPositions(string sym)
+{
+   int count = 0;
+
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+         continue;
+
+      if(OrderSymbol() != sym || OrderMagicNumber() != MagicNumber)
+         continue;
+
+      int type = OrderType();
+      if(type == OP_BUY || type == OP_SELL)
+         count++;
+   }
+
+   return count;
+}
+
+bool IsTradingRiskAllowed(string sym)
+{
+   if(MaxDailyLossPercent > 0.0 && DailyPnlPercent(sym) <= -MathAbs(MaxDailyLossPercent))
+   {
+      Print("XAUUSD EA: daily loss limit reached. daily_pnl_pct=",
+            DoubleToString(DailyPnlPercent(sym), 2));
+      return false;
+   }
+
+   if(MaxAccountDrawdownPercent > 0.0 && AccountDrawdownPercent(sym) >= MathAbs(MaxAccountDrawdownPercent))
+   {
+      Print("XAUUSD EA: account drawdown limit reached. dd_pct=",
+            DoubleToString(AccountDrawdownPercent(sym), 2));
+      return false;
+   }
+
+   return true;
+}
+
+//---------------------------------------------------------
+// Market data helpers
+//---------------------------------------------------------
+bool HistoryReady(string sym)
+{
+   if(!SymbolSelect(sym, true))
+   {
+      Print("XAUUSD EA: SymbolSelect failed. symbol=", sym,
+            " error=", GetLastError());
+      return false;
+   }
+
+   int signalBars = iBars(sym, SignalTimeframe);
+   int trendBars = iBars(sym, TrendTimeframe);
+
+   if(signalBars < 300 || trendBars < 300)
+   {
+      Print("XAUUSD EA: insufficient history. signalBars=", signalBars,
+            " trendBars=", trendBars);
+      return false;
+   }
+
+   return iTime(sym, SignalTimeframe, 1) > 0 &&
+          iTime(sym, TrendTimeframe, 1) > 0;
+}
+
+bool ValidOhlc(string sym, int timeframe, int shift)
+{
+   double o = iOpen(sym, timeframe, shift);
+   double h = iHigh(sym, timeframe, shift);
+   double l = iLow(sym, timeframe, shift);
+   double c = iClose(sym, timeframe, shift);
+
+   return o > 0.0 &&
+          h >= l &&
+          h >= o &&
+          h >= c &&
+          l <= o &&
+          l <= c;
+}
+
+double AverageVolume(string sym, int timeframe, int startShift, int count)
+{
+   if(count <= 0)
+      return 0.0;
+
+   double sum = 0.0;
+   int used = 0;
+
+   for(int shift = startShift; shift < startShift + count; shift++)
+   {
+      long v = iVolume(sym, timeframe, shift);
+      if(v >= 0)
+      {
+         sum += (double)v;
+         used++;
+      }
+   }
+
+   return used > 0 ? sum / used : 0.0;
+}
+
+double HighestHigh(string sym, int timeframe, int startShift, int count)
+{
+   double high = -DBL_MAX;
+
+   for(int shift = startShift; shift < startShift + count; shift++)
+      high = MathMax(high, iHigh(sym, timeframe, shift));
+
+   return high;
+}
+
+double LowestLow(string sym, int timeframe, int startShift, int count)
+{
+   double low = DBL_MAX;
+
+   for(int shift = startShift; shift < startShift + count; shift++)
+      low = MathMin(low, iLow(sym, timeframe, shift));
+
+   return low;
+}
+
+//---------------------------------------------------------
+// Trade calculations
+//---------------------------------------------------------
+double NormalizePrice(string sym, double price)
+{
+   int digits = (int)MarketInfo(sym, MODE_DIGITS);
+   return NormalizeDouble(price, digits);
+}
+
+double NormalizeLot(string sym, double lots)
+{
+   double minLot = MarketInfo(sym, MODE_MINLOT);
+   double maxLot = MarketInfo(sym, MODE_MAXLOT);
+   double step = MarketInfo(sym, MODE_LOTSTEP);
+
+   if(step <= 0.0)
+      return 0.0;
+
+   lots = MathMax(minLot, MathMin(maxLot, lots));
+
+   double steps = MathFloor((lots - minLot + 1e-12) / step);
+   double normalized = minLot + steps * step;
+
+   if(normalized < minLot)
+      normalized = minLot;
+   if(normalized > maxLot)
+      normalized = maxLot;
+
+   int lotDigits = 2;
+   if(step >= 1.0) lotDigits = 0;
+   else if(step >= 0.1) lotDigits = 1;
+   else if(step < 0.01) lotDigits = 3;
+
+   return NormalizeDouble(normalized, lotDigits);
+}
+
+double RiskPerLot(string sym, double entry, double stop)
+{
+   double tickSize = MarketInfo(sym, MODE_TICKSIZE);
+   double tickValue = MarketInfo(sym, MODE_TICKVALUE);
+
+   if(tickSize <= 0.0 || tickValue <= 0.0)
+      return 0.0;
+
+   double ticks = MathAbs(entry - stop) / tickSize;
+   return ticks * tickValue;
+}
+
+double CalculateLots(string sym, double entry, double stop)
+{
+   if(RiskPercent <= 0.0)
+      return 0.0;
+
+   double moneyRisk = AccountEquity() * (RiskPercent / 100.0);
+   double riskPerLot = RiskPerLot(sym, entry, stop);
+
+   if(moneyRisk <= 0.0 || riskPerLot <= 0.0)
+      return 0.0;
+
+   return NormalizeLot(sym, moneyRisk / riskPerLot);
+}
+
+bool StopsMeetBrokerRules(string sym, int type, double entry, double stop, double target)
+{
+   double point = MarketInfo(sym, MODE_POINT);
+   double stopLevel = MarketInfo(sym, MODE_STOPLEVEL) * point;
+   double freezeLevel = MarketInfo(sym, MODE_FREEZELEVEL) * point;
+   double required = MathMax(stopLevel, freezeLevel);
+
+   if(point <= 0.0)
+      return false;
+
+   if(type == OP_BUY)
+      return entry - stop > required && target - entry > required;
+
+   if(type == OP_SELL)
+      return stop - entry > required && entry - target > required;
+
+   return false;
+}
+
+bool PriceDriftAllowed(string sym, double signalClose, double atr)
+{
+   if(MaxEntryDistanceAtr <= 0.0)
+      return true;
+
+   RefreshRates();
+
+   double current = MarketInfo(sym, MODE_BID);
+   if(current <= 0.0 || atr <= 0.0)
+      return false;
+
+   return MathAbs(current - signalClose) <= MaxEntryDistanceAtr * atr;
+}
+
+bool CooldownAllowed()
+{
+   if(CooldownBars <= 0 || g_lastOrderBarOpen <= 0)
+      return true;
+
+   int shift = iBarShift(TradeSymbol(), SignalTimeframe, g_lastOrderBarOpen, true);
+   if(shift < 0)
+      return true;
+
+   return shift >= CooldownBars + 1;
+}
+
+//---------------------------------------------------------
+// Signal engine
+//---------------------------------------------------------
+int GetSignal(string sym, double &entry, double &stop, double &target, double &atr, string &reason)
+{
+   entry = 0.0;
+   stop = 0.0;
+   target = 0.0;
+   atr = 0.0;
+   reason = "";
+
+   if(!HistoryReady(sym))
+   {
+      reason = "history_not_ready";
+      return -1;
+   }
+
+   datetime signalOpen = iTime(sym, SignalTimeframe, 1);
+   if(signalOpen <= 0)
+   {
+      reason = "signal_bar_missing";
+      return -1;
+   }
+
+   if(UseSessionFilter && !InSession())
+   {
+      reason = "outside_session";
+      return 0;
+   }
+
+   if(RangeLookbackBars < 4)
+   {
+      reason = "invalid_range_lookback";
+      return -1;
+   }
+
+   double m5Atr = iATR(sym, SignalTimeframe, 14, 1);
+   double h1Atr = iATR(sym, TrendTimeframe, 14, 1);
+   double h1Close = iClose(sym, TrendTimeframe, 1);
+   double h1Ema20 = iMA(sym, TrendTimeframe, 20, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double h1Ema50 = iMA(sym, TrendTimeframe, 50, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double h1Ema200 = iMA(sym, TrendTimeframe, 200, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double h1Rsi = iRSI(sym, TrendTimeframe, 14, PRICE_CLOSE, 1);
+   double m5Ema20 = iMA(sym, SignalTimeframe, 20, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double m5Ema50 = iMA(sym, SignalTimeframe, 50, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double m5Rsi = iRSI(sym, SignalTimeframe, 14, PRICE_CLOSE, 1);
+
+   if(m5Atr <= 0.0 || h1Atr <= 0.0 ||
+      h1Close <= 0.0 || h1Ema20 <= 0.0 || h1Ema50 <= 0.0 || h1Ema200 <= 0.0 ||
+      m5Ema20 <= 0.0 || m5Ema50 <= 0.0 ||
+      h1Rsi < 0.0 || h1Rsi > 100.0 || m5Rsi < 0.0 || m5Rsi > 100.0)
+   {
+      reason = "indicator_not_ready";
+      return -1;
+   }
+
+   bool trendUp =
+      h1Close > h1Ema20 &&
+      h1Ema20 > h1Ema50 &&
+      h1Ema50 > h1Ema200 &&
+      h1Rsi >= BuyRsiMin &&
+      h1Rsi <= BuyRsiMax;
+
+   bool trendDown =
+      h1Close < h1Ema20 &&
+      h1Ema20 < h1Ema50 &&
+      h1Ema50 < h1Ema200 &&
+      h1Rsi >= SellRsiMin &&
+      h1Rsi <= SellRsiMax;
+
+   if(!trendUp && !trendDown)
+   {
+      reason = "h1_trend_filter";
+      return 0;
+   }
+
+   if(!ValidOhlc(sym, SignalTimeframe, 1))
+   {
+      reason = "invalid_signal_bar";
+      return -1;
+   }
+
+   double rangeHigh = HighestHigh(sym, SignalTimeframe, 2, RangeLookbackBars);
+   double rangeLow = LowestLow(sym, SignalTimeframe, 2, RangeLookbackBars);
+   double rangeWidth = rangeHigh - rangeLow;
+   double rangeAtr = rangeWidth / m5Atr;
+
+   if(!(rangeWidth > 0.0) ||
+      rangeAtr < MinRangeAtr ||
+      rangeAtr > MaxRangeAtr)
+   {
+      reason = "compression_filter";
+      return 0;
+   }
+
+   double signalOpen = iOpen(sym, SignalTimeframe, 1);
+   double signalHigh = iHigh(sym, SignalTimeframe, 1);
+   double signalLow = iLow(sym, SignalTimeframe, 1);
+   double signalClose = iClose(sym, SignalTimeframe, 1);
+   double signalRange = signalHigh - signalLow;
+   double signalBody = MathAbs(signalClose - signalOpen);
+
+   if(signalRange <= 0.0 || signalBody / m5Atr < MinBodyAtr)
+   {
+      reason = "impulse_body_filter";
+      return 0;
+   }
+
+   double closeLocation = (signalClose - signalLow) / signalRange;
+   double avgVolume = AverageVolume(sym, SignalTimeframe, 2, RangeLookbackBars);
+   double signalVolume = (double)iVolume(sym, SignalTimeframe, 1);
+   double volumeRatio = avgVolume > 0.0 ? signalVolume / avgVolume : 0.0;
+
+   if(avgVolume > 0.0 && volumeRatio < MinVolumeRatio)
+   {
+      reason = "volume_expansion_filter";
+      return 0;
+   }
+
+   double extension = 0.0;
+   double bid = MarketInfo(sym, MODE_BID);
+   double ask = MarketInfo(sym, MODE_ASK);
+   double spread = ask - bid;
+
+   if(bid <= 0.0 || ask <= 0.0 || ask < bid)
+   {
+      reason = "price_not_ready";
+      return -1;
+   }
+
+   if(spread > MaxSpreadPrice)
+   {
+      reason = "spread_filter";
+      return 0;
+   }
+
+   bool buy =
+      trendUp &&
+      m5Ema20 > m5Ema50 &&
+      m5Rsi >= BuyRsiMin &&
+      m5Rsi <= BuyRsiMax &&
+      signalClose >= rangeHigh + BreakoutBufferAtr * m5Atr &&
+      closeLocation >= MinCloseLocation &&
+      signalClose >= m5Ema20 &&
+      ((signalClose - m5Ema20) / m5Atr) <= MaxExtensionAtr;
+
+   bool sell =
+      trendDown &&
+      m5Ema20 < m5Ema50 &&
+      m5Rsi >= SellRsiMin &&
+      m5Rsi <= SellRsiMax &&
+      signalClose <= rangeLow - BreakoutBufferAtr * m5Atr &&
+      closeLocation <= (1.0 - MinCloseLocation) &&
+      signalClose <= m5Ema20 &&
+      ((m5Ema20 - signalClose) / m5Atr) <= MaxExtensionAtr;
+
+   if(!buy && !sell)
+   {
+      reason = "breakout_trigger_filter";
+      return 0;
+   }
+
+   int type = buy ? OP_BUY : OP_SELL;
+
+   entry = type == OP_BUY ? ask : bid;
+   stop = type == OP_BUY
+      ? MathMin(rangeLow - StopBufferAtr * m5Atr, signalLow - TriggerStopPadAtr * m5Atr)
+      : MathMax(rangeHigh + StopBufferAtr * m5Atr, signalHigh + TriggerStopPadAtr * m5Atr);
+
+   double stopDistance = MathAbs(entry - stop);
+   double stopAtr = stopDistance / m5Atr;
+
+   if(stopAtr < MinStopAtr || stopAtr > MaxStopAtr)
+   {
+      reason = "stop_distance_filter";
+      return 0;
+   }
+
+   target = type == OP_BUY
+      ? entry + TakeProfitR * stopDistance
+      : entry - TakeProfitR * stopDistance;
+
+   if(!StopsMeetBrokerRules(sym, type, entry, stop, target))
+   {
+      reason = "broker_stop_level_filter";
+      return 0;
+   }
+
+   if(!PriceDriftAllowed(sym, signalClose, m5Atr))
+   {
+      reason = "entry_drift_filter";
+      return 0;
+   }
+
+   atr = m5Atr;
+   reason = buy ? "BUY_setup_confirmed" : "SELL_setup_confirmed";
+   return type == OP_BUY ? 1 : 2;
+}
+
+//---------------------------------------------------------
+// Order execution
+//---------------------------------------------------------
+bool CloseOppositePositions(string sym, int signalType)
+{
+   if(!CloseOnOppositeSignal)
+      return true;
+
+   bool ok = true;
+
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+         continue;
+
+      if(OrderSymbol() != sym || OrderMagicNumber() != MagicNumber)
+         continue;
+
+      int type = OrderType();
+      if((signalType == OP_BUY && type != OP_SELL) ||
+         (signalType == OP_SELL && type != OP_BUY))
+         continue;
+
+      RefreshRates();
+
+      double closePrice = type == OP_BUY
+         ? MarketInfo(sym, MODE_BID)
+         : MarketInfo(sym, MODE_ASK);
+
+      ResetLastError();
+      if(!OrderClose(OrderTicket(), OrderLots(), closePrice, SlippagePoints, clrNONE))
+      {
+         int errorCode = GetLastError();
+         Print("XAUUSD EA: failed to close opposite order. ticket=",
+               OrderTicket(), " error=", errorCode);
+         ok = false;
+      }
+   }
+
+   return ok;
+}
+
+bool ExecuteSignal(string sym, int signalType, double entry, double stop, double target, datetime signalBar)
+{
+   if(!AllowAutoOrders)
+   {
+      Print("XAUUSD EA: signal detected but auto orders are OFF. type=",
+            signalType == OP_BUY ? "BUY" : "SELL",
+            " entry=", DoubleToString(entry, (int)MarketInfo(sym, MODE_DIGITS)),
+            " sl=", DoubleToString(stop, (int)MarketInfo(sym, MODE_DIGITS)),
+            " tp=", DoubleToString(target, (int)MarketInfo(sym, MODE_DIGITS)));
+      return true;
+   }
+
+   if(OpenPositions(sym) >= MathMax(1, MaxOpenPositions))
+   {
+      Print("XAUUSD EA: max open positions reached.");
+      return false;
+   }
+
+   if(!IsTradingRiskAllowed(sym))
+      return false;
+
+   if(!CloseOppositePositions(sym, signalType))
+      return false;
+
+   double lots = CalculateLots(sym, entry, stop);
+   if(lots <= 0.0)
+   {
+      Print("XAUUSD EA: lot calculation failed.");
+      return false;
+   }
+
+   double freeMargin = AccountFreeMarginCheck(sym, signalType, lots);
+   if(freeMargin <= 0.0)
+   {
+      Print("XAUUSD EA: insufficient free margin for lots=",
+            DoubleToString(lots, 2));
+      return false;
+   }
+
+   int digits = (int)MarketInfo(sym, MODE_DIGITS);
+   double sendPrice = signalType == OP_BUY
+      ? MarketInfo(sym, MODE_ASK)
+      : MarketInfo(sym, MODE_BID);
+
+   sendPrice = NormalizePrice(sym, sendPrice);
+   stop = NormalizePrice(sym, stop);
+   target = NormalizePrice(sym, target);
+
+   if(!StopsMeetBrokerRules(sym, signalType, sendPrice, stop, target))
+   {
+      Print("XAUUSD EA: broker stop/freeze rules failed again at execution time.");
+      return false;
+   }
+
+   ResetLastError();
+
+   int ticket = OrderSend(
+      sym,
+      signalType,
+      lots,
+      sendPrice,
+      SlippagePoints,
+      stop,
+      target,
+      OrderComment,
+      MagicNumber,
+      0,
+      clrNONE
+   );
+
+   int errorCode = GetLastError();
+
+   if(ticket < 0)
+   {
+      Print("XAUUSD EA: OrderSend failed. error=", errorCode,
+            " lots=", DoubleToString(lots, 2),
+            " price=", DoubleToString(sendPrice, digits),
+            " sl=", DoubleToString(stop, digits),
+            " tp=", DoubleToString(target, digits));
+      return false;
+   }
+
+   g_lastOrderBarOpen = signalBar;
+   Print("XAUUSD EA: order opened. ticket=", ticket,
+         " type=", signalType == OP_BUY ? "BUY" : "SELL",
+         " lots=", DoubleToString(lots, 2),
+         " price=", DoubleToString(sendPrice, digits));
+
+   return true;
+}
+
+//---------------------------------------------------------
+// Monitoring
+//---------------------------------------------------------
+void Evaluate()
+{
+   string sym = TradeSymbol();
+
+   if(!IsGoldSymbol(sym))
+      return;
+
+   if(!HistoryReady(sym))
+      return;
+
+   if(!IsNewSignalBar(sym))
+      return;
+
+   if(OpenPositions(sym) >= MathMax(1, MaxOpenPositions))
+      return;
+
+   if(!IsTradingRiskAllowed(sym))
+      return;
+
+   if(!CooldownAllowed())
+      return;
+
+   double entry = 0.0;
+   double stop = 0.0;
+   double target = 0.0;
+   double atr = 0.0;
+   string reason = "";
+
+   int signalType = GetSignal(sym, entry, stop, target, atr, reason);
+
+   Print("XAUUSD EA: bar=", TimeToString(iTime(sym, SignalTimeframe, 1), TIME_DATE|TIME_MINUTES),
+         " signal=", signalType == 1 ? "BUY" : signalType == 2 ? "SELL" : signalType == 0 ? "WAIT" : "ERROR",
+         " reason=", reason);
+
+   if(signalType != OP_BUY && signalType != OP_SELL)
+      return;
+
+   datetime signalBar = iTime(sym, SignalTimeframe, 1);
+
+   if(ExecuteSignal(sym, signalType, entry, stop, target, signalBar))
+      return;
+}
+
+//---------------------------------------------------------
+// EA lifecycle
+//---------------------------------------------------------
+int OnInit()
+{
+   string sym = TradeSymbol();
+
+   Print("XAUUSD Trend Breakout EA V1.0 starting. symbol=", sym,
+         " signalTF=", SignalTimeframe,
+         " trendTF=", TrendTimeframe,
+         " riskPct=", DoubleToString(RiskPercent, 3),
+         " maxSpread=", DoubleToString(MaxSpreadPrice, 2),
+         " session=", UseSessionFilter ? "on" : "off",
+         " autoOrders=", AllowAutoOrders ? "ON" : "OFF");
+
+   if(!IsGoldSymbol(sym))
+   {
+      Print("XAUUSD EA: chart symbol is not recognized as gold: ", sym);
+      return INIT_FAILED;
+   }
+
+   if(SignalTimeframe != PERIOD_M5 || TrendTimeframe != PERIOD_H1)
+   {
+      Print("XAUUSD EA: V1 is intentionally fixed to M5 signal + H1 trend. Use M5 chart.");
+      return INIT_FAILED;
+   }
+
+   if(RiskPercent <= 0.0 || RiskPercent > 2.0)
+   {
+      Print("XAUUSD EA: RiskPercent must be >0 and <=2. Current=",
+            DoubleToString(RiskPercent, 3));
+      return INIT_FAILED;
+   }
+
+   if(TakeProfitR < 1.0)
+   {
+      Print("XAUUSD EA: TakeProfitR must be >= 1.0.");
+      return INIT_FAILED;
+   }
+
+   if(MaxOpenPositions < 1)
+      return INIT_FAILED;
+
+   if(!SymbolSelect(sym, true))
+      return INIT_FAILED;
+
+   PeakEquity(sym);
+   Print("XAUUSD EA: initialized. Attach to the broker's XAUUSD/GOLD M5 chart.");
+   return INIT_SUCCEEDED;
+}
+
+void OnTick()
+{
+   Evaluate();
+}
