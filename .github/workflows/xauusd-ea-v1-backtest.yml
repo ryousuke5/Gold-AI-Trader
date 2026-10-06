@@ -1,0 +1,149 @@
+name: XAUUSD EA V1 Research Backtest
+on:
+  push:
+    branches: [feature/xauusd-trading-ea-v1]
+    paths:
+      - 'mt4/XAUUSDTrendBreakoutEA_V1.mq4'
+      - 'scripts/backtest-xauusd-ea-v1.mjs'
+      - '.github/workflows/xauusd-ea-v1-backtest.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: xauusd-ea-v1-research
+  cancel-in-progress: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: discovery
+            min_range_atr: '0.10'
+            max_range_atr: '20.00'
+            breakout_atr: '0.01'
+            min_body_atr: '0.10'
+            close_location: '0.50'
+            volume_ratio: '0.50'
+            h1_buy_min: '45'
+            h1_buy_max: '80'
+            h1_sell_min: '20'
+            h1_sell_max: '55'
+            m5_buy_min: '45'
+            m5_buy_max: '85'
+            m5_sell_min: '15'
+            m5_sell_max: '55'
+            max_extension: '5.00'
+            min_stop_atr: '0.30'
+            max_stop_atr: '5.00'
+            max_entry_distance_atr: '1.00'
+          - name: baseline
+            min_range_atr: '0.80'
+            max_range_atr: '2.80'
+            breakout_atr: '0.10'
+            min_body_atr: '0.40'
+            close_location: '0.65'
+            volume_ratio: '1.10'
+            h1_buy_min: '50'
+            h1_buy_max: '75'
+            h1_sell_min: '25'
+            h1_sell_max: '50'
+            m5_buy_min: '52'
+            m5_buy_max: '75'
+            m5_sell_min: '25'
+            m5_sell_max: '48'
+            max_extension: '1.50'
+            min_stop_atr: '0.80'
+            max_stop_atr: '2.00'
+            max_entry_distance_atr: '0.20'
+          - name: balanced
+            min_range_atr: '0.70'
+            max_range_atr: '3.00'
+            breakout_atr: '0.08'
+            min_body_atr: '0.35'
+            close_location: '0.62'
+            volume_ratio: '1.00'
+            h1_buy_min: '50'
+            h1_buy_max: '75'
+            h1_sell_min: '25'
+            h1_sell_max: '50'
+            m5_buy_min: '52'
+            m5_buy_max: '75'
+            m5_sell_min: '25'
+            m5_sell_max: '48'
+            max_extension: '1.50'
+            min_stop_atr: '0.80'
+            max_stop_atr: '2.00'
+            max_entry_distance_atr: '0.20'
+          - name: quality
+            min_range_atr: '0.90'
+            max_range_atr: '2.40'
+            breakout_atr: '0.12'
+            min_body_atr: '0.45'
+            close_location: '0.68'
+            volume_ratio: '1.15'
+            h1_buy_min: '50'
+            h1_buy_max: '75'
+            h1_sell_min: '25'
+            h1_sell_max: '50'
+            m5_buy_min: '52'
+            m5_buy_max: '75'
+            m5_sell_min: '25'
+            m5_sell_max: '48'
+            max_extension: '1.50'
+            min_stop_atr: '0.80'
+            max_stop_atr: '2.00'
+            max_entry_distance_atr: '0.20'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Validate XAUUSD EA safety contract
+        run: node scripts/validate-xauusd-ea-v1.mjs
+      - name: Run repository tests
+        run: npm test
+      - name: Run XAUUSD five-year backtest
+        env:
+          XAU_BACKTEST_DAYS: '1825'
+          XAU_BACKTEST_TIMEZONE: 'Europe/Nicosia'
+          XAU_BACKTEST_SPREAD_PRICE: '0.55'
+          XAU_BACKTEST_SLIPPAGE_PRICE: '0.10'
+          XAU_BACKTEST_MAX_HOLD_BARS: '96'
+          XAU_BACKTEST_COOLDOWN_BARS: '2'
+          XAU_RANGE_LOOKBACK: '12'
+          XAU_MIN_RANGE_ATR: '${{ matrix.min_range_atr }}'
+          XAU_MAX_RANGE_ATR: '${{ matrix.max_range_atr }}'
+          XAU_BREAKOUT_ATR: '${{ matrix.breakout_atr }}'
+          XAU_MIN_BODY_ATR: '${{ matrix.min_body_atr }}'
+          XAU_MIN_CLOSE_LOCATION: '${{ matrix.close_location }}'
+          XAU_MIN_VOLUME_RATIO: '${{ matrix.volume_ratio }}'
+          XAU_BUY_RSI_MIN: '${{ matrix.m5_buy_min }}'
+          XAU_BUY_RSI_MAX: '${{ matrix.m5_buy_max }}'
+          XAU_SELL_RSI_MIN: '${{ matrix.m5_sell_min }}'
+          XAU_SELL_RSI_MAX: '${{ matrix.m5_sell_max }}'
+          XAU_H1_RSI_BUY_MIN: '${{ matrix.h1_buy_min }}'
+          XAU_H1_RSI_BUY_MAX: '${{ matrix.h1_buy_max }}'
+          XAU_H1_RSI_SELL_MIN: '${{ matrix.h1_sell_min }}'
+          XAU_H1_RSI_SELL_MAX: '${{ matrix.h1_sell_max }}'
+          XAU_MAX_EXTENSION_ATR: '${{ matrix.max_extension }}'
+          XAU_STOP_BUFFER_ATR: '0.15'
+          XAU_TRIGGER_STOP_PAD_ATR: '0.05'
+          XAU_MIN_STOP_ATR: '${{ matrix.min_stop_atr }}'
+          XAU_MAX_STOP_ATR: '${{ matrix.max_stop_atr }}'
+          XAU_TAKE_PROFIT_R: '2.00'
+          XAU_MAX_ENTRY_DISTANCE_ATR: '${{ matrix.max_entry_distance_atr }}'
+          XAU_SESSION_START_UTC: '12'
+          XAU_SESSION_END_UTC: '15'
+          XAU_BACKTEST_OUTPUT_DIR: 'xauusd-ea-v1-output'
+        run: node scripts/backtest-xauusd-ea-v1.mjs
+      - name: Upload XAUUSD results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-ea-v1-${{ matrix.name }}
+          path: xauusd-ea-v1-output/
+          retention-days: 30
