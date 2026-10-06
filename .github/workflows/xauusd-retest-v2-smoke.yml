@@ -2,11 +2,11 @@ name: XAUUSD Break-Retest V2 Smoke
 
 on:
   push:
-    branches: [feature/xauusd-retest-v2]
+    branches: [research/xauusd-retest-v2-jst-final]
     paths:
       - 'src/xauusd_retest_v2.js'
       - 'scripts/backtest-xauusd-retest-v2.mjs'
-      - 'scripts/backtest-xauusd-retest-v2-smoke.mjs'
+      - 'scripts/backtest-xauusd-retest-v2-jst-final-smoke.mjs'
       - 'mt4/XAUUSDTrendRetestEA_V2.mq4'
       - 'tests/xauusd_retest_v2.test.js'
       - 'scripts/validate-xauusd-retest-v2.mjs'
