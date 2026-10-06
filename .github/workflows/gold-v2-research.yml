@@ -137,9 +137,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
-          key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+          key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
           restore-keys: |
-            xauusd-m1-
+            xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-
 
       - name: Prepare chunk directories
         run: |
@@ -170,7 +170,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
-          key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+          key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
 
       - name: Save completed M5 chunk
         if: success() && steps.m5cache.outputs.cache-hit != 'true'
