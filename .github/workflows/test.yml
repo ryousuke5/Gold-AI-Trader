@@ -13,6 +13,8 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm test
+      - run: node --check scripts/backtest-gold-v4.mjs
+      - run: node --check scripts/backtest-gold-v4-walkforward.mjs
       - run: python3 scripts/fetch-xauusd-m5.py --self-test
       - run: python3 scripts/fetch-xauusd-m5-chunk.py --self-test
       - run: python3 -m py_compile scripts/fetch-xauusd-m5-chunk.py scripts/assemble-xauusd-m5.py
