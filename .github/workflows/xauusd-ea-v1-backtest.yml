@@ -26,7 +26,6 @@ jobs:
             min_body_atr: '0.40'
             close_location: '0.65'
             volume_ratio: '1.10'
-            tp_r: '2.00'
           - name: balanced
             min_range_atr: '0.70'
             max_range_atr: '3.00'
@@ -34,7 +33,6 @@ jobs:
             min_body_atr: '0.35'
             close_location: '0.62'
             volume_ratio: '1.00'
-            tp_r: '2.00'
           - name: quality
             min_range_atr: '0.90'
             max_range_atr: '2.40'
@@ -42,7 +40,6 @@ jobs:
             min_body_atr: '0.45'
             close_location: '0.68'
             volume_ratio: '1.15'
-            tp_r: '2.00'
 
     steps:
       - uses: actions/checkout@v4
@@ -61,12 +58,12 @@ jobs:
           XAU_BACKTEST_MAX_HOLD_BARS: '96'
           XAU_BACKTEST_COOLDOWN_BARS: '2'
           XAU_RANGE_LOOKBACK: '12'
-          XAU_MIN_RANGE_ATR: '0.80'
-          XAU_MAX_RANGE_ATR: '2.80'
-          XAU_BREAKOUT_ATR: '0.10'
-          XAU_MIN_BODY_ATR: '0.40'
-          XAU_MIN_CLOSE_LOCATION: '0.65'
-          XAU_MIN_VOLUME_RATIO: '1.10'
+          XAU_MIN_RANGE_ATR: '${{ matrix.min_range_atr }}'
+          XAU_MAX_RANGE_ATR: '${{ matrix.max_range_atr }}'
+          XAU_BREAKOUT_ATR: '${{ matrix.breakout_atr }}'
+          XAU_MIN_BODY_ATR: '${{ matrix.min_body_atr }}'
+          XAU_MIN_CLOSE_LOCATION: '${{ matrix.close_location }}'
+          XAU_MIN_VOLUME_RATIO: '${{ matrix.volume_ratio }}'
           XAU_BUY_RSI_MIN: '52'
           XAU_BUY_RSI_MAX: '75'
           XAU_SELL_RSI_MIN: '25'
@@ -80,12 +77,12 @@ jobs:
           XAU_MAX_ENTRY_DISTANCE_ATR: '0.20'
           XAU_SESSION_START_HOUR: '17'
           XAU_SESSION_END_HOUR: '20'
-          XAU_BACKTEST_OUTPUT_DIR: 'xauusd-ea-v1-baseline-output'
+          XAU_BACKTEST_OUTPUT_DIR: 'xauusd-ea-v1-output'
         run: node scripts/backtest-xauusd-ea-v1.mjs
       - name: Upload XAUUSD results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: xauusd-ea-v1-results
-          path: xauusd-ea-v1-baseline-output/
+          name: xauusd-ea-v1-${{ matrix.name }}
+          path: xauusd-ea-v1-output/
           retention-days: 30
