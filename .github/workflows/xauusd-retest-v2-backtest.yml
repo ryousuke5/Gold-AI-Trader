@@ -3,7 +3,7 @@ name: XAUUSD Break-Retest V2 Research
 
 on:
   push:
-    branches: [feature/xauusd-retest-v2]
+    branches: [research/xauusd-retest-v2-jst-final]
     paths:
       - 'src/xauusd_retest_v2.js'
       - 'scripts/backtest-xauusd-retest-v2.mjs'
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: xauusd-retest-v2-research
+  group: xauusd-retest-v2-jst-final
   cancel-in-progress: true
 
 jobs:
