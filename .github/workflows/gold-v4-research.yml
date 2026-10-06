@@ -1,6 +1,12 @@
 name: GOLD V4 Research
 
 on:
+  workflow_call:
+    inputs:
+      end_date_utc:
+        required: false
+        type: string
+        default: ''
   push:
     branches: [main]
     paths:

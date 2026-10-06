@@ -15,6 +15,50 @@ jobs:
       - run: npm test
       - run: node --check scripts/backtest-gold-v4.mjs
       - run: node --check scripts/backtest-gold-v4-walkforward.mjs
+      - name: V4 synthetic backtest smoke test
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const { gzipSync } = require('zlib');
+          const n = 200500;
+          let price = 2300;
+          const rows = new Array(n);
+          for (let i = 0; i < n; i++) {
+            const drift = 0.0025 + Math.sin(i / 211) * 0.004;
+            const wave = Math.sin(i / 37) * 0.03;
+            const open = price;
+            const close = open + drift + wave;
+            rows[i] = {
+              time: 1700000000 + i * 300,
+              open,
+              high: Math.max(open, close) + 0.05,
+              low: Math.min(open, close) - 0.05,
+              close,
+              volume: 100 + (i % 11)
+            };
+            price = close;
+          }
+          fs.mkdirSync('tmp-gold-v4-smoke', { recursive: true });
+          fs.writeFileSync(
+            'tmp-gold-v4-smoke/xauusd-m5.json.gz',
+            gzipSync(JSON.stringify(rows), { level: 1 })
+          );
+          NODE
+          GOLD_BACKTEST_DATA_FILE="$GITHUB_WORKSPACE/tmp-gold-v4-smoke/xauusd-m5.json.gz"           GOLD_BACKTEST_LOOKBACK_DAYS=1825           GOLD_BACKTEST_OUTPUT_DIR="$GITHUB_WORKSPACE/tmp-gold-v4-smoke/out"             node scripts/backtest-gold-v4.mjs
+          node <<'NODE'
+          const fs = require('fs');
+          const p = 'tmp-gold-v4-smoke/out/gold_v4_backtest_report.json';
+          const r = JSON.parse(fs.readFileSync(p));
+          if (r.version !== 'GOLD_V4') throw new Error('Unexpected V4 report version');
+          if (!r.results?.baseline || !r.results?.conservative) throw new Error('Missing V4 cost scenarios');
+          console.log('GOLD V4 BACKTEST SMOKE PASS');
+          NODE
       - run: python3 scripts/fetch-xauusd-m5.py --self-test
       - run: python3 scripts/fetch-xauusd-m5-chunk.py --self-test
       - run: python3 -m py_compile scripts/fetch-xauusd-m5-chunk.py scripts/assemble-xauusd-m5.py
+
+
+  v4-research:
+    name: GOLD V4 full research
+    if: startsWith(github.event.head_commit.message, 'RUN_GOLD_V4')
+    uses: ./.github/workflows/gold-v4-research.yml
