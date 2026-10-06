@@ -26,11 +26,11 @@ function features(bars){
 test('V3 accepts range -> breakout -> retest -> delayed reclaim confirmation',()=>{
   const t0=1700200000;
   const bars=[];
-  for(let i=0;i<18;i++) bars.push(bar(t0+i*300,100,101.5,98.5,100));
-  bars.push(bar(t0+18*300,101,103.0,100.7,102.7));
-  bars.push(bar(t0+19*300,102.7,102.9,101.6,101.8));
-  bars.push(bar(t0+20*300,101.8,102.5,101.9,102.1));
-  bars.push(bar(t0+21*300,102.1,103.1,102.0,102.95));
+  for(let i=0;i<24;i++) bars.push(bar(t0+i*300,100,101.5,98.5,100));
+  bars.push(bar(t0+24*300,101,103.0,100.7,102.7));
+  bars.push(bar(t0+25*300,102.7,102.9,101.6,101.8));
+  bars.push(bar(t0+26*300,101.8,102.5,101.9,102.1));
+  bars.push(bar(t0+27*300,102.1,103.1,102.0,102.95));
 
   const setup=findXauRetestSetupV3(features(bars),{
     breakoutLookback:12,
@@ -46,20 +46,20 @@ test('V3 accepts range -> breakout -> retest -> delayed reclaim confirmation',()
   });
   assert.equal(setup.candidate,'BUY');
   assert.equal(setup.setup_type,'H1_RANGE_BREAK_RETEST_RECLAIM_V3');
-  assert.equal(setup.diagnostics.breakout_time,bars[18].time);
-  assert.equal(setup.diagnostics.retest_time,bars[19].time);
-  assert.equal(setup.diagnostics.confirmation_time,bars[21].time);
+  assert.equal(setup.diagnostics.breakout_time,bars[24].time);
+  assert.equal(setup.diagnostics.retest_time,bars[25].time);
+  assert.equal(setup.diagnostics.confirmation_time,bars[27].time);
   assert.equal(setup.diagnostics.confirmation_lag_bars,2);
 });
 
 test('V3 does not reject a normal spread as pure entry drift',()=>{
   const t0=1700300000;
   const bars=[];
-  for(let i=0;i<18;i++) bars.push(bar(t0+i*300,100,101.5,98.5,100));
-  bars.push(bar(t0+18*300,101,103.0,100.7,102.7));
-  bars.push(bar(t0+19*300,102.7,102.9,101.6,101.8));
-  bars.push(bar(t0+20*300,101.8,102.5,101.9,102.1));
-  bars.push(bar(t0+21*300,102.1,103.1,102.0,102.95));
+  for(let i=0;i<24;i++) bars.push(bar(t0+i*300,100,101.5,98.5,100));
+  bars.push(bar(t0+24*300,101,103.0,100.7,102.7));
+  bars.push(bar(t0+25*300,102.7,102.9,101.6,101.8));
+  bars.push(bar(t0+26*300,101.8,102.5,101.9,102.1));
+  bars.push(bar(t0+27*300,102.1,103.1,102.0,102.95));
   const setup=findXauRetestSetupV3(features(bars));
   assert.equal(setup.candidate,'BUY');
   assert.notEqual(setup.reasons?.[0],'entry_drift_filter');
