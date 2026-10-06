@@ -15,7 +15,40 @@ function h1agg(m,tz){const map=new Map();for(const b of m){const h=hour(b.time,t
 function latestH1(h,t){let lo=0,hi=h.length-1,ans=-1;while(lo<=hi){const m=Math.floor((lo+hi)/2);if(h[m].time+3600<=t){ans=m;lo=m+1;}else hi=m-1;}return ans;}
 function feat(m,i,h,hi){const b=m[i],sp=C.spread*0.0001;return normalizeEurUsdFeatures({bid:b.close-sp/2,ask:b.close+sp/2,point:0.00001,spread:sp,bar_time:b.time+900,m15:{ema20:b.ema20,ema50:b.ema50,rsi14:b.rsi14,atr14:b.atr14},h1:{close:h[hi].close,ema20:h[hi].ema20,ema50:h[hi].ema50,ema200:h[hi].ema200,rsi14:h[hi].rsi14,atr14:h[hi].atr14},recent_m15:m.slice(Math.max(0,i-79),i+1).map(x=>({...x,time:x.time+900})),recent_h1:h.slice(Math.max(0,hi-79),hi+1).map(x=>({...x,time:x.time+3600}))});}
 async function data(){const mod=await import('dukascopy-node'),get=mod.getHistoricalRates||mod.default?.getHistoricalRates;if(typeof get!=='function')throw new Error('dukascopy-node getHistoricalRates export missing');const end=new Date(),start=new Date(end.getTime()-C.days*86400000),rows=await get({instrument:'eurusd',dates:{from:start,to:end},timeframe:'m15',priceType:'bid',volumes:true,format:'array'});if(!Array.isArray(rows)||rows.length<100000)throw new Error('Insufficient Dukascopy coverage: '+(rows?.length||0));const now=Date.now();return rows.map(r=>({time:Math.floor(Number(r[0])/1000),open:Number(r[1]),high:Number(r[2]),low:Number(r[3]),close:Number(r[4]),volume:Number(r[5])||0})).filter(b=>Number.isFinite(b.time)&&b.open>0&&b.high>=b.low&&b.high>=b.open&&b.high>=b.close&&b.low<=b.open&&b.low<=b.close&&(b.time+900)*1000<=now).sort((a,b)=>a.time-b.time);}
-function sim(b,i,s){if(i+1>=b.length)return null;const sp=C.spread*0.0001,sl=C.slip*0.0001,dir=s.candidate,entry=dir==='BUY'?b[i+1].open+sp+sl:b[i+1].open-sp-sl,risk=Math.abs(s.entry-s.stop_loss);if(!(risk>0))return null;const stop=dir==='BUY'?entry-risk:entry+risk,target=dir==='BUY'?entry+risk*s.risk_reward:entry-risk*s.risk_reward,end=Math.min(b.length-1,i+C.hold);let rr=0,reason='TIME',ei=end;for(let j=i+1;j<=end;j++){const x=b[j],hi=dir==='BUY'?x.high:x.high+sp,lo=dir==='BUY'?x.low:x.low+sp,hs=dir==='BUY'?lo<=stop:hi>=stop,ht=dir==='BUY'?hi>=target:lo<=target;if(hs&&ht){rr=dir==='BUY'?(stop-sl-entry)/risk:(entry-(stop+sl))/risk;reason='STOP_AND_TARGET_SAME_BAR_CONSERVATIVE';ei=j;break;}if(hs){rr=dir==='BUY'?(stop-sl-entry)/risk:(entry-(stop+sl))/risk;reason='STOP';ei=j;break;}if(ht){rr=dir==='BUY'?(target-entry)/risk:(entry-target)/risk;reason='TARGET';ei=j;break;}}if(reason==='TIME'){const p=dir==='BUY'?b[end].close:b[end].close+sp;rr=dir==='BUY'?(p-sl-entry)/risk:(entry-(p+sl))/risk;}return {signal_time:new Date((b[i].time+900)*1000).toISOString(),direction:dir,result_r:rr,exit_reason:reason,exit_time:new Date((b[ei].time+900)*1000).toISOString(),hold_bars:ei-i};}
+function sim(b,i,s){
+  if(i+1>=b.length)return null;
+  const spread=C.spread*0.0001,sl=C.slip*0.0001,dir=s.candidate;
+  // Dukascopy feed is BID. BUY opens at ASK; SELL opens at BID.
+  const entry=dir==='BUY'?b[i+1].open+spread+sl:b[i+1].open-sl;
+  const risk=Math.abs(entry-Number(s.stop_loss));
+  if(!(risk>0))return null;
+  const stop=Number(s.stop_loss);
+  const target=dir==='BUY'?entry+risk*s.risk_reward:entry-risk*s.risk_reward;
+  const end=Math.min(b.length-1,i+C.hold);
+  let rr=0,reason='TIME',ei=end;
+  for(let j=i+1;j<=end;j++){
+    const x=b[j],bidHi=x.high,bidLo=x.low,askHi=x.high+spread,askLo=x.low+spread;
+    const hs=dir==='BUY'?bidLo<=stop:askHi>=stop;
+    const ht=dir==='BUY'?bidHi>=target:askLo<=target;
+    if(hs&&ht){
+      rr=dir==='BUY'?(stop-sl-entry)/risk:(entry-(stop+sl))/risk;
+      reason='STOP_AND_TARGET_SAME_BAR_CONSERVATIVE';ei=j;break;
+    }
+    if(hs){
+      rr=dir==='BUY'?(stop-sl-entry)/risk:(entry-(stop+sl))/risk;
+      reason='STOP';ei=j;break;
+    }
+    if(ht){
+      rr=dir==='BUY'?(target-entry)/risk:(entry-target)/risk;
+      reason='TARGET';ei=j;break;
+    }
+  }
+  if(reason==='TIME'){
+    const exitPrice=dir==='BUY'?b[end].close:b[end].close+spread;
+    rr=dir==='BUY'?(exitPrice-sl-entry)/risk:(entry-(exitPrice+sl))/risk;
+  }
+  return {signal_time:new Date((b[i].time+900)*1000).toISOString(),direction:dir,result_r:rr,exit_reason:reason,exit_time:new Date((b[ei].time+900)*1000).toISOString(),hold_bars:ei-i};
+}
 function stats(ts){const w=ts.filter(x=>x.result_r>0),l=ts.filter(x=>x.result_r<0),net=ts.reduce((s,x)=>s+x.result_r,0),gw=w.reduce((s,x)=>s+x.result_r,0),gl=Math.abs(l.reduce((s,x)=>s+x.result_r,0));let eq=0,peak=0,dd=0;for(const x of ts){eq+=x.result_r;peak=Math.max(peak,eq);dd=Math.max(dd,peak-eq);}const first=ts[0]?Date.parse(ts[0].signal_time):NaN,last=ts.length?Date.parse(ts.at(-1).signal_time):NaN,weeks=Number.isFinite(first)&&Number.isFinite(last)?Math.max(1,(last-first)/604800000):0;return {trades:ts.length,wins:w.length,losses:l.length,win_rate_pct:ts.length?w.length/ts.length*100:0,net_r:net,profit_factor:gl>0?gw/gl:null,expectancy_r:ts.length?net/ts.length:0,max_drawdown_r:dd,trades_per_week:weeks?ts.length/weeks:0};}
 function breakdown(ts){const y={},d={},e={};for(const x of ts){const yy=String(new Date(x.signal_time).getUTCFullYear());(y[yy]??=[]).push(x);(d[x.direction]??=[]).push(x);e[x.exit_reason]=(e[x.exit_reason]||0)+1;}return {by_year:Object.fromEntries(Object.entries(y).map(([k,v])=>[k,stats(v)])),by_direction:Object.fromEntries(Object.entries(d).map(([k,v])=>[k,stats(v)])),exit_reason_counts:e};}
 async function main(){await fs.mkdir(C.out,{recursive:true});const m=indicators(await data()),h=indicators(h1agg(m,C.tz)),tr=[],diag={evaluated:0,h1_up:0,h1_down:0,h1_range:0,setup_wait:0,reason_counts:{}};let next=0,candidates=0;for(let i=250;i<m.length-2;i++){if(i<next)continue;const hi=latestH1(h,m[i].time+900);if(hi<200)continue;diag.evaluated++;const f=feat(m,i,h,hi),s=buildEurUsdTrendPullbackSetupC(f,{lookback:9,minRetraceRatio:C.minR,maxRetraceRatio:C.maxR,minImpulseAtr:C.minI,minPullbackAtr:C.minP,minH1Agreement:C.agree,breakBufferAtr:C.buffer,minBodyAtr:C.body,minCloseLocation:C.loc,minStopAtr:0.60,maxStopAtr:1.40,takeProfitR:C.tp,maxSpreadPips:Math.max(C.spread,0.1),maxSpreadAtrPct:15,maxH1ExtensionAtr:2.5,maxSpreadToTpPct:15});if(s.trend==='UP')diag.h1_up++;else if(s.trend==='DOWN')diag.h1_down++;else diag.h1_range++;if(s.candidate==='WAIT'){diag.setup_wait++;for(const r of s.reasons||[])diag.reason_counts[r]=(diag.reason_counts[r]||0)+1;continue;}candidates++;const t=sim(m,i,s);if(t){tr.push(t);next=i+Math.max(1,t.hold_bars)+C.cooldown;}}const cutoff=Date.now()-365*86400000,val=tr.filter(x=>Date.parse(x.signal_time)>=cutoff),dev=tr.filter(x=>Date.parse(x.signal_time)<cutoff);const summary={strategy:'EURUSD Strategy C Trend Pullback Core',lookback_days:C.days,source_mode:'dukascopy',source:'Dukascopy historical EURUSD M15 bid data',server_timezone:C.tz,bars:m.length,candidate_signals:candidates,assumptions:{spread_pips:C.spread,slippage_pips:C.slip,stop_and_time_exit_slippage_mode:'adverse_slippage_applied; target exits at target',max_hold_bars:C.hold,cooldown_bars:C.cooldown},parameters:{min_retrace_ratio:C.minR,max_retrace_ratio:C.maxR,min_impulse_atr:C.minI,min_pullback_atr:C.minP,min_h1_agreement:C.agree,break_buffer_atr:C.buffer,take_profit_r:C.tp,min_body_atr:C.body,min_close_location:C.loc},statistics:stats(tr),walk_forward:{development_period:stats(dev),validation_recent_365_days:stats(val),validation_rule:'fixed Strategy C parameters; no parameter fitting inside backtester'},breakdown:breakdown(tr),diagnostics:diag};await fs.writeFile(path.join(C.out,'summary.json'),JSON.stringify(summary,null,2));await fs.writeFile(path.join(C.out,'trades.csv'),['signal_time,direction,result_r,exit_reason,exit_time,hold_bars',...tr.map(x=>[x.signal_time,x.direction,x.result_r,x.exit_reason,x.exit_time,x.hold_bars].join(','))].join('\n')+'\n');console.log(JSON.stringify(summary,null,2));}
