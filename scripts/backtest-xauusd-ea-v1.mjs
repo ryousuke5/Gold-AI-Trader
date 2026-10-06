@@ -20,6 +20,10 @@ const CFG = {
   buyRsiMax: Number(process.env.XAU_BUY_RSI_MAX || 75),
   sellRsiMin: Number(process.env.XAU_SELL_RSI_MIN || 25),
   sellRsiMax: Number(process.env.XAU_SELL_RSI_MAX || 48),
+  minH1RsiBuy: Number(process.env.XAU_H1_RSI_BUY_MIN || 50),
+  maxH1RsiBuy: Number(process.env.XAU_H1_RSI_BUY_MAX || 75),
+  minH1RsiSell: Number(process.env.XAU_H1_RSI_SELL_MIN || 25),
+  maxH1RsiSell: Number(process.env.XAU_H1_RSI_SELL_MAX || 50),
   maxExtensionAtr: Number(process.env.XAU_MAX_EXTENSION_ATR || 1.50),
   stopBufferAtr: Number(process.env.XAU_STOP_BUFFER_ATR || 0.15),
   triggerStopPadAtr: Number(process.env.XAU_TRIGGER_STOP_PAD_ATR || 0.05),
@@ -194,62 +198,82 @@ function stats(trades) {
   };
 }
 
-function buildSignal(m, i, h1, h1i) {
-  if (!inSession(m[i].time + 300)) return null;
+function reject(diag, reason) {
+  if (diag) diag.wait_by_reason[reason] = (diag.wait_by_reason[reason] || 0) + 1;
+  return null;
+}
+
+function buildSignal(m, i, h1, h1i, diag) {
+  if (!inSession(m[i].time + 300)) return reject(diag, 'outside_session');
   const atrM5 = m[i].atr14;
   const h = h1[h1i];
-  if (!(atrM5 > 0 && h?.atr14 > 0)) return null;
+  if (!(atrM5 > 0 && h?.atr14 > 0)) return reject(diag, 'atr_not_ready');
 
   const trendUp = h.close > h.ema20 && h.ema20 > h.ema50 && h.ema50 > h.ema200 &&
-                  h.rsi14 >= CFG.buyRsiMin && h.rsi14 <= CFG.buyRsiMax;
+                  h.rsi14 >= CFG.minH1RsiBuy && h.rsi14 <= CFG.maxH1RsiBuy;
   const trendDown = h.close < h.ema20 && h.ema20 < h.ema50 && h.ema50 < h.ema200 &&
-                    h.rsi14 >= CFG.sellRsiMin && h.rsi14 <= CFG.sellRsiMax;
-  if (!trendUp && !trendDown) return null;
+                    h.rsi14 >= CFG.minH1RsiSell && h.rsi14 <= CFG.maxH1RsiSell;
+  if (!trendUp && !trendDown) return reject(diag, 'h1_trend_filter');
 
   const rangeBars = m.slice(i - CFG.rangeLookback, i);
-  if (rangeBars.length !== CFG.rangeLookback) return null;
+  if (rangeBars.length !== CFG.rangeLookback) return reject(diag, 'range_history_missing');
   const rangeHigh = Math.max(...rangeBars.map(b => b.high));
   const rangeLow = Math.min(...rangeBars.map(b => b.low));
-  const rangeAtr = (rangeHigh - rangeLow) / atrM5;
-  if (!(rangeAtr >= CFG.minRangeAtr && rangeAtr <= CFG.maxRangeAtr)) return null;
+  const rangeWidth = rangeHigh - rangeLow;
+  const rangeAtr = rangeWidth / atrM5;
+  if (!(rangeWidth > 0 && rangeAtr >= CFG.minRangeAtr && rangeAtr <= CFG.maxRangeAtr)) {
+    return reject(diag, 'range_atr_filter');
+  }
 
   const signal = m[i];
-  const range = signal.high - signal.low;
+  const candleRange = signal.high - signal.low;
   const body = Math.abs(signal.close - signal.open);
-  if (!(range > 0 && body / atrM5 >= CFG.minBodyAtr)) return null;
+  if (!(candleRange > 0 && body / atrM5 >= CFG.minBodyAtr)) {
+    return reject(diag, 'body_filter');
+  }
 
-  const closeLocation = (signal.close - signal.low) / range;
+  const closeLocation = (signal.close - signal.low) / candleRange;
   const avgVolume = rangeBars.reduce((s, b) => s + Math.max(0, b.volume), 0) / rangeBars.length;
   const volumeRatio = avgVolume > 0 ? signal.volume / avgVolume : 0;
-  if (avgVolume > 0 && volumeRatio < CFG.minVolumeRatio) return null;
+  if (avgVolume > 0 && volumeRatio < CFG.minVolumeRatio) {
+    return reject(diag, 'volume_filter');
+  }
 
-  const m5Ema20 = signal.ema20, m5Ema50 = signal.ema50, m5Rsi = signal.rsi14;
-  const buy = trendUp && m5Ema20 > m5Ema50 && m5Rsi >= CFG.buyRsiMin && m5Rsi <= CFG.buyRsiMax &&
+  const m5Ema20 = signal.ema20;
+  const m5Ema50 = signal.ema50;
+  const m5Rsi = signal.rsi14;
+  const buy = trendUp && m5Ema20 > m5Ema50 &&
+              m5Rsi >= CFG.buyRsiMin && m5Rsi <= CFG.buyRsiMax &&
               signal.close >= rangeHigh + CFG.breakoutAtr * atrM5 &&
               closeLocation >= CFG.minCloseLocation &&
               signal.close >= m5Ema20 &&
               ((signal.close - m5Ema20) / atrM5) <= CFG.maxExtensionAtr;
-  const sell = trendDown && m5Ema20 < m5Ema50 && m5Rsi >= CFG.sellRsiMin && m5Rsi <= CFG.sellRsiMax &&
+  const sell = trendDown && m5Ema20 < m5Ema50 &&
+               m5Rsi >= CFG.sellRsiMin && m5Rsi <= CFG.sellRsiMax &&
                signal.close <= rangeLow - CFG.breakoutAtr * atrM5 &&
                closeLocation <= (1 - CFG.minCloseLocation) &&
                signal.close <= m5Ema20 &&
                ((m5Ema20 - signal.close) / atrM5) <= CFG.maxExtensionAtr;
-  if (!buy && !sell) return null;
+  if (!buy && !sell) return reject(diag, 'breakout_trigger_filter');
 
   const next = m[i + 1];
-  if (!next) return null;
+  if (!next) return reject(diag, 'next_bar_missing');
+
   const entry = buy ? next.open + CFG.spreadPrice + CFG.slippagePrice : next.open - CFG.slippagePrice;
   const stop = buy
     ? Math.min(rangeLow - CFG.stopBufferAtr * atrM5, signal.low - CFG.triggerStopPadAtr * atrM5)
     : Math.max(rangeHigh + CFG.stopBufferAtr * atrM5, signal.high + CFG.triggerStopPadAtr * atrM5);
   const stopDistance = Math.abs(entry - stop);
   const stopAtr = stopDistance / atrM5;
-  if (stopAtr < CFG.minStopAtr || stopAtr > CFG.maxStopAtr) return null;
+  if (stopAtr < CFG.minStopAtr || stopAtr > CFG.maxStopAtr) {
+    return reject(diag, 'stop_distance_filter');
+  }
 
   const target = buy ? entry + CFG.tpR * stopDistance : entry - CFG.tpR * stopDistance;
-
-  const drift = Math.abs((buy ? next.open : next.open) - signal.close);
-  if (drift > CFG.maxEntryDistanceAtr * atrM5) return null;
+  const drift = Math.abs(next.open - signal.close);
+  if (drift > CFG.maxEntryDistanceAtr * atrM5) {
+    return reject(diag, 'entry_drift_filter');
+  }
 
   return { direction: buy ? 'BUY' : 'SELL', entry, stop, target, signalIndex: i };
 }
@@ -319,7 +343,7 @@ async function main() {
     const down = h.close < h.ema20 && h.ema20 < h.ema50 && h.ema50 < h.ema200 && h.rsi14 >= CFG.sellRsiMin && h.rsi14 <= CFG.sellRsiMax;
     if (up) diagnostics.h1_up++; else if (down) diagnostics.h1_down++;
 
-    const setup = buildSignal(m15, i, h1, h1i);
+    const setup = buildSignal(m15, i, h1, h1i, diagnostics);
     if (!setup) continue;
     diagnostics.candidates++;
     const result = simulate(m15, i, setup);
