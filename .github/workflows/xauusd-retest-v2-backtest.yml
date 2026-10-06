@@ -1,0 +1,122 @@
+name: XAUUSD Break-Retest V2 Research
+
+on:
+  push:
+    branches: [feature/xauusd-retest-v2]
+    paths:
+      - 'src/xauusd_retest_v2.js'
+      - 'scripts/backtest-xauusd-retest-v2.mjs'
+      - 'mt4/XAUUSDTrendRetestEA_V2.mq4'
+      - '.github/workflows/xauusd-retest-v2-backtest.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: xauusd-retest-v2-research
+  cancel-in-progress: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: discovery
+            min_range_atr: '0.35'
+            max_range_atr: '5.00'
+            breakout_atr: '0.03'
+            breakout_body_atr: '0.20'
+            breakout_close_location: '0.55'
+            max_retest_bars: '8'
+            retest_tolerance_atr: '0.30'
+            penetration_atr: '0.30'
+            confirm_body_atr: '0.20'
+            confirm_close_location: '0.55'
+            min_stop_atr: '0.40'
+            max_stop_atr: '3.00'
+            tp_r: '1.50'
+          - name: baseline
+            min_range_atr: '0.60'
+            max_range_atr: '3.20'
+            breakout_atr: '0.08'
+            breakout_body_atr: '0.30'
+            breakout_close_location: '0.60'
+            max_retest_bars: '6'
+            retest_tolerance_atr: '0.20'
+            penetration_atr: '0.20'
+            confirm_body_atr: '0.25'
+            confirm_close_location: '0.60'
+            min_stop_atr: '0.60'
+            max_stop_atr: '2.20'
+            tp_r: '1.80'
+          - name: quality
+            min_range_atr: '0.80'
+            max_range_atr: '2.60'
+            breakout_atr: '0.12'
+            breakout_body_atr: '0.40'
+            breakout_close_location: '0.65'
+            max_retest_bars: '5'
+            retest_tolerance_atr: '0.15'
+            penetration_atr: '0.12'
+            confirm_body_atr: '0.30'
+            confirm_close_location: '0.65'
+            min_stop_atr: '0.70'
+            max_stop_atr: '1.80'
+            tp_r: '2.00'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Syntax check research strategy
+        run: |
+          node --check src/xauusd_retest_v2.js
+          node --check scripts/backtest-xauusd-retest-v2.mjs
+      - name: Run repository tests
+        run: npm test
+      - name: Run XAUUSD five-year breakout-retest backtest
+        env:
+          XAU_RETEST_DAYS: '1825'
+          XAU_RETEST_TIMEZONE: 'Europe/Nicosia'
+          XAU_RETEST_SPREAD_PRICE: '0.55'
+          XAU_RETEST_SLIPPAGE_PRICE: '0.10'
+          XAU_RETEST_MAX_HOLD_BARS: '96'
+          XAU_RETEST_COOLDOWN_BARS: '2'
+          XAU_RETEST_BREAKOUT_LOOKBACK: '12'
+          XAU_RETEST_MIN_RANGE_ATR: '${{ matrix.min_range_atr }}'
+          XAU_RETEST_MAX_RANGE_ATR: '${{ matrix.max_range_atr }}'
+          XAU_RETEST_BREAKOUT_ATR: '${{ matrix.breakout_atr }}'
+          XAU_RETEST_BREAKOUT_BODY_ATR: '${{ matrix.breakout_body_atr }}'
+          XAU_RETEST_BREAKOUT_CLOSE_LOCATION: '${{ matrix.breakout_close_location }}'
+          XAU_RETEST_MAX_BREAKOUT_BODY_ATR: '1.80'
+          XAU_RETEST_MAX_RETEST_BARS: '${{ matrix.max_retest_bars }}'
+          XAU_RETEST_RETEST_TOLERANCE_ATR: '${{ matrix.retest_tolerance_atr }}'
+          XAU_RETEST_MAX_PENETRATION_ATR: '${{ matrix.penetration_atr }}'
+          XAU_RETEST_RETEST_CLOSE_BUFFER_ATR: '0.05'
+          XAU_RETEST_CONFIRM_BUFFER_ATR: '0.02'
+          XAU_RETEST_CONFIRM_BODY_ATR: '${{ matrix.confirm_body_atr }}'
+          XAU_RETEST_CONFIRM_CLOSE_LOCATION: '${{ matrix.confirm_close_location }}'
+          XAU_RETEST_MAX_CONFIRM_BODY_ATR: '1.50'
+          XAU_RETEST_MIN_STOP_ATR: '${{ matrix.min_stop_atr }}'
+          XAU_RETEST_MAX_STOP_ATR: '${{ matrix.max_stop_atr }}'
+          XAU_RETEST_STOP_BUFFER_ATR: '0.12'
+          XAU_RETEST_TAKE_PROFIT_R: '${{ matrix.tp_r }}'
+          XAU_RETEST_MAX_ENTRY_DISTANCE_ATR: '0.25'
+          XAU_RETEST_MAX_EXTENSION_ATR: '1.80'
+          XAU_RETEST_MIN_H1_AGREEMENT: '0.60'
+          XAU_RETEST_H1_BUY_RSI_MIN: '45'
+          XAU_RETEST_H1_BUY_RSI_MAX: '75'
+          XAU_RETEST_H1_SELL_RSI_MIN: '25'
+          XAU_RETEST_H1_SELL_RSI_MAX: '55'
+          XAU_RETEST_USE_VOLUME_FILTER: 'false'
+          XAU_RETEST_OUTPUT_DIR: 'xauusd-retest-v2-output'
+        run: node scripts/backtest-xauusd-retest-v2.mjs
+      - name: Upload XAUUSD V2 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-retest-v2-${{ matrix.name }}
+          path: xauusd-retest-v2-output/
+          retention-days: 30
