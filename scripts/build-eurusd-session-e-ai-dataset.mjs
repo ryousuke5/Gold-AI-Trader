@@ -63,7 +63,7 @@ async function main(){
     const label=futureOutcome(m,i,dir,execEntry,stop,execTarget);
     const stopAtr=risk/b.atr14;
     const spreadToTpPct=spread/(risk*s.risk_reward)*100;
-    const lp=londonParts=t; const triggerRange=Math.max(1e-12,b.high-b.low);
+    const lp=localParts(t); const dayOfWeek=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(lp.weekday); const triggerRange=Math.max(1e-12,b.high-b.low);
     const breakoutDist=dir==='BUY'?(b.close-s.range_high)/b.atr14:(s.range_low-b.close)/b.atr14;
     const h1Ext=h[hi].atr14>0?Math.abs(h[hi].close-h[hi].ema50)/h[hi].atr14:null;
     const bodyAtr=Math.abs(b.close-b.open)/b.atr14;
