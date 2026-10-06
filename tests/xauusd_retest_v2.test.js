@@ -11,18 +11,18 @@ test('XAUUSD V2 detects range -> breakout -> retest -> confirmation', () => {
   const t0 = 1_700_000_000;
 
   // 12-bar range: stable 98-102.
-  for (let i = 0; i < 12; i += 1) {
+  for (let i = 0; i < 18; i += 1) {
     bars.push(makeBar(t0 + i * 300, 100, 101.5, 98.5, 100));
   }
 
   // Confirmed breakout.
-  bars.push(makeBar(t0 + 12 * 300, 101.0, 103.0, 100.7, 102.7));
+  bars.push(makeBar(t0 + 18 * 300, 101.0, 103.0, 100.7, 102.7));
 
   // Retest of range high without structural invalidation.
-  bars.push(makeBar(t0 + 13 * 300, 102.7, 102.9, 101.6, 101.8));
+  bars.push(makeBar(t0 + 19 * 300, 102.7, 102.9, 101.6, 101.8));
 
   // Confirmation above retest high.
-  bars.push(makeBar(t0 + 14 * 300, 101.8, 103.1, 101.7, 102.95));
+  bars.push(makeBar(t0 + 20 * 300, 101.8, 103.1, 101.7, 102.95));
 
   const recentH1 = [];
   for (let i = 0; i < 5; i += 1) {
@@ -81,18 +81,18 @@ test('XAUUSD V2 detects range -> breakout -> retest -> confirmation', () => {
 
   assert.equal(setup.candidate, 'BUY');
   assert.equal(setup.setup_type, 'H1_TREND_RANGE_BREAK_RETEST');
-  assert.equal(setup.diagnostics.breakout_time, bars[12].time);
-  assert.equal(setup.diagnostics.retest_time, bars[13].time);
-  assert.equal(setup.diagnostics.confirmation_time, bars[14].time);
+  assert.equal(setup.diagnostics.breakout_time, bars[18].time);
+  assert.equal(setup.diagnostics.retest_time, bars[19].time);
+  assert.equal(setup.diagnostics.confirmation_time, bars[20].time);
 });
 
 test('normal spread does not by itself fail the entry drift filter', () => {
   const bars = [];
   const t0 = 1_700_100_000;
-  for (let i = 0; i < 12; i += 1) bars.push(makeBar(t0 + i * 300, 100, 101.5, 98.5, 100));
-  bars.push(makeBar(t0 + 12 * 300, 101.0, 103.0, 100.7, 102.7));
-  bars.push(makeBar(t0 + 13 * 300, 102.7, 102.9, 101.6, 101.8));
-  bars.push(makeBar(t0 + 14 * 300, 101.8, 103.1, 101.7, 102.95));
+  for (let i = 0; i < 18; i += 1) bars.push(makeBar(t0 + i * 300, 100, 101.5, 98.5, 100));
+  bars.push(makeBar(t0 + 18 * 300, 101.0, 103.0, 100.7, 102.7));
+  bars.push(makeBar(t0 + 19 * 300, 102.7, 102.9, 101.6, 101.8));
+  bars.push(makeBar(t0 + 20 * 300, 101.8, 103.1, 101.7, 102.95));
 
   const h1 = [];
   for (let i = 0; i < 5; i += 1) h1.push(makeBar(t0 + i * 3600, 100 + i, 101 + i, 99 + i, 100 + i));
