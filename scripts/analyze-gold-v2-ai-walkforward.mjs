@@ -28,12 +28,12 @@ function metrics(items){
  for(const x of rs){eq+=x;peak=Math.max(peak,eq);mdd=Math.max(mdd,peak-eq);if(x<0){lossStreak++;maxLossStreak=Math.max(maxLossStreak,lossStreak)}else lossStreak=0;}
  return {trades:rs.length,netR:rs.reduce((s,x)=>s+x,0),expectancyR:rs.length?rs.reduce((s,x)=>s+x,0)/rs.length:0,profitFactor:gl>0?gw/gl:null,winRate:rs.length?w.length/rs.length:0,maxDrawdownR:mdd,maxConsecutiveLosses:maxLossStreak};
 }
-function splitAt(arr,ratio){return arr.slice(0,Math.max(1,Math.floor(arr.length*ratio)));}
 function objective(m,baseline){
  if(m.trades<MIN_TRAIN_TRADES)return null;
  const improvement=m.expectancyR-baseline.expectancyR;
  return {primary:m.expectancyR,improvement,secondary:m.profitFactor??-Infinity,drawdown:m.maxDrawdownR,trades:m.trades};
 }
+function between(items,startTime,endTimeExclusive){return items.filter(x=>Number(x.asof_time)>=startTime&&Number(x.asof_time)<endTimeExclusive);}
 function better(a,b){
  if(!b)return true;
  if(a.primary!==b.primary)return a.primary>b.primary;
@@ -55,8 +55,15 @@ let best=null;
 for(const t of thresholds){const filtered=metrics(pick(train,x=>gate(x,t)));const score=objective(filtered,trainBase);if(score&&better(score,best?.score))best={threshold:t,score,metrics:filtered};}
 if(!best)throw new Error('No threshold met minimum development trade count');
 const chosen=best.threshold;
-const validationBase=metrics(pick(validation,()=>true)),validationFiltered=metrics(pick(validation,x=>gate(x,chosen)));
-const holdoutBase=metrics(pick(holdout,()=>true)),holdoutFiltered=metrics(pick(holdout,x=>gate(x,chosen)));
+const validationStart=Number(validation[0]?.asof_time);
+const holdoutStartTime=Number(holdout[0]?.asof_time);
+const endTime=Number(candidates.at(-1)?.asof_time)+1;
+const baselineAll=pick(candidates,()=>true);
+const filteredAll=pick(candidates,x=>gate(x,chosen));
+const validationBase=metrics(between(baselineAll,validationStart,holdoutStartTime));
+const validationFiltered=metrics(between(filteredAll,validationStart,holdoutStartTime));
+const holdoutBase=metrics(between(baselineAll,holdoutStartTime,endTime));
+const holdoutFiltered=metrics(between(filteredAll,holdoutStartTime,endTime));
 const report={
  schema_version:1,generated_at:new Date().toISOString(),
  split:{method:'chronological_candidate_split',development_pct:50,validation_pct:10,holdout_pct:40,candidates:n,development:train.length,validation:validation.length,holdout:holdout.length},
