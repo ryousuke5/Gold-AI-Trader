@@ -34,6 +34,7 @@ This is necessary because running today's web search against a 2020/2021/2022 si
   - Calculates the executable baseline outcome with the same spread, slippage, entry-gap, effective-RR, stop/target and max-hold assumptions.
   - Produces `gold_v2_ai_replay_dataset.jsonl`.
   - Requires `GOLD_BACKTEST_DATA_FILE` so the input dataset is explicit and reproducible.
+  - Candidate generation is resumable through `build_checkpoint.json`; matching candidate IDs already written to the JSONL are not duplicated.
 
 - `scripts/run-gold-v2-ai-replay.mjs`
   - Calls the historical replay evaluator.
@@ -86,12 +87,13 @@ Do not copy a later article that retrospectively explains the move.
 2. Validate the dataset fingerprint and period.
 3. Populate point-in-time historical context.
 4. Run the AI replay; interrupted jobs resume from the JSONL result file.
-5. Require 100% AI-result coverage before claiming full-sample results.
-6. Generate the A/B report.
-7. Split the history chronologically for development / validation / final holdout.
-8. Tune the AI gate only on the development segment.
-9. Freeze the prompt, model, threshold, and context rules.
-10. Evaluate once on the untouched holdout.
+5. Validate the historical context and provenance before AI replay.
+6. Require 100% AI-result coverage before claiming full-sample results.
+7. Generate the A/B report.
+8. Split the history chronologically for development / validation / final holdout.
+9. Tune the AI gate only on the development segment.
+10. Freeze the prompt, model, threshold, and context rules.
+11. Evaluate once on the untouched holdout.
 
 ## Acceptance criteria
 
