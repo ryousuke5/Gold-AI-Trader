@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { findXauRetestSetupV3 } from '../src/xauusd_retest_v3.js';
 
 const CFG = {
@@ -10,6 +12,8 @@ const CFG = {
   maxHoldBars: Number(process.env.XAU_V3_MAX_HOLD_BARS || 96),
   cooldownBars: Number(process.env.XAU_V3_COOLDOWN_BARS || 2),
   out: process.env.XAU_V3_OUTPUT_DIR || 'xauusd-retest-v3-output',
+  dataFile: process.env.XAU_V3_DATA_FILE || 'gold-xauusd-data/xauusd-m5.json.gz',
+  endUtc: process.env.XAU_V3_END_UTC || '2026-10-05T00:00:00Z',
   breakoutLookback: Number(process.env.XAU_V3_BREAKOUT_LOOKBACK || 12),
   minRangeAtr: Number(process.env.XAU_V3_MIN_RANGE_ATR || 0.60),
   maxRangeAtr: Number(process.env.XAU_V3_MAX_RANGE_ATR || 3.20),
@@ -159,38 +163,49 @@ function latestCompletedH1Index(h1, signalCloseTime) {
   return answer;
 }
 
-async function fetchBars() {
-  const mod = await import('dukascopy-node');
-  const get = mod.getHistoricalRates || mod.default?.getHistoricalRates;
-  if (typeof get !== 'function') throw new Error('dukascopy-node getHistoricalRates export missing');
-  const end = new Date();
-  const start = new Date(end.getTime() - CFG.days * 86400000);
-  const rows = await get({
-    instrument: 'xauusd',
-    dates: { from: start, to: end },
-    timeframe: 'm5',
-    priceType: 'bid',
-    volumes: true,
-    format: 'array'
-  });
-  const minCoverage = Math.max(50000, CFG.days * 100);
-  if (!Array.isArray(rows) || rows.length < minCoverage) {
-    throw new Error('Insufficient XAUUSD M5 coverage: ' + (rows?.length || 0) + ' < ' + minCoverage);
+async function loadPreparedBars() {
+  const dataPath = path.resolve(CFG.dataFile);
+  let raw;
+  try {
+    raw = await fs.readFile(dataPath);
+  } catch (error) {
+    throw new Error(`Prepared XAUUSD M5 dataset not found: ${dataPath}. Refusing live network fallback.`);
   }
-  const now = Date.now();
-  return rows.map(r => ({
-    time: Math.floor(Number(r[0]) / 1000),
-    open: Number(r[1]),
-    high: Number(r[2]),
-    low: Number(r[3]),
-    close: Number(r[4]),
-    volume: Number(r[5]) || 0
+
+  const digest = createHash('sha256').update(raw).digest('hex');
+  let payload;
+  try {
+    payload = dataPath.endsWith('.gz')
+      ? JSON.parse(gunzipSync(raw).toString('utf8'))
+      : JSON.parse(raw.toString('utf8'));
+  } catch (error) {
+    throw new Error(`Failed to parse prepared XAUUSD M5 dataset: ${error.message}`);
+  }
+
+  if (!Array.isArray(payload) || payload.length < 200000) {
+    throw new Error(`Insufficient prepared XAUUSD M5 coverage: ${payload?.length || 0}`);
+  }
+
+  const bars = payload.map(b => ({
+    time: Math.floor(Number(b.time)),
+    open: Number(b.open),
+    high: Number(b.high),
+    low: Number(b.low),
+    close: Number(b.close),
+    volume: Number(b.volume) || 0
   })).filter(b =>
     Number.isFinite(b.time) && b.open > 0 &&
     b.high >= b.low && b.high >= b.open && b.high >= b.close &&
-    b.low <= b.open && b.low <= b.close &&
-    (b.time + 300) * 1000 <= now
+    b.low <= b.open && b.low <= b.close
   ).sort((a, b) => a.time - b.time);
+
+  for (let i = 1; i < bars.length; i += 1) {
+    if (bars[i].time <= bars[i - 1].time) {
+      throw new Error('Prepared XAUUSD M5 timestamps are not strictly increasing');
+    }
+  }
+
+  return { bars, sha256: digest, file: dataPath };
 }
 
 function stats(trades) {
@@ -339,7 +354,13 @@ function simulate(m5, confirmationIndex, setup) {
 
 async function main() {
   await fs.mkdir(CFG.out, { recursive: true });
-  const m5 = indicators(await fetchBars());
+  const endMs = Date.parse(CFG.endUtc);
+  if (!Number.isFinite(endMs)) throw new Error(`Invalid XAU_V3_END_UTC: ${CFG.endUtc}`);
+  const startMs = endMs - CFG.days * 86400000;
+  const endTs = Math.floor(endMs / 1000);
+  const startTs = Math.floor(startMs / 1000);
+  const prepared = await loadPreparedBars();
+  const m5 = indicators(prepared.bars);
   const h1 = indicators(aggregateH1(m5, CFG.timezone));
   const trades = [];
   const diagnostics = {
@@ -387,6 +408,8 @@ async function main() {
   };
 
   for (let i = 260; i < m5.length - 2; i++) {
+    const signalCloseTime = m5[i].time + 300;
+    if (signalCloseTime < startTs || signalCloseTime >= endTs) continue;
     if (i < nextEligible) continue;
     diagnostics.evaluated++;
     if (!inSessionJst(m5[i].time + 300)) {
@@ -420,7 +443,7 @@ async function main() {
     nextEligible = i + Math.max(1, trade.hold_bars) + 1 + CFG.cooldownBars;
   }
 
-  const cutoff = Date.now() - 365 * 86400000;
+  const cutoff = endMs - 365 * 86400000;
   const validation = trades.filter(t => Date.parse(t.signal_time) >= cutoff);
   const development = trades.filter(t => Date.parse(t.signal_time) < cutoff);
 
@@ -430,7 +453,12 @@ async function main() {
       sequence: 'range -> confirmed breakout -> retest -> reclaim confirmation (1-3 bars) -> next-bar entry',
       no_lookahead: true,
       session: '21:00-00:00 JST',
-      data_source: 'Dukascopy historical XAUUSD M5 bid data'
+      data_source: 'fixed prepared Dukascopy XAUUSD M5 bid dataset',
+      data_file: prepared.file,
+      data_sha256: prepared.sha256,
+      fixed_end_utc: CFG.endUtc,
+      backtest_start_utc: new Date(startMs).toISOString(),
+      backtest_end_exclusive_utc: new Date(endMs).toISOString()
     },
     parameters: CFG,
     bars: m5.length,
