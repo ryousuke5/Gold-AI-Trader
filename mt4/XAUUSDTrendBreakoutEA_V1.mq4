@@ -48,9 +48,51 @@ input int    MagicNumber = 26100601;
 input string OrderComment = "XAUUSD-EA-V1";
 
 datetime g_lastSignalBarOpen = 0;
-datetime g_lastOrderBarOpen = 0;
-datetime g_lastTradeCloseTime = 0;
 bool g_sessionWarned = false;
+
+string ProcessedBarKey(string sym)
+{
+   return "XAUUSD_EA_V1:ProcessedBar:" + IntegerToString(AccountNumber()) + ":" + sym;
+}
+
+datetime LastTradeOpenTime(string sym)
+{
+   datetime latest = 0;
+
+   for(int i = OrdersHistoryTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY))
+         continue;
+
+      if(OrderSymbol() != sym || OrderMagicNumber() != MagicNumber)
+         continue;
+
+      int type = OrderType();
+      if(type != OP_BUY && type != OP_SELL)
+         continue;
+
+      if(OrderOpenTime() > latest)
+         latest = OrderOpenTime();
+   }
+
+   for(int j = OrdersTotal() - 1; j >= 0; j--)
+   {
+      if(!OrderSelect(j, SELECT_BY_POS, MODE_TRADES))
+         continue;
+
+      if(OrderSymbol() != sym || OrderMagicNumber() != MagicNumber)
+         continue;
+
+      int liveType = OrderType();
+      if(liveType != OP_BUY && liveType != OP_SELL)
+         continue;
+
+      if(OrderOpenTime() > latest)
+         latest = OrderOpenTime();
+   }
+
+   return latest;
+}
 
 //---------------------------------------------------------
 // Symbol / time helpers
@@ -80,10 +122,22 @@ bool IsNewSignalBar(string sym)
    if(openTime <= 0)
       return false;
 
+   string key = ProcessedBarKey(sym);
+   if(GlobalVariableCheck(key))
+   {
+      datetime persisted = (datetime)GlobalVariableGet(key);
+      if(openTime <= persisted)
+      {
+         g_lastSignalBarOpen = persisted;
+         return false;
+      }
+   }
+
    if(openTime == g_lastSignalBarOpen)
       return false;
 
    g_lastSignalBarOpen = openTime;
+   GlobalVariableSet(key, (double)openTime);
    return true;
 }
 
@@ -462,14 +516,21 @@ bool PriceDriftAllowed(string sym, double signalClose, double atr)
 
 bool CooldownAllowed()
 {
-   if(CooldownBars <= 0 || g_lastOrderBarOpen <= 0)
+   if(CooldownBars <= 0)
       return true;
 
-   int shift = iBarShift(TradeSymbol(), SignalTimeframe, g_lastOrderBarOpen, true);
-   if(shift < 0)
+   string sym = TradeSymbol();
+   datetime lastTradeOpen = LastTradeOpenTime(sym);
+   if(lastTradeOpen <= 0)
       return true;
 
-   return shift >= CooldownBars + 1;
+   int lastShift = iBarShift(sym, SignalTimeframe, lastTradeOpen, false);
+   int currentShift = iBarShift(sym, SignalTimeframe, iTime(sym, SignalTimeframe, 1), false);
+
+   if(lastShift < 0 || currentShift < 0)
+      return true;
+
+   return (lastShift - currentShift) >= CooldownBars + 1;
 }
 
 //---------------------------------------------------------
@@ -731,6 +792,18 @@ bool ExecuteSignal(string sym, int signalType, double entry, double stop, double
       return false;
    }
 
+   RefreshRates();
+   double liveBid = MarketInfo(sym, MODE_BID);
+   double liveAsk = MarketInfo(sym, MODE_ASK);
+   if(liveBid <= 0.0 || liveAsk <= 0.0 || liveAsk < liveBid)
+      return false;
+   if((liveAsk - liveBid) > MaxSpreadPrice)
+   {
+      Print("XAUUSD EA: execution spread widened above limit. spread=",
+            DoubleToString(liveAsk - liveBid, (int)MarketInfo(sym, MODE_DIGITS)));
+      return false;
+   }
+
    if(!IsTradeAllowed())
    {
       Print("XAUUSD EA: terminal/broker trade permission is not available.");
@@ -807,7 +880,6 @@ bool ExecuteSignal(string sym, int signalType, double entry, double stop, double
       return false;
    }
 
-   g_lastOrderBarOpen = signalBar;
    Print("XAUUSD EA: order opened. ticket=", ticket,
          " type=", signalType == OP_BUY ? "BUY" : "SELL",
          " lots=", DoubleToString(lots, 2),
@@ -909,7 +981,12 @@ int OnInit()
       return INIT_FAILED;
 
    PeakEquity(sym);
-   Print("XAUUSD EA: initialized. Attach to the broker's XAUUSD/GOLD M5 chart.");
+   string processedKey = ProcessedBarKey(sym);
+   if(GlobalVariableCheck(processedKey))
+      g_lastSignalBarOpen = (datetime)GlobalVariableGet(processedKey);
+
+   Print("XAUUSD EA: initialized. Attach to the broker's XAUUSD/GOLD M5 chart. processed_bar=",
+         TimeToString(g_lastSignalBarOpen, TIME_DATE|TIME_MINUTES));
    return INIT_SUCCEEDED;
 }
 
