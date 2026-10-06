@@ -223,7 +223,6 @@ export function findXauRetestSetup(features = {}, options = {}) {
       if (!(extension <= cfg.maxExtensionAtr)) continue;
 
       const priorVolumes = rangeBars.map(b => num(b.volume)).filter(v => v >= 0);
-      const priorVolumes = rangeBars.map(b => num(b.volume)).filter(v => v >= 0);
       const avgVolume = priorVolumes.length
         ? priorVolumes.reduce((s, v) => s + v, 0) / priorVolumes.length
         : 0;
