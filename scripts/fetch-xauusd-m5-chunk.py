@@ -18,7 +18,7 @@ SYMBOL = "XAUUSD"
 PRICE_SCALE = 1000.0
 RECORD = struct.Struct(">IIIIIf")
 BASE_URL = "https://datafeed.dukascopy.com/datafeed"
-USER_AGENT = "Gold-AI-Trader/1.0 resumable-historical-research"
+USER_AGENT = "Gold-AI-Trader/1.1 resumable-historical-research"
 
 
 def bi5_url(day: date) -> str:
@@ -37,7 +37,27 @@ def fetch_bytes(url: str, retries: int = 8, timeout: int = 30) -> tuple[str, byt
         )
         try:
             with urlopen(req, timeout=timeout) as response:
-                return "ok", response.read()
+                data = response.read()
+                if data:
+                    return "ok", data
+                if attempt < retries:
+                    sleep_for = delay
+                    print(
+                        json.dumps(
+                            {
+                                "event": "retry",
+                                "status": "empty_response",
+                                "attempt": attempt,
+                                "sleep_seconds": sleep_for,
+                                "url": url,
+                            }
+                        ),
+                        flush=True,
+                    )
+                    time.sleep(sleep_for)
+                    delay = min(delay * 2.0, 180.0)
+                    continue
+                raise RuntimeError(f"Empty response from Dukascopy feed after {retries} attempts: {url}")
         except HTTPError as exc:
             if exc.code == 404:
                 return "missing", b""
@@ -151,6 +171,17 @@ def resample_m1_to_m5(m1: list[dict]) -> tuple[list[dict], int]:
     return m5, incomplete
 
 
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_bytes(payload)
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
 def atomic_write_gzip_json(path: Path, payload: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -245,30 +276,49 @@ def main() -> None:
             day += timedelta(days=1)
             continue
 
+        bars: list[dict] | None = None
+        status = "cached"
+
         if cache_file.exists() and cache_file.stat().st_size > 0:
             raw = cache_file.read_bytes()
-            reused += 1
-            status = "cached"
-        else:
+            try:
+                bars = parse_day(raw, day)
+                reused += 1
+            except RuntimeError as exc:
+                print(
+                    json.dumps(
+                        {
+                            "event": "corrupt_cache",
+                            "date": day.isoformat(),
+                            "cache_file": str(cache_file),
+                            "error": str(exc),
+                        }
+                    ),
+                    flush=True,
+                )
+                cache_file.unlink(missing_ok=True)
+
+        if bars is None:
             status, raw = fetch_bytes(
                 bi5_url(day),
                 retries=args.retries,
                 timeout=args.timeout,
             )
-            if status == "missing" or not raw:
+            if status == "missing":
                 missing_days.append(day.isoformat())
                 missing_marker.touch()
                 day += timedelta(days=1)
                 continue
-            if status != "ok":
+            if status != "ok" or not raw:
                 transient_failed_days.append(day.isoformat())
                 day += timedelta(days=1)
                 continue
-            cache_file.write_bytes(raw)
+
+            bars = parse_day(raw, day)
+            atomic_write_bytes(cache_file, raw)
             downloaded += 1
             time.sleep(max(0.0, args.request_delay))
 
-        bars = parse_day(raw, day)
         all_m1.extend(bars)
 
         print(
@@ -339,7 +389,7 @@ def main() -> None:
         "requested_days": requested,
         "cached_days_reused": reused,
         "downloaded_days": downloaded,
-        "missing_days_404_or_empty": len(missing_days),
+        "missing_days_404": len(missing_days),
         "missing_day_samples": missing_days[:20],
         "transient_failed_days": transient_failed_days,
         "m1_rows": len(dedup_m1),
