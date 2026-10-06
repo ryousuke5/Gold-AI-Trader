@@ -29,7 +29,7 @@ test('V3 accepts range -> breakout -> retest -> delayed reclaim confirmation',()
   for(let i=0;i<24;i++) bars.push(bar(t0+i*300,100,101.5,98.5,100));
   bars.push(bar(t0+24*300,101,103.0,100.7,102.7));
   bars.push(bar(t0+25*300,102.7,102.9,101.6,101.8));
-  bars.push(bar(t0+26*300,101.8,102.5,101.9,102.1));
+  bars.push(bar(t0+26*300,101.8,102.5,101.6,102.1));
   bars.push(bar(t0+27*300,102.1,103.1,102.0,102.95));
 
   const debug={targetRetestIndex:25};
@@ -60,7 +60,7 @@ test('V3 does not reject a normal spread as pure entry drift',()=>{
   for(let i=0;i<24;i++) bars.push(bar(t0+i*300,100,101.5,98.5,100));
   bars.push(bar(t0+24*300,101,103.0,100.7,102.7));
   bars.push(bar(t0+25*300,102.7,102.9,101.6,101.8));
-  bars.push(bar(t0+26*300,101.8,102.5,101.9,102.1));
+  bars.push(bar(t0+26*300,101.8,102.5,101.6,102.1));
   bars.push(bar(t0+27*300,102.1,103.1,102.0,102.95));
   const setup=findXauRetestSetupV3(features(bars));
   assert.equal(setup.candidate,'BUY');
