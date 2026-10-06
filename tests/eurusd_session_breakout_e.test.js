@@ -9,7 +9,7 @@ function bar(time,open,high,low,close,atr14=0.001){
 function featureAt(hour,close,spread=0.00008){
   const base=Date.parse('2026-01-05T00:00:00Z')/1000;
   const bars=[];
-  for(let i=0;i<28;i++){
+  for(let i=0;i<27;i++){
     const t=base+i*900;
     bars.push(bar(t,1.1000+i*0.00002,1.1001+i*0.00002,1.0999+i*0.00002,1.1000+i*0.00002));
   }
