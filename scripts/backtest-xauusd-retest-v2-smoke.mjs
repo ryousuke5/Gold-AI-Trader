@@ -112,7 +112,9 @@ function localParts(ts, timezone) {
 function inSessionJst(ts) {
   const p = localParts(ts, 'Asia/Tokyo');
   const minute = p.hour * 60 + p.minute;
-  return minute >= 21 * 60 || minute < 24 * 60;
+  const start = 21 * 60;
+  const end = 24 * 60;
+  return minute >= start && minute < end;
 }
 
 function hourStart(ts, timezone) {
