@@ -1,0 +1,45 @@
+name: EURUSD Strategy E AI Dataset
+
+on:
+  push:
+    branches: [research/eurusd-logic-review-v4]
+    paths:
+      - 'src/eurusd_session_breakout_e.js'
+      - 'scripts/build-eurusd-session-e-ai-dataset.mjs'
+      - '.github/workflows/eurusd-strategy-e-ai-dataset.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-strategy-e-ai-dataset
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Download canonical dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: eurusd-m15-bid-dataset
+          repository: ryousuke5/Gold-AI-Trader
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: data
+      - name: Build point-in-time AI dataset
+        env:
+          EURUSD_AI_DATASET_INPUT: data/eurusd-m15-bid.json
+          EURUSD_AI_DATASET_SPREAD_PIPS: '0.8'
+          EURUSD_AI_DATASET_SLIPPAGE_PIPS: '0.1'
+          EURUSD_AI_DATASET_MAX_HOLD_BARS: '96'
+          EURUSD_AI_DATASET_OUTPUT: eurusd-session-e-ai-dataset.jsonl
+        run: node scripts/build-eurusd-session-e-ai-dataset.mjs
+      - name: Upload AI dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-session-e-ai-dataset
+          path: eurusd-session-e-ai-dataset.jsonl
+          retention-days: 30
