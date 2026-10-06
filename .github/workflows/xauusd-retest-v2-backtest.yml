@@ -1,5 +1,5 @@
 name: XAUUSD Break-Retest V2 Research
-# V2 checkpoint: strategy fixture and retest sequencing verified before long backtest
+# V2 checkpoint: strategy fixture, retest sequencing, and safety validator aligned
 
 on:
   push:
