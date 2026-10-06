@@ -1,0 +1,91 @@
+name: XAUUSD EA V1 Research Backtest
+on:
+  push:
+    branches: [feature/xauusd-trading-ea-v1]
+    paths:
+      - 'mt4/XAUUSDTrendBreakoutEA_V1.mq4'
+      - 'scripts/backtest-xauusd-ea-v1.mjs'
+      - '.github/workflows/xauusd-ea-v1-backtest.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: xauusd-ea-v1-research
+  cancel-in-progress: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline
+            min_range_atr: '0.80'
+            max_range_atr: '2.80'
+            breakout_atr: '0.10'
+            min_body_atr: '0.40'
+            close_location: '0.65'
+            volume_ratio: '1.10'
+            tp_r: '2.00'
+          - name: balanced
+            min_range_atr: '0.70'
+            max_range_atr: '3.00'
+            breakout_atr: '0.08'
+            min_body_atr: '0.35'
+            close_location: '0.62'
+            volume_ratio: '1.00'
+            tp_r: '2.00'
+          - name: quality
+            min_range_atr: '0.90'
+            max_range_atr: '2.40'
+            breakout_atr: '0.12'
+            min_body_atr: '0.45'
+            close_location: '0.68'
+            volume_ratio: '1.15'
+            tp_r: '2.00'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run repository tests
+        run: npm test
+      - name: Run XAUUSD five-year backtest
+        env:
+          XAU_BACKTEST_DAYS: '1825'
+          XAU_BACKTEST_TIMEZONE: 'Europe/Nicosia'
+          XAU_BACKTEST_SPREAD_PRICE: '0.55'
+          XAU_BACKTEST_SLIPPAGE_PRICE: '0.10'
+          XAU_BACKTEST_MAX_HOLD_BARS: '96'
+          XAU_BACKTEST_COOLDOWN_BARS: '2'
+          XAU_RANGE_LOOKBACK: '12'
+          XAU_MIN_RANGE_ATR: '0.80'
+          XAU_MAX_RANGE_ATR: '2.80'
+          XAU_BREAKOUT_ATR: '0.10'
+          XAU_MIN_BODY_ATR: '0.40'
+          XAU_MIN_CLOSE_LOCATION: '0.65'
+          XAU_MIN_VOLUME_RATIO: '1.10'
+          XAU_BUY_RSI_MIN: '52'
+          XAU_BUY_RSI_MAX: '75'
+          XAU_SELL_RSI_MIN: '25'
+          XAU_SELL_RSI_MAX: '48'
+          XAU_MAX_EXTENSION_ATR: '1.50'
+          XAU_STOP_BUFFER_ATR: '0.15'
+          XAU_TRIGGER_STOP_PAD_ATR: '0.05'
+          XAU_MIN_STOP_ATR: '0.80'
+          XAU_MAX_STOP_ATR: '2.00'
+          XAU_TAKE_PROFIT_R: '2.00'
+          XAU_MAX_ENTRY_DISTANCE_ATR: '0.20'
+          XAU_SESSION_START_HOUR: '17'
+          XAU_SESSION_END_HOUR: '20'
+          XAU_BACKTEST_OUTPUT_DIR: 'xauusd-ea-v1-baseline-output'
+        run: node scripts/backtest-xauusd-ea-v1.mjs
+      - name: Upload XAUUSD results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-ea-v1-results
+          path: xauusd-ea-v1-baseline-output/
+          retention-days: 30
