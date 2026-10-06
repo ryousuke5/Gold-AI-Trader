@@ -13,7 +13,6 @@ const schema={
 };
 
 export async function analyzeHistoricalEnvironment({snapshot,context={},model=process.env.OPENAI_MODEL||'gpt-5.5'}){
-  const apiKey=process.env.OPENAI_API_KEY;if(!apiKey)throw new Error('OPENAI_API_KEY is not configured');
   const asof=Number(snapshot?.asof_time);
   if(!Number.isFinite(asof)||asof<=0)throw new Error('invalid_snapshot_asof_time');
   const sources=Array.isArray(context?.sources)?context.sources:[];
@@ -21,6 +20,7 @@ export async function analyzeHistoricalEnvironment({snapshot,context={},model=pr
     const published=Number(s?.published_at);
     if(!Number.isFinite(published)||published>asof)throw new Error('future_information_detected:'+String(s?.id||'unknown'));
   }
+  const apiKey=process.env.OPENAI_API_KEY;if(!apiKey)throw new Error('OPENAI_API_KEY is not configured');
   const system=[
     'You are the historical market-environment filter for an XAUUSD trading research system.',
     'This is a point-in-time replay. You have NO web access and must NEVER use information from outside the supplied snapshot/context.',
