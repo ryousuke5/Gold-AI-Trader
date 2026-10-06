@@ -9,6 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def is_inactive_flat_bar(bar: dict) -> bool:
+    return (
+        float(bar.get("volume", 0) or 0) == 0
+        and bar["open"] == bar["high"] == bar["low"] == bar["close"]
+    )
+
+
 def atomic_write_gzip_json(path: Path, payload: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -44,6 +51,7 @@ def main() -> None:
 
     all_bars: list[dict] = []
     chunk_manifests: list[dict] = []
+    inactive_zero_volume_flat_removed = 0
 
     for path in files:
         with gzip.open(path, "rt", encoding="utf-8") as fh:
@@ -54,7 +62,9 @@ def main() -> None:
             times = [int(row["time"]) for row in rows]
             if times != sorted(times) or len(times) != len(set(times)):
                 raise RuntimeError(f"Chunk timestamps invalid: {path}")
-        all_bars.extend(rows)
+        active_rows = [row for row in rows if not is_inactive_flat_bar(row)]
+        inactive_zero_volume_flat_removed += len(rows) - len(active_rows)
+        all_bars.extend(active_rows)
 
         manifest_path = path.with_name(path.name.removesuffix(".json.gz") + ".manifest.json")
         if manifest_path.exists():
@@ -124,6 +134,7 @@ def main() -> None:
         "chunk_count": len(files),
         "chunk_manifests_read": len(chunk_manifests),
         "m5_rows": len(dedup),
+        "inactive_zero_volume_flat_m5_removed": inactive_zero_volume_flat_removed,
         "duplicate_timestamps_removed": duplicates,
         "non_weekend_gaps_gt_15m": non_weekend_gaps,
         "max_m5_gap_seconds": max_gap,
