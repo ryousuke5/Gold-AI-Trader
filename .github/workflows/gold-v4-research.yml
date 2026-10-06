@@ -91,7 +91,10 @@ jobs:
           path: |
             gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
             gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
-          key: xauusd-v4-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}\n          restore-keys: |\n            xauusd-v4-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}\n            xauusd-m5-v5-${{ runner.os }}-${{ matrix.chunk.id }}
+          key: xauusd-v4-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+          restore-keys: |
+            xauusd-v4-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+            xauusd-m5-v5-${{ runner.os }}-${{ matrix.chunk.id }}
       - name: Restore V4 raw M1 checkpoint
         if: steps.m5cache.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
@@ -99,7 +102,8 @@ jobs:
           path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
           key: xauusd-v4-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
           restore-keys: |
-            xauusd-v4-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-\n            xauusd-m1-v5-${{ runner.os }}-${{ matrix.chunk.id }}-
+            xauusd-v4-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-
+            xauusd-m1-v5-${{ runner.os }}-${{ matrix.chunk.id }}-
       - name: Prepare directories
         run: |
           mkdir -p "gold-xauusd-data/raw/${{ matrix.chunk.id }}" gold-xauusd-data/chunks
