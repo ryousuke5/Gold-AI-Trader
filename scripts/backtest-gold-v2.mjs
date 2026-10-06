@@ -400,11 +400,13 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const trades=[];
   const state={day:null,dayStartEquity:equity,peak:equity};
   const blocks={};
+  const setupWaitReasons={};
   let nextAvailable=0;
-  let candidates=0, rejectedEntryGap=0;
+  let signalsEvaluated=0, candidates=0, candidatesBuy=0, candidatesSell=0, rejectedEntryGap=0, rejectedNextBarGap=0;
   for(let i=first;i<m5Ind.length-1;i++) {
     const signal=m5Ind[i];
     if(signal.time<start) continue;
+    signalsEvaluated++;
     if(i<nextAvailable) continue;
     if(![signal.ema20,signal.ema50,signal.rsi14,signal.atr14].every(Number.isFinite)) continue;
     const signalTime = signal.time + 300;
@@ -416,12 +418,21 @@ async function runOne(rawM5, rawH1, config, strategy) {
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
       recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
     },strategy);
-    if(setup.candidate==='WAIT') continue;
+    if(setup.candidate==='WAIT') {
+      const reason=setup.reason||'unknown';
+      setupWaitReasons[reason]=(setupWaitReasons[reason]||0)+1;
+      continue;
+    }
     candidates++;
+    if(setup.candidate==='BUY') candidatesBuy++;
+    if(setup.candidate==='SELL') candidatesSell++;
     const gate=applyRiskGate(state,equity,signalTime,config);
     if(!gate.allowed) { for(const r of gate.reasons) blocks[r]=(blocks[r]||0)+1; continue; }
     const next=m5Ind[i+1];
-    if(next.time-signal.time!==300) continue;
+    if(next.time-signal.time!==300) {
+      rejectedNextBarGap++;
+      continue;
+    }
     const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind.slice(i+1),setup,equity,config});
     if(!trade) { rejectedEntryGap++; continue; }
     trades.push(trade); equity+=trade.net_pnl;
@@ -442,7 +453,15 @@ async function runOne(rawM5, rawH1, config, strategy) {
     minimum_positive_years: 3,
     passed: Boolean(summary.trades >= 30 && summary.profit_factor >= 1.15 && summary.expectancy_R >= 0.05 && summary.max_drawdown_pct <= 5 && recent365.trades >= 8 && recent365.profit_factor >= 1.00 && positiveYears >= 3)
   };
-  return {summary,recent365,annual:yearly,positiveYears,qualityGate,trades,candidates,risk_gate_blocks:blocks,rejected_entry_gap:rejectedEntryGap};
+  return {
+    summary,recent365,annual:yearly,positiveYears,qualityGate,trades,
+    signals_evaluated:signalsEvaluated,
+    candidates,candidates_buy:candidatesBuy,candidates_sell:candidatesSell,
+    setup_wait_reasons:setupWaitReasons,
+    risk_gate_blocks:blocks,
+    rejected_next_bar_gap:rejectedNextBarGap,
+    rejected_entry_gap:rejectedEntryGap
+  };
 }
 
 function parseArgs() {
@@ -507,7 +526,12 @@ async function main() {
     strategy_parameters:strategy,
     data_quality:dataQuality(rawM5),
     cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{spread_price:costScenarios(config).find(c=>c.name===name).spreadPrice,slippage_price:costScenarios(config).find(c=>c.name===name).slippagePrice}])),
-    results:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{summary:r.summary,recent365:r.recent365,annual:r.annual,positiveYears:r.positiveYears,qualityGate:r.qualityGate,candidates:r.candidates,risk_gate_blocks:r.risk_gate_blocks,rejected_entry_gap:r.rejected_entry_gap}])),
+    results:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{
+      summary:r.summary,recent365:r.recent365,annual:r.annual,positiveYears:r.positiveYears,qualityGate:r.qualityGate,
+      signals_evaluated:r.signals_evaluated,candidates:r.candidates,candidates_buy:r.candidates_buy,candidates_sell:r.candidates_sell,
+      setup_wait_reasons:r.setup_wait_reasons,risk_gate_blocks:r.risk_gate_blocks,
+      rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap
+    }])),
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
