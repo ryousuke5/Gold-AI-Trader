@@ -8,6 +8,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_FILE = process.env.GOLD_BACKTEST_DATA_FILE || path.join(ROOT, 'gold-xauusd-data', 'xauusd-m5.json.gz');
 const OUTPUT_DIR = process.env.GOLD_WALKFORWARD_OUTPUT_DIR || path.join(ROOT, 'gold-walkforward-output');
 
+const MIN_IS_TRADES_FOR_SELECTION = 20;
+const MIN_IS_PF_FOR_SELECTION = 1.05;
+const MIN_IS_EXPECTANCY_R_FOR_SELECTION = 0.05;
+const MAX_IS_DD_PCT_FOR_SELECTION = 5;
+const MIN_IS_POSITIVE_YEARS_FOR_SELECTION = 2;
+
 const VARIANTS = [
   { name:'baseline', rangeLookback:12, minRangeAtr:.80, maxRangeAtr:2.80, breakoutAtr:.10, bodyAtr:.40, closeLocation:.65, volumeRatio:1.10, sessionStart:7, sessionEnd:20 },
   { name:'strict', rangeLookback:12, minRangeAtr:.80, maxRangeAtr:2.50, breakoutAtr:.15, bodyAtr:.50, closeLocation:.70, volumeRatio:1.25, sessionStart:7, sessionEnd:17 },
@@ -66,16 +72,46 @@ async function runBacktest(sliceFile, days, v, outDir) {
 function selectIsWinner(reports) {
   const ranked = reports.map(r => {
     const c = r.results?.conservative;
-    if (!c) return {...r, selected:false, rankScore:-Infinity};
+    if (!c) {
+      return {
+        ...r,
+        selected:false,
+        selectionEligible:false,
+        selectionReason:'missing_conservative_result',
+        rankScore:-Infinity
+      };
+    }
+
     const s = c.summary;
-    const q = c.qualityGate?.passed ? 1 : 0;
-    const enough = s.trades >= 20 ? 1 : 0;
-    const pf = Number.isFinite(Number(s.profit_factor)) ? Number(s.profit_factor) : -Infinity;
-    const exp = Number.isFinite(Number(s.expectancy_R)) ? Number(s.expectancy_R) : -Infinity;
+    const pf = Number(s.profit_factor);
+    const exp = Number(s.expectancy_R);
     const dd = Number(s.max_drawdown_pct);
-    const score = q*100000 + enough*10000 + pf*100 + exp*10 - dd;
-    return {...r, selected:false, rankScore:score};
-  }).sort((a,b)=>b.rankScore-a.rankScore);
+    const positiveYears = Number(c.positiveYears);
+
+    const reasons = [];
+    if (s.trades < MIN_IS_TRADES_FOR_SELECTION) reasons.push('insufficient_trades');
+    if (!Number.isFinite(pf) || pf < MIN_IS_PF_FOR_SELECTION) reasons.push('insufficient_profit_factor');
+    if (!Number.isFinite(exp) || exp < MIN_IS_EXPECTANCY_R_FOR_SELECTION) reasons.push('insufficient_expectancy_R');
+    if (!Number.isFinite(dd) || dd > MAX_IS_DD_PCT_FOR_SELECTION) reasons.push('excessive_max_drawdown');
+    if (!Number.isFinite(positiveYears) || positiveYears < MIN_IS_POSITIVE_YEARS_FOR_SELECTION) reasons.push('insufficient_positive_years');
+
+    const selectionEligible = reasons.length === 0;
+    const qualityGate = c.qualityGate?.passed ? 1 : 0;
+    const score = selectionEligible
+      ? qualityGate * 100000 + pf * 100 + exp * 10 - dd
+      : -Infinity;
+
+    return {
+      ...r,
+      selected:false,
+      selectionEligible,
+      selectionReason: selectionEligible ? 'eligible' : reasons.join(','),
+      rankScore:score
+    };
+  })
+    .filter(r => r.selectionEligible)
+    .sort((a,b)=>b.rankScore-a.rankScore);
+
   return ranked[0] || null;
 }
 
@@ -125,10 +161,17 @@ async function main() {
       is_bars:isBars,
       oos_bars:oosBars
     },
-    selection_rule:'prefer conservative-cost quality gate pass, then sufficient trades, then PF, then expectancy, then lower max DD',
+    selection_rule:'Only conservative-cost variants meeting >=20 IS trades, PF >=1.05, expectancy_R >=0.05, max DD <=5%, and >=2 positive years are eligible; among eligible variants prefer quality-gate pass, then PF, then expectancy, then lower max DD',
     in_sample:isReports,
     selected_variant:winner?.variant||null,
     selected_variant_rank_score:winner?.rankScore??null,
+    selection_thresholds:{
+      minimum_is_trades:MIN_IS_TRADES_FOR_SELECTION,
+      minimum_is_profit_factor:MIN_IS_PF_FOR_SELECTION,
+      minimum_is_expectancy_R:MIN_IS_EXPECTANCY_R_FOR_SELECTION,
+      maximum_is_max_drawdown_pct:MAX_IS_DD_PCT_FOR_SELECTION,
+      minimum_is_positive_years:MIN_IS_POSITIVE_YEARS_FOR_SELECTION
+    },
     out_of_sample:oos,
     promotion_rule:'OOS result is research evidence only; no automatic live/demo promotion'
   };
