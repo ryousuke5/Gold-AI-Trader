@@ -36,12 +36,12 @@ input double MaxDailyLossPercent = 1.50;
 input double MaxAccountDrawdownPercent = 8.00;
 input double StopBufferAtr = 0.15;
 input double TriggerStopPadAtr = 0.05;
-input double MinStopAtr = 0.80;
-input double MaxStopAtr = 2.00;
-input double TakeProfitR = 2.00;
+input double MinStopAtr = 0.60;
+input double MaxStopAtr = 2.20;
+input double TakeProfitR = 1.80;
 input int    MaxHoldBars = 96;
 input bool   UseTimeExit = true;
-input double MaxEntryDistanceAtr = 0.20;
+input double MaxEntryDistanceAtr = 0.25;
 
 // --- Execution safety
 input double MaxSpreadPrice = 0.60;
