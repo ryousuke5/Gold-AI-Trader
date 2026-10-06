@@ -130,8 +130,15 @@ export function findXauRetestSetup(features = {}, options = {}) {
   if (trend === 'RANGE') return wait(trend, 'h1_trend_not_clear', { h1_slope_agreement: h1Agreement });
 
   const confirmationIndex = bars.length - 1;
+  const retestIndex = confirmationIndex - 1;
   const breakoutMin = confirmationIndex - (cfg.maxRetestBars + 1);
   const breakoutMax = confirmationIndex - (cfg.minRetestBars + 1);
+  const retest = bars[retestIndex];
+  const confirmation = latest;
+
+  if (!isValidBar(retest)) {
+    return wait(trend, 'invalid_retest_bar', { h1_slope_agreement: h1Agreement });
+  }
 
   let selected = null;
 
@@ -161,16 +168,14 @@ export function findXauRetestSetup(features = {}, options = {}) {
 
     const isBuyBreak =
       trend === 'UP' &&
-      m5.ema20 > m5.ema50 &&
-      breakout.close >= rangeHigh + cfg.breakoutAtr * atr &&
       breakout.close > breakout.open &&
+      breakout.close >= rangeHigh + cfg.breakoutAtr * atr &&
       breakoutCloseLocation >= cfg.breakoutCloseLocation;
 
     const isSellBreak =
       trend === 'DOWN' &&
-      m5.ema20 < m5.ema50 &&
-      breakout.close <= rangeLow - cfg.breakoutAtr * atr &&
       breakout.close < breakout.open &&
+      breakout.close <= rangeLow - cfg.breakoutAtr * atr &&
       breakoutCloseLocation <= 1 - cfg.breakoutCloseLocation;
 
     if (!isBuyBreak && !isSellBreak) continue;
@@ -178,27 +183,18 @@ export function findXauRetestSetup(features = {}, options = {}) {
     const direction = isBuyBreak ? 'BUY' : 'SELL';
     const level = direction === 'BUY' ? rangeHigh : rangeLow;
 
-    const firstRetestIndex = bi + cfg.minRetestBars;
-    const lastRetestIndex = Math.min(bi + cfg.maxRetestBars, confirmationIndex - 1);
-    if (firstRetestIndex > lastRetestIndex) continue;
+    const retestTouch = direction === 'BUY'
+      ? retest.low <= level + cfg.retestToleranceAtr * atr &&
+        retest.low >= level - cfg.maxPenetrationAtr * atr &&
+        retest.close >= level - cfg.retestCloseBufferAtr * atr
+      : retest.high >= level - cfg.retestToleranceAtr * atr &&
+        retest.high <= level + cfg.maxPenetrationAtr * atr &&
+        retest.close <= level + cfg.retestCloseBufferAtr * atr;
 
-    for (let retestIndex = lastRetestIndex; retestIndex >= firstRetestIndex; retestIndex -= 1) {
-      const retest = bars[retestIndex];
-      const confirmation = bars[retestIndex + 1];
-      if (!isValidBar(retest) || !isValidBar(confirmation)) continue;
+    if (!retestTouch) continue;
 
-      const retestTouch = direction === 'BUY'
-        ? retest.low <= level + cfg.retestToleranceAtr * atr &&
-          retest.low >= level - cfg.maxPenetrationAtr * atr &&
-          retest.close >= level - cfg.retestCloseBufferAtr * atr
-        : retest.high >= level - cfg.retestToleranceAtr * atr &&
-          retest.high <= level + cfg.maxPenetrationAtr * atr &&
-          retest.close <= level + cfg.retestCloseBufferAtr * atr;
-
-      if (!retestTouch) continue;
-
-      const confirmationRange = confirmation.high - confirmation.low;
-      const confirmationBodyAtr = Math.abs(confirmation.close - confirmation.open) / atr;
+    const confirmationRange = confirmation.high - confirmation.low;
+    const confirmationBodyAtr = Math.abs(confirmation.close - confirmation.open) / atr;
     if (!(confirmationRange > 0 &&
           confirmationBodyAtr >= cfg.confirmBodyAtr &&
           confirmationBodyAtr <= cfg.maxConfirmBodyAtr)) continue;
@@ -220,37 +216,37 @@ export function findXauRetestSetup(features = {}, options = {}) {
       ? (confirmation.close - m5.ema20) / atr
       : (m5.ema20 - confirmation.close) / atr;
 
-      if (!(extension <= cfg.maxExtensionAtr)) continue;
+    if (!(extension >= -0.50 && extension <= cfg.maxExtensionAtr)) continue;
 
-      const priorVolumes = rangeBars.map(b => num(b.volume)).filter(v => v >= 0);
-      const avgVolume = priorVolumes.length
-        ? priorVolumes.reduce((s, v) => s + v, 0) / priorVolumes.length
-        : 0;
-      const volumeRatio = avgVolume > 0
-        ? num(confirmation.volume) / avgVolume
-        : 0;
-      if (cfg.useVolumeFilter && avgVolume > 0 && volumeRatio < cfg.minVolumeRatio) continue;
+    const priorVolumes = rangeBars.map(b => num(b.volume)).filter(v => v >= 0);
+    const avgVolume = priorVolumes.length
+      ? priorVolumes.reduce((sum, v) => sum + v, 0) / priorVolumes.length
+      : 0;
+    const volumeRatio = avgVolume > 0
+      ? num(confirmation.volume) / avgVolume
+      : 0;
+    if (cfg.useVolumeFilter && avgVolume > 0 && volumeRatio < cfg.minVolumeRatio) continue;
 
-      const entry = direction === 'BUY' ? num(features.ask) : num(features.bid);
-      const stop = direction === 'BUY'
-        ? retest.low - cfg.stopBufferAtr * atr
-        : retest.high + cfg.stopBufferAtr * atr;
-      const stopDistance = Math.abs(entry - stop);
-      const stopAtr = stopDistance / atr;
-      if (!(stopDistance > 0 && stopAtr >= cfg.minStopAtr && stopAtr <= cfg.maxStopAtr)) continue;
+    const entry = direction === 'BUY' ? num(features.ask) : num(features.bid);
+    const stop = direction === 'BUY'
+      ? retest.low - cfg.stopBufferAtr * atr
+      : retest.high + cfg.stopBufferAtr * atr;
+    const stopDistance = Math.abs(entry - stop);
+    const stopAtr = stopDistance / atr;
+    if (!(stopDistance > 0 && stopAtr >= cfg.minStopAtr && stopAtr <= cfg.maxStopAtr)) continue;
 
-      const target = direction === 'BUY'
-        ? entry + stopDistance * cfg.takeProfitR
-        : entry - stopDistance * cfg.takeProfitR;
+    const target = direction === 'BUY'
+      ? entry + stopDistance * cfg.takeProfitR
+      : entry - stopDistance * cfg.takeProfitR;
 
-      const signalClose = confirmation.close;
-      if (cfg.maxEntryDistanceAtr > 0 &&
-          Math.abs(entry - signalClose) > cfg.maxEntryDistanceAtr * atr) {
-        continue;
-      }
+    const signalClose = confirmation.close;
+    if (cfg.maxEntryDistanceAtr > 0 &&
+        Math.abs(entry - signalClose) > cfg.maxEntryDistanceAtr * atr) {
+      continue;
+    }
 
-        selected = {
-        candidate: direction,
+    selected = {
+      candidate: direction,
       trend: direction === 'BUY' ? 'UP' : 'DOWN',
       setup_type: 'H1_TREND_RANGE_BREAK_RETEST',
       entry,
@@ -279,7 +275,6 @@ export function findXauRetestSetup(features = {}, options = {}) {
     };
     break;
   }
-
   return selected || wait(trend, 'no_valid_breakout_retest_confirmation', {
     h1_slope_agreement: h1Agreement
   });
