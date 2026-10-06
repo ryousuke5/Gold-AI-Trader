@@ -23,6 +23,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - name: Run unit tests
+        run: npm test
       - name: Prepare canonical EURUSD dataset
         env:
           EURUSD_DATA_LOOKBACK_DAYS: '1825'
