@@ -41,6 +41,23 @@ jobs:
       - name: Run Gold V2 five-year baseline
         run: node scripts/backtest-gold-v2-resumable.mjs
 
+      - name: Verify trade integrity
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const cp=JSON.parse(fs.readFileSync('gold-backtest-output/gold_v2_resume_checkpoint.json'));
+          const trades=JSON.parse(fs.readFileSync('gold-backtest-output/gold_v2_resumed_trades.json'));
+          if(cp.status!=='COMPLETE') throw new Error('Backtest checkpoint is not COMPLETE');
+          if(cp.trades.length!==trades.length) throw new Error('Checkpoint/trade output count mismatch');
+          for(let i=0;i<trades.length;i++) {
+            const t=trades[i];
+            for(const k of ['signal_time','entry_time','exit_time','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl']) if(!Number.isFinite(Number(t[k]))) throw new Error('Invalid trade field: '+k+' at '+i);
+            if(!(t.exit_time>=t.entry_time)) throw new Error('Exit before entry at '+i);
+            if(i && !(trades[i-1].exit_time < t.entry_time)) throw new Error('Overlapping trades at '+i);
+          }
+          console.log('TRADE INTEGRITY PASS', {trades:trades.length});
+          NODE
+
       - name: Generate baseline metrics
         run: node scripts/report-gold-v2-backtest.mjs gold-backtest-output/gold_v2_resumed_trades.json
 
