@@ -25,8 +25,61 @@ const C = {
   stopBufferAtr: Number(process.env.SESSION_CORE_STOP_BUFFER_ATR || 0.15),
   minStopAtr: Number(process.env.SESSION_CORE_MIN_STOP_ATR || 0.40),
   maxStopAtr: Number(process.env.SESSION_CORE_MAX_STOP_ATR || 1.80),
-  tpR: Number(process.env.SESSION_CORE_TP_R || 1.50)
+  tpR: Number(process.env.SESSION_CORE_TP_R || 1.50),
+  policyMask: process.env.SESSION_CORE_POLICY_MASK || '',
+  policyMinConfidence: Number(process.env.SESSION_CORE_POLICY_MIN_CONFIDENCE || 0.65)
 };
+
+async function loadPolicyMask() {
+  if (!C.policyMask) return [];
+  const text = await fs.readFile(path.resolve(C.policyMask), 'utf8');
+  const lines = text.replace(/^\\uFEFF/, '').trim().split(/\\r?\\n/).filter(Boolean);
+  if (lines.length < 2) return [];
+  const header = lines[0].split(',').map((x) => x.trim().toLowerCase());
+  const idx = Object.fromEntries(header.map((h, i) => [h, i]));
+  if (idx.timestamp === undefined || idx.bias === undefined || idx.confidence === undefined) {
+    throw new Error('Policy mask requires timestamp,bias,confidence columns');
+  }
+  const out = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const c = lines[i].split(',');
+    const time = Date.parse(String(c[idx.timestamp] || ''));
+    const confidence = Number(c[idx.confidence]);
+    if (!Number.isFinite(time) || !Number.isFinite(confidence)) continue;
+    out.push({
+      time: Math.floor(time / 1000),
+      bias: String(c[idx.bias] || '').trim().toUpperCase(),
+      confidence,
+      environment: String(c[idx.environment] || '').trim().toUpperCase(),
+      freshness: String(c[idx.freshness] || '').trim().toUpperCase()
+    });
+  }
+  out.sort((a, b) => a.time - b.time);
+  return out;
+}
+
+function latestPolicyMask(mask, signalCloseTime) {
+  if (!mask.length) return null;
+  let lo = 0, hi = mask.length - 1, best = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (mask[mid].time <= signalCloseTime) {
+      best = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return best >= 0 ? mask[best] : null;
+}
+
+function policyAllows(maskRow, side) {
+  if (!maskRow) return { allowed: false, reason: 'policy_mask_missing' };
+  if (maskRow.confidence < C.policyMinConfidence) return { allowed: false, reason: 'policy_confidence_low' };
+  if (maskRow.freshness && maskRow.freshness !== 'CURRENT') return { allowed: false, reason: 'policy_not_current' };
+  if (maskRow.bias === 'BULLISH_EURUSD' && side === 'BUY') return { allowed: true, reason: 'policy_aligned' };
+  if (maskRow.bias === 'BEARISH_EURUSD' && side === 'SELL') return { allowed: true, reason: 'policy_aligned' };
+  if (maskRow.bias === 'NEUTRAL') return { allowed: false, reason: 'policy_neutral' };
+  return { allowed: false, reason: 'policy_conflict' };
+}
 
 async function loadBars() {
   const raw = await fs.readFile(path.resolve(C.data));
@@ -225,10 +278,12 @@ function simulate(bars, index, setup) {
 async function main() {
   await fs.mkdir(C.out, { recursive: true });
   const raw = await loadBars();
+  const policyMask = await loadPolicyMask();
   const m15 = withIndicators(raw);
   const h1 = withIndicators(aggregateH1(m15));
   const trades = [];
-  const diagnostics = { evaluated: 0, candidates: 0, executed: 0, rejected_execution: 0, wait_reasons: {} };
+  const policyTrades = [];
+  const diagnostics = { evaluated: 0, candidates: 0, executed: 0, rejected_execution: 0, wait_reasons: {}, policy_candidates: 0, policy_executed: 0, policy_rejected: 0, policy_reject_reasons: {} };
   let nextAvailable = 0;
 
   for (let i = 250; i < m15.length - 1; i += 1) {
@@ -285,6 +340,19 @@ async function main() {
     }
     diagnostics.executed += 1;
     trades.push(trade);
+
+    if (policyMask.length) {
+      diagnostics.policy_candidates += 1;
+      const policy = policyAllows(latestPolicyMask(policyMask, signal.time + 900), setup.candidate);
+      if (policy.allowed) {
+        policyTrades.push(trade);
+        diagnostics.policy_executed += 1;
+      } else {
+        diagnostics.policy_rejected += 1;
+        diagnostics.policy_reject_reasons[policy.reason] = (diagnostics.policy_reject_reasons[policy.reason] || 0) + 1;
+      }
+    }
+
     const exitIndex = m15.findIndex((b) => b.time === Date.parse(trade.exit_time) / 1000);
     nextAvailable = exitIndex >= 0 ? Math.min(m15.length, exitIndex + 1) : i + 2;
   }
@@ -292,6 +360,7 @@ async function main() {
   const endTime = m15.at(-1).time;
   const oosCutoff = endTime - 730 * 86400;
   const oos = trades.filter((t) => Date.parse(t.signal_time) / 1000 >= oosCutoff);
+  const policyOos = policyTrades.filter((t) => Date.parse(t.signal_time) / 1000 >= oosCutoff);
   const report = {
     schema_version: 1,
     strategy: 'EURUSD UTC session range breakout-retest V1',
@@ -326,7 +395,11 @@ async function main() {
     },
     overall: summarize(trades),
     recent_730_days: summarize(oos),
+    policy_filtered_overall: policyMask.length ? summarize(policyTrades) : null,
+    policy_filtered_recent_730_days: policyMask.length ? summarize(policyOos) : null,
+    policy_mask: policyMask.length ? { file: C.policyMask, rows: policyMask.length, min_confidence: C.policyMinConfidence } : null,
     annual: annual(trades),
+    policy_filtered_annual: policyMask.length ? annual(policyTrades) : null,
     diagnostics
   };
 
