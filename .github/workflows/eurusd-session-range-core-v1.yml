@@ -1,0 +1,112 @@
+name: EURUSD Session Range Core V1 Research
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/eurusd_session_range_core_v1.js'
+      - 'scripts/backtest-eurusd-session-range-core-v1.mjs'
+      - 'scripts/prepare-eurusd-core-v4-data.mjs'
+      - 'tests/eurusd_session_range_core_v1.test.js'
+      - '.github/workflows/eurusd-session-range-core-v1.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-session-range-core-v1
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Unit tests
+        run: npm test
+      - name: Prepare shared EURUSD M15 data
+        env:
+          CORE_V4_LOOKBACK_DAYS: '1825'
+          CORE_V4_PREPARED_DATA: 'eurusd-session-core-data/eurusd-m15.json.gz'
+        run: node scripts/prepare-eurusd-core-v4-data.mjs
+      - name: Upload shared data
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-session-core-data-1825d
+          path: eurusd-session-core-data/eurusd-m15.json.gz
+          retention-days: 7
+  research:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline_1p50
+            start: '7'
+            end: '15'
+            tp: '1.50'
+            retest_bars: '4'
+          - name: extended_1p50
+            start: '7'
+            end: '17'
+            tp: '1.50'
+            retest_bars: '4'
+          - name: baseline_1p80
+            start: '7'
+            end: '15'
+            tp: '1.80'
+            retest_bars: '4'
+          - name: baseline_1p50_retest6
+            start: '7'
+            end: '15'
+            tp: '1.50'
+            retest_bars: '6'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Download shared data
+        uses: actions/download-artifact@v4
+        with:
+          name: eurusd-session-core-data-1825d
+          path: eurusd-session-core-data
+      - name: Run session core five-year backtest
+        env:
+          SESSION_CORE_DATA_FILE: 'eurusd-session-core-data/eurusd-m15.json.gz'
+          SESSION_CORE_OUTPUT_DIR: 'eurusd-session-core-backtest-output'
+          SESSION_CORE_SPREAD_PIPS: '0.8'
+          SESSION_CORE_SLIPPAGE_PIPS: '0.1'
+          SESSION_CORE_MAX_HOLD_BARS: '96'
+          SESSION_CORE_MAX_ENTRY_GAP_ATR: '0.50'
+          SESSION_CORE_MIN_EFFECTIVE_RR: '1.30'
+          SESSION_CORE_BREAKOUT_START_UTC: '${{ matrix.start }}'
+          SESSION_CORE_BREAKOUT_END_UTC: '${{ matrix.end }}'
+          SESSION_CORE_MIN_RANGE_ATR: '0.30'
+          SESSION_CORE_MAX_RANGE_ATR: '2.50'
+          SESSION_CORE_BREAKOUT_ATR: '0.05'
+          SESSION_CORE_BREAKOUT_BODY_ATR: '0.20'
+          SESSION_CORE_BREAKOUT_CLOSE_LOCATION: '0.60'
+          SESSION_CORE_MAX_RETEST_BARS: '${{ matrix.retest_bars }}'
+          SESSION_CORE_RETEST_TOLERANCE_ATR: '0.25'
+          SESSION_CORE_CONFIRMATION_BUFFER_ATR: '0.02'
+          SESSION_CORE_CONFIRMATION_BODY_ATR: '0.10'
+          SESSION_CORE_STOP_BUFFER_ATR: '0.15'
+          SESSION_CORE_MIN_STOP_ATR: '0.40'
+          SESSION_CORE_MAX_STOP_ATR: '1.80'
+          SESSION_CORE_TP_R: '${{ matrix.tp }}'
+        run: node scripts/backtest-eurusd-session-range-core-v1.mjs
+      - name: Upload research result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-session-core-v1-${{ matrix.name }}
+          path: eurusd-session-core-backtest-output/
+          retention-days: 30
+          if-no-files-found: warn
