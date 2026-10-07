@@ -63,6 +63,42 @@ services:
         value: medium
       - key: EURUSD_FUNDAMENTAL_LOOKBACK_HOURS
         value: "48"
+      - key: EURUSD_AI_ENABLED
+        value: "false"
+      - key: EURUSD_AI_ENVIRONMENT_REQUIRED
+        value: "false"
+      - key: EURUSD_MAX_HOLD_SECONDS
+        value: "3600"
+      - key: EURUSD_NEWS_REQUIRE_FEED
+        value: "true"
+      - key: EURUSD_NEWS_FEED_MAX_AGE_SECONDS
+        value: "1800"
+      - key: EURUSD_NEWS_REFRESH_SECONDS
+        value: "600"
+      - key: EURUSD_NEWS_HIGH_PRE_BLOCK_MINUTES
+        value: "60"
+      - key: EURUSD_NEWS_HIGH_POST_BLOCK_MINUTES
+        value: "60"
+      - key: EURUSD_NEWS_BLOCK_MEDIUM
+        value: "false"
+      - key: EURUSD_REQUIRE_GAP_DATA
+        value: "true"
+      - key: EURUSD_WEEKEND_MAX_GAP_ATR
+        value: "0.50"
+      - key: EURUSD_GAP_CHECK_AFTER_REOPEN_HOURS
+        value: "12"
+      - key: EURUSD_WEEKEND_BLOCK_START_UTC
+        value: "20:00"
+      - key: EURUSD_WEEKEND_BLOCK_END_UTC
+        value: "23:59"
+      - key: EURUSD_SUNDAY_REOPEN_UTC
+        value: "21:00"
+      - key: EURUSD_SUNDAY_REOPEN_LOCK_MINUTES
+        value: "90"
+      - key: EURUSD_ROLLOVER_START_UTC
+        value: "21:55"
+      - key: EURUSD_ROLLOVER_END_UTC
+        value: "22:15"
       - key: EURUSD_MAX_SPREAD_PIPS
         value: "1.20"
       - key: EURUSD_MAX_SPREAD_ATR_PCT
