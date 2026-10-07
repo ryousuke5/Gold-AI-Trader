@@ -29,8 +29,8 @@ const C = {
   maxSpreadToTpPct: Number(process.env.LEGACY_CORE_MAX_SPREAD_TO_TP_PCT || 12)
 };
 
-function load() {
-  const raw = require('fs').readFileSync(C.data);
+async function load() {
+  const raw = await fs.readFile(C.data);
   const text = C.data.endsWith('.gz') ? gunzipSync(raw).toString('utf8') : raw.toString('utf8');
   const rows = JSON.parse(text);
   return rows.map(b => ({time:Number(b.time),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close),volume:Number(b.volume)||0}))
@@ -48,7 +48,7 @@ function latestH1(h,t){let lo=0,hi=h.length-1,b=-1;while(lo<=hi){const m=(lo+hi)
 function stats(ts){const rs=ts.map(t=>t.r),w=rs.filter(x=>x>0),l=rs.filter(x=>x<0);let eq=0,peak=0,dd=0;for(const x of rs){eq+=x;peak=Math.max(peak,eq);dd=Math.max(dd,peak-eq);}return {trades:rs.length,wins:w.length,losses:l.length,win_rate_pct:rs.length?w.length/rs.length*100:0,net_r:rs.reduce((a,b)=>a+b,0),expectancy_r:rs.length?rs.reduce((a,b)=>a+b,0)/rs.length:0,profit_factor:l.length?w.reduce((a,b)=>a+b,0)/(-l.reduce((a,b)=>a+b,0)):null,max_drawdown_r:dd};}
 function simulate(m,i,s){const sp=C.spread*1e-4,sl=C.slip*1e-4,side=s.candidate,entry=side==='BUY'?m[i+1].open+sp/2+sl:m[i+1].open-sp/2-sl,stopDist=Math.abs(entry-s.stop_loss);if(!(stopDist>0))return null;const stop=side==='BUY'?entry-stopDist:entry+stopDist,target=side==='BUY'?entry+stopDist*C.tpR:entry-stopDist*C.tpR;const end=Math.min(m.length-1,i+C.hold);let r=0,reason='TIME',ei=end;for(let j=i+1;j<=end;j++){const b=m[j],sh=side==='BUY'?b.low-sp/2<=stop:b.high+sp/2>=stop,th=side==='BUY'?b.high-sp/2>=target:b.low+sp/2<=target;if(sh&&th||sh){r=side==='BUY'?(stop-sl-entry)/stopDist:(entry-(stop+sl))/stopDist;reason=sh&&th?'STOP_AND_TARGET_SAME_BAR':'STOP';ei=j;break;}if(th){r=side==='BUY'?(target-sl-entry)/stopDist:(entry-(target+sl))/stopDist;reason='TARGET';ei=j;break;}}if(reason==='TIME'){const px=side==='BUY'?m[end].close:m[end].close+sp/2;r=side==='BUY'?(px-sl-entry)/stopDist:(entry-(px+sl))/stopDist;}return {signal_time:new Date((m[i].time+900)*1000).toISOString(),direction:side,r,exit_reason:reason,exit_time:new Date((m[ei].time+900)*1000).toISOString()};}
 
-const m=indicators(load()),h=indicators(h1agg(m));const trades=[];let next=0;const diagnostics={evaluated:0,candidates:0,h1_up:0,h1_down:0,h1_range:0,waits:0,wait_reasons:{}};
+const m=indicators(await load()),h=indicators(h1agg(m));const trades=[];let next=0;const diagnostics={evaluated:0,candidates:0,h1_up:0,h1_down:0,h1_range:0,waits:0,wait_reasons:{}};
 for(let i=250;i<m.length-2;i++){if(i<next)continue;const hi=latestH1(h,m[i].time+900);if(hi<200)continue;diagnostics.evaluated++;const b=m[i];const hb=h[hi];const f={bid:b.close-C.spread*1e-4/2,ask:b.close+C.spread*1e-4/2,point:1e-5,spread:C.spread*1e-4,barTime:b.time+900,m15:{ema20:b.ema20,ema50:b.ema50,rsi14:b.rsi14,atr14:b.atr14},h1:{close:hb.close,ema20:hb.ema20,ema50:hb.ema50,ema200:hb.ema200,rsi14:hb.rsi14,atr14:hb.atr14},recentM15:m.slice(Math.max(0,i-79),i+1).map(x=>({...x,time:x.time+900})),recentH1:h.slice(Math.max(0,hi-79),hi+1).map(x=>({...x,time:x.time+3600}))};
 const s=buildEurUsdSetup(f,{rangeLookback:C.rangeLookback,minRangeAtr:C.minRangeAtr,maxRangeAtr:C.maxRangeAtr,breakoutAtr:C.breakoutAtr,minBodyAtr:C.minBodyAtr,minCloseLocation:C.minCloseLocation,minVolumeRatio:C.minVolumeRatio,maxSpreadPips:C.maxSpreadPips,maxSpreadAtrPct:15,minStopAtr:C.minStopAtr,maxStopAtr:C.maxStopAtr,takeProfitR:C.tpR,maxSpreadToTpPct:C.maxSpreadToTpPct,buyRsiMin:C.buyRsiMin,buyRsiMax:C.buyRsiMax,sellRsiMin:C.sellRsiMin,sellRsiMax:C.sellRsiMax});
 if(s.trend==='UP')diagnostics.h1_up++;else if(s.trend==='DOWN')diagnostics.h1_down++;else diagnostics.h1_range++;
