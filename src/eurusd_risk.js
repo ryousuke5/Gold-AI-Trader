@@ -25,7 +25,7 @@ export function getEurUsdRiskLimits() {
     maxStopAtr: Math.max(0.2, envNum('EURUSD_MAX_STOP_ATR', 1.50)),
     spreadAtrPctMax: Math.max(1, envNum('EURUSD_MAX_SPREAD_ATR_PCT', 15)),
     highImpactEventBlock: String(process.env.EURUSD_BLOCK_HIGH_IMPACT_24H ?? 'true').toLowerCase() !== 'false',
-    aiEnvironmentRequired: String(process.env.EURUSD_AI_ENVIRONMENT_REQUIRED ?? 'false').toLowerCase() !== 'false',
+    aiEnvironmentRequired: String(process.env.EURUSD_AI_ENVIRONMENT_REQUIRED ?? 'true').toLowerCase() !== 'false',
     safety: getEurUsdSafetyConfig()
   };
 }
