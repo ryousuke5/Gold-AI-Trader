@@ -54,7 +54,7 @@ services:
       - key: GOLD_SESSION_END_UTC
         value: "20"
       - key: EURUSD_STRATEGY_VERSION
-        value: eurusd-m15-h1-ai-environment-v3-balanced-weekly
+        value: eurusd-m15-h1-deterministic-forward-v1
       - key: EURUSD_FREQUENCY_MODE
         value: balanced-weekly
       - key: EURUSD_TARGET_TRADES_PER_WEEK
