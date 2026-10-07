@@ -177,7 +177,7 @@ export function buildEurUsdSessionRangeCore(features = {}, config = {}) {
       trend: side === 'BUY' ? 'UP' : 'DOWN',
       setup_type: 'NONE',
       reasons: ['retest_confirmation_filter'],
-      diagnostics: { range_high: rangeHigh, range_low: rangeLow, range_atr: rangeAtr, breakout_time: breakout.time }
+      diagnostics: { range_high: rangeHigh, range_low: rangeLow, range_atr: rangeAtr, breakout_time: selected?.breakout?.time ?? null }
     };
   }
 
@@ -219,9 +219,9 @@ export function buildEurUsdSessionRangeCore(features = {}, config = {}) {
       range_high: rangeHigh,
       range_low: rangeLow,
       range_atr: rangeAtr,
-      breakout_time: breakout.time,
-      breakout_body_atr: bodyAtr,
-      breakout_close_location: closeLocation,
+      breakout_time: selected.breakout.time,
+      breakout_body_atr: selected.breakout_body_atr,
+      breakout_close_location: selected.breakout_close_location,
       retest_count: retestBars.length,
       retest_low: retestLow,
       retest_high: retestHigh,
