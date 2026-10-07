@@ -1,0 +1,82 @@
+name: EURUSD Technical Core V4 Research
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/eurusd_technical_core_v4.js'
+      - 'scripts/backtest-eurusd-technical-core-v4.mjs'
+      - 'tests/eurusd_technical_core_v4.test.js'
+      - '.github/workflows/eurusd-technical-core-v4.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-technical-core-v4
+  cancel-in-progress: true
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline_1p50
+            spread: '0.8'
+            slip: '0.1'
+            tp: '1.50'
+          - name: stress_1p50
+            spread: '1.2'
+            slip: '0.2'
+            tp: '1.50'
+          - name: baseline_1p30
+            spread: '0.8'
+            slip: '0.1'
+            tp: '1.30'
+          - name: baseline_1p80
+            spread: '0.8'
+            slip: '0.1'
+            tp: '1.80'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install --no-audit --no-fund
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run technical core V4 five-year backtest
+        env:
+          CORE_V4_LOOKBACK_DAYS: '1825'
+          CORE_V4_SERVER_TIMEZONE: 'Europe/Nicosia'
+          CORE_V4_SPREAD_PIPS: '${{ matrix.spread }}'
+          CORE_V4_SLIPPAGE_PIPS: '${{ matrix.slip }}'
+          CORE_V4_MAX_HOLD_BARS: '96'
+          CORE_V4_COOLDOWN_BARS: '2'
+          CORE_V4_SETUP_LOOKBACK: '12'
+          CORE_V4_MIN_IMPULSE_ATR: '0.35'
+          CORE_V4_MIN_PULLBACK_ATR: '0.05'
+          CORE_V4_TOUCH_BUFFER_ATR: '0.30'
+          CORE_V4_STRUCTURE_BUFFER_ATR: '0.20'
+          CORE_V4_TRIGGER_BUFFER_ATR: '0.02'
+          CORE_V4_MIN_BODY_ATR: '0.20'
+          CORE_V4_MIN_CLOSE_LOCATION: '0.60'
+          CORE_V4_MIN_H1_AGREEMENT: '0.50'
+          CORE_V4_TAKE_PROFIT_R: '${{ matrix.tp }}'
+          CORE_V4_OUTPUT_DIR: 'eurusd-core-v4-backtest-output'
+        run: node scripts/backtest-eurusd-technical-core-v4.mjs
+
+      - name: Upload research result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-technical-core-v4-${{ matrix.name }}
+          path: eurusd-core-v4-backtest-output/
+          retention-days: 30
+          if-no-files-found: warn
