@@ -67,7 +67,7 @@ export function buildEurUsdSessionRangeCore(features = {}, config = {}) {
     return { candidate: 'WAIT', trend: 'OUT_OF_SESSION', setup_type: 'NONE', reasons: ['breakout_session_filter'] };
   }
 
-  const day = utcDayStart(latest.time - 1);
+  const day = utcDayStart(latest.time);
   const priorDayBars = m15.filter((b) => utcDayStart(b.time - 1) === day && utcHour(b.time) >= 0 && utcHour(b.time) < cfg.breakoutStartUtc);
   if (priorDayBars.length < 16) {
     return { candidate: 'WAIT', trend, setup_type: 'NONE', reasons: ['incomplete_session_range'] };
@@ -87,69 +87,85 @@ export function buildEurUsdSessionRangeCore(features = {}, config = {}) {
     };
   }
 
-  const breakout = latest;
-  const previous = m15.at(-2);
-  const candleRange = breakout.high - breakout.low;
-  const bodyAtr = Math.abs(breakout.close - breakout.open) / atr;
-  const closeLocation = candleRange > 0 ? (breakout.close - breakout.low) / candleRange : 0;
+  let selected = null;
 
-  const buyBreak =
-    trend === 'UP' &&
-    previous.close <= rangeHigh &&
-    breakout.close >= rangeHigh + cfg.breakoutAtr * atr &&
-    breakout.close > breakout.open &&
-    bodyAtr >= cfg.breakoutBodyAtr &&
-    closeLocation >= cfg.breakoutCloseLocation;
+  for (let breakoutIndex = Math.max(1, m15.length - 1 - cfg.maxRetestBars); breakoutIndex < m15.length - 1; breakoutIndex += 1) {
+    const breakout = m15[breakoutIndex];
+    const previous = m15[breakoutIndex - 1];
+    const breakoutHour = utcHour(breakout.time);
+    if (breakoutHour < cfg.breakoutStartUtc || breakoutHour >= cfg.breakoutEndUtc) continue;
 
-  const sellBreak =
-    trend === 'DOWN' &&
-    previous.close >= rangeLow &&
-    breakout.close <= rangeLow - cfg.breakoutAtr * atr &&
-    breakout.close < breakout.open &&
-    bodyAtr >= cfg.breakoutBodyAtr &&
-    closeLocation <= 1 - cfg.breakoutCloseLocation;
+    const candleRange = breakout.high - breakout.low;
+    const bodyAtr = Math.abs(breakout.close - breakout.open) / atr;
+    const closeLocation = candleRange > 0 ? (breakout.close - breakout.low) / candleRange : 0;
 
-  if (!buyBreak && !sellBreak) {
+    const buyBreak =
+      trend === 'UP' &&
+      previous.close <= rangeHigh &&
+      breakout.close >= rangeHigh + cfg.breakoutAtr * atr &&
+      breakout.close > breakout.open &&
+      bodyAtr >= cfg.breakoutBodyAtr &&
+      closeLocation >= cfg.breakoutCloseLocation;
+
+    const sellBreak =
+      trend === 'DOWN' &&
+      previous.close >= rangeLow &&
+      breakout.close <= rangeLow - cfg.breakoutAtr * atr &&
+      breakout.close < breakout.open &&
+      bodyAtr >= cfg.breakoutBodyAtr &&
+      closeLocation <= 1 - cfg.breakoutCloseLocation;
+
+    if (!buyBreak && !sellBreak) continue;
+
+    const side = buyBreak ? 'BUY' : 'SELL';
+    const level = side === 'BUY' ? rangeHigh : rangeLow;
+    const touchedBars = [];
+
+    for (let index = breakoutIndex + 1; index <= m15.length - 1; index += 1) {
+      const b = m15[index];
+      const touch = side === 'BUY'
+        ? b.low <= level + cfg.retestToleranceAtr * atr
+        : b.high >= level - cfg.retestToleranceAtr * atr;
+      if (touch) touchedBars.push(b);
+
+      const body = Math.abs(b.close - b.open) / atr;
+      const confirmed = index === m15.length - 1 && (
+        side === 'BUY'
+          ? touch && b.close >= level + cfg.confirmationBufferAtr * atr && b.close > b.open && body >= cfg.confirmationBodyAtr
+          : touch && b.close <= level - cfg.confirmationBufferAtr * atr && b.close < b.open && body >= cfg.confirmationBodyAtr
+      );
+
+      if (confirmed) {
+        selected = {
+          side,
+          level,
+          breakout,
+          breakout_body_atr: bodyAtr,
+          breakout_close_location: closeLocation,
+          confirmation_index: index,
+          touched_bars: touchedBars
+        };
+        break;
+      }
+    }
+
+    if (selected) break;
+  }
+
+  if (!selected) {
     return {
       candidate: 'WAIT',
       trend,
       setup_type: 'NONE',
-      reasons: ['breakout_trigger_filter'],
-      diagnostics: {
-        range_high: rangeHigh,
-        range_low: rangeLow,
-        range_atr: rangeAtr,
-        breakout_body_atr: bodyAtr,
-        breakout_close_location: closeLocation
-      }
+      reasons: ['breakout_retest_confirmation_filter'],
+      diagnostics: { range_high: rangeHigh, range_low: rangeLow, range_atr: rangeAtr }
     };
   }
 
-  const side = buyBreak ? 'BUY' : 'SELL';
-  const level = side === 'BUY' ? rangeHigh : rangeLow;
-  const end = Math.min(m15.length - 1, m15.length - 1);
-  let confirmationIndex = -1;
-  const retestBars = [];
-
-  for (let i = 1; i <= cfg.maxRetestBars; i += 1) {
-    const index = m15.length - 1 - cfg.maxRetestBars + i;
-    if (index <= 0 || index >= end) continue;
-    const b = m15[index];
-    const touch = side === 'BUY'
-      ? b.low <= level + cfg.retestToleranceAtr * atr
-      : b.high >= level - cfg.retestToleranceAtr * atr;
-    if (touch) retestBars.push(b);
-
-    const body = Math.abs(b.close - b.open) / atr;
-    const confirmed = side === 'BUY'
-      ? touch && b.close >= level + cfg.confirmationBufferAtr * atr && b.close > b.open && body >= cfg.confirmationBodyAtr
-      : touch && b.close <= level - cfg.confirmationBufferAtr * atr && b.close < b.open && body >= cfg.confirmationBodyAtr;
-
-    if (confirmed) {
-      confirmationIndex = index;
-      break;
-    }
-  }
+  const side = selected.side;
+  const level = selected.level;
+  const confirmationIndex = selected.confirmation_index;
+  const retestBars = selected.touched_bars;
 
   if (confirmationIndex < 0) {
     return {
