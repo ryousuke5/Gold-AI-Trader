@@ -3,6 +3,7 @@ import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { buildEurUsdSessionRangeCore } from '../src/eurusd_session_range_core_v1.js';
 
+// Historical policy-filter replay is causal: only assessments timestamped at or before the signal are eligible.
 const C = {
   data: process.env.SESSION_CORE_DATA_FILE || 'eurusd-session-core-data/eurusd-m15.json.gz',
   out: process.env.SESSION_CORE_OUTPUT_DIR || 'eurusd-session-core-backtest-output',
