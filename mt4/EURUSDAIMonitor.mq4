@@ -3,7 +3,7 @@
 #property version   "1.1"
 #property description "EURUSD M15 safety telemetry monitor. Sends completed-bar and gap/hold data to Render. No order execution."
 
-input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
+input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
 input string ApiKey = "CHANGE_ME";
 input string SymbolName = "";
 input bool   EnableSignalRequests = true;
