@@ -13,6 +13,13 @@ import { evaluateEurUsdRisk, getEurUsdRiskLimits } from './eurusd_risk.js';
 import { getEurUsdNewsFeedState } from './eurusd_news_feed.js';
 import { evaluateEurUsdSafety } from './eurusd_safety_gate.js';
 import {
+  getEurUsdForwardConfig,
+  settleEurUsdForwardTrades,
+  maybeOpenEurUsdForwardTrade,
+  listEurUsdForwardTrades,
+  summarizeEurUsdForwardTrades
+} from './eurusd_forward.js';
+import {
   getRiskBySignal,
   getSignalByKey,
   getState,
@@ -305,6 +312,13 @@ export function registerEurUsdRoutes(app) {
         }
       });
 
+      const forwardSettlement = getEurUsdForwardConfig().enabled
+        ? await settleEurUsdForwardTrades({
+            features,
+            safety: risk.safety,
+            nowMs: Date.now()
+          })
+        : [];
       const signalRow = {
         id: signalId,
         symbol,
@@ -349,6 +363,24 @@ export function registerEurUsdRoutes(app) {
         },
         created_at: nowIso()
       });
+
+      const forwardOpen = (
+        getEurUsdForwardConfig().enabled &&
+        forwardSettlement.length === 0
+      )
+        ? await maybeOpenEurUsdForwardTrade({
+            signalId,
+            strategyVersion,
+            decision,
+            risk,
+            features,
+            account,
+            nowMs: Date.now()
+          })
+        : {
+            opened: false,
+            reason: forwardSettlement.length ? 'settled_trade_on_current_bar' : 'forward_test_disabled'
+          };
 
       if (fundamental?.webSearchUsed) {
         try {
@@ -405,6 +437,10 @@ export function registerEurUsdRoutes(app) {
         execution_gate: gate,
         ai_environment_enabled: aiEnvironmentEnabled(),
         safety: risk.safety,
+        forward_test: {
+          ...forwardOpen,
+          settled_trades: forwardSettlement
+        },
         persisted: true,
         orders_executed: false
       });
@@ -738,6 +774,24 @@ export function registerEurUsdRoutes(app) {
       });
     } catch (error) {
       res.status(500).json({ ok: false, error: error.message || 'EURUSD safety check failed' });
+    }
+  });
+
+  app.get('/api/eurusd/forward-status', auth, async (req, res) => {
+    try {
+      const trades = await listEurUsdForwardTrades({ limit: 5000 });
+      res.json({
+        ok: true,
+        symbol: 'EURUSD',
+        timeframe: 'M15',
+        strategy: 'EURUSD deterministic technical core + Safety First',
+        ai_environment_enabled: aiEnvironmentEnabled(),
+        config: getEurUsdForwardConfig(),
+        summary: summarizeEurUsdForwardTrades(trades),
+        latest_trades: trades.slice(-25).reverse()
+      });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || 'EURUSD forward status failed' });
     }
   });
 
