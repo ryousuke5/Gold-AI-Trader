@@ -3,7 +3,7 @@
 #property version   "0.1"
 #property description "EURUSD M15 live executor. Dual-gated server approval + local safety guard. Auto trading is OFF by default."
 
-input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
+input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
 input string ApiKey = "CHANGE_ME";
 input string SymbolName = "";
 input bool   EnableSignalRequests = true;
