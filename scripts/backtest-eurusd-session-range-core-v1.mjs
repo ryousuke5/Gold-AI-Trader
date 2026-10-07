@@ -285,9 +285,10 @@ async function main() {
   const policyTrades = [];
   const diagnostics = { evaluated: 0, candidates: 0, executed: 0, rejected_execution: 0, wait_reasons: {}, policy_candidates: 0, policy_executed: 0, policy_rejected: 0, policy_reject_reasons: {} };
   let nextAvailable = 0;
+  let policyNextAvailable = 0;
 
   for (let i = 250; i < m15.length - 1; i += 1) {
-    if (i < nextAvailable) continue;
+    if (i < nextAvailable && (!policyMask.length || i < policyNextAvailable)) continue;
     const signal = m15[i];
     if (![signal.ema20, signal.ema50, signal.atr14].every(Number.isFinite)) continue;
     const h1Index = latestH1Index(h1, signal.time + 900);
@@ -333,28 +334,43 @@ async function main() {
     }
 
     diagnostics.candidates += 1;
-    const trade = simulate(m15, i, setup);
-    if (!trade) {
-      diagnostics.rejected_execution += 1;
-      continue;
-    }
-    diagnostics.executed += 1;
-    trades.push(trade);
 
-    if (policyMask.length) {
-      diagnostics.policy_candidates += 1;
-      const policy = policyAllows(latestPolicyMask(policyMask, signal.time + 900), setup.candidate);
-      if (policy.allowed) {
-        policyTrades.push(trade);
-        diagnostics.policy_executed += 1;
+    if (i >= nextAvailable) {
+      const trade = simulate(m15, i, setup);
+      if (!trade) {
+        diagnostics.rejected_execution += 1;
       } else {
-        diagnostics.policy_rejected += 1;
-        diagnostics.policy_reject_reasons[policy.reason] = (diagnostics.policy_reject_reasons[policy.reason] || 0) + 1;
+        diagnostics.executed += 1;
+        trades.push(trade);
+        const exitIndex = m15.findIndex((b) => b.time === Date.parse(trade.exit_time) / 1000);
+        nextAvailable = exitIndex >= 0 ? Math.min(m15.length, exitIndex + 1) : i + 2;
       }
     }
 
-    const exitIndex = m15.findIndex((b) => b.time === Date.parse(trade.exit_time) / 1000);
-    nextAvailable = exitIndex >= 0 ? Math.min(m15.length, exitIndex + 1) : i + 2;
+    if (policyMask.length && i >= policyNextAvailable) {
+      diagnostics.policy_candidates += 1;
+      const policy = policyAllows(latestPolicyMask(policyMask, signal.time + 900), setup.candidate);
+      if (!policy.allowed) {
+        diagnostics.policy_rejected += 1;
+        diagnostics.policy_reject_reasons[policy.reason] = (diagnostics.policy_reject_reasons[policy.reason] || 0) + 1;
+      } else {
+        const policyTrade = simulate(m15, i, setup);
+        if (!policyTrade) {
+          diagnostics.policy_rejected += 1;
+          diagnostics.policy_reject_reasons.execution_simulation_failed =
+            (diagnostics.policy_reject_reasons.execution_simulation_failed || 0) + 1;
+        } else {
+          policyTrades.push(policyTrade);
+          diagnostics.policy_executed += 1;
+          const policyExitIndex = m15.findIndex(
+            (b) => b.time === Date.parse(policyTrade.exit_time) / 1000
+          );
+          policyNextAvailable = policyExitIndex >= 0
+            ? Math.min(m15.length, policyExitIndex + 1)
+            : i + 2;
+        }
+      }
+    }
   }
 
   const endTime = m15.at(-1).time;
