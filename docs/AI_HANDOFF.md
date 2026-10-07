@@ -5,7 +5,7 @@
 Date: 2026-10-08
 Repository: ryousuke5/Gold-AI-Trader
 Branch: main
-Latest code commit: b1db5f48e74fb1e06479be6edea6da796dbfab40
+Latest code commit: 775d26d8cdb199bb942c8dd0bb44371c196e9833
 
 Real orders remain disabled.
 
@@ -226,3 +226,49 @@ Policy replay integrity hardening:
 - a configured policy replay with zero evaluated policy candidates now fails instead of producing a false successful result
 
 Do not rely on any policy-filter performance result generated before these integrity checks.
+
+
+## 2026-10-08 safety-first live architecture
+
+The EURUSD live path is now designed so AI is optional:
+- Render production config sets EURUSD_AI_ENABLED=false.
+- When disabled, /api/eurusd/signal uses the deterministic technical setup directly and does not call OpenAI.
+- Existing AI test endpoints remain available for research only.
+
+Deterministic safety layer:
+- src/eurusd_safety_gate.js
+- tests/eurusd_safety_gate.test.js
+- src/eurusd_news_feed.js
+
+Safety rules currently configured in Render:
+- maximum hold: 3600 seconds
+- Friday new-order cutoff: 20:00 UTC
+- Friday force-close window: 20:30 UTC onward
+- Sunday reopen lock: 21:00 UTC for 90 minutes
+- daily rollover lock: 21:55–22:15 UTC
+- weekend-gap block: >0.50 ATR
+- weekend gap data is fail-closed for the first 12 hours of Monday
+- high-impact USD/EUR news: block new orders 60 minutes before and 60 minutes after
+- high-impact news exposure: force-close window from 15 minutes before through 15 minutes after the scheduled release
+- news feed freshness: 30 minutes maximum in production; missing/stale feed blocks new orders
+
+The live news feed currently uses the free Finance Calendar JSON endpoint and refreshes every 10 minutes. The design intentionally fails closed if the feed is unavailable.
+
+MT4 telemetry:
+- mt4/EURUSDAIMonitor.mq4 remains monitor-only; it does not send orders.
+- It now reports weekend gap size in price and ATR terms and oldest open-position age.
+- Static validation explicitly checks the safety payload and rejects OrderSend/OrderClose execution tokens.
+
+Important XM timing note:
+- XM's current help material states Forex is open Monday 00:02 to Friday 23:58 GMT+2 with DST applying; therefore UTC cutoff settings are deliberately conservative rather than tied to a single broker-local clock. XM also documents rollover around the daily end-of-day window; do not rely on exact local display time alone. citeturn219317search0turn219317search20
+
+Execution status:
+- Real orders remain disabled.
+- No EURUSD live OrderSend implementation has been enabled.
+- The next live-execution phase must be a separate disabled-by-default executor with:
+  1. server order_allowed gate
+  2. local fail-closed safety gate
+  3. max-hold forced close
+  4. news/weekend forced-close handling
+  5. idempotent execution-result reporting
+  6. demo/paper verification before any live approval
