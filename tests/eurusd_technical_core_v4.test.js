@@ -51,7 +51,7 @@ test('Core V4 does not require RSI as a hard entry condition', () => {
 test('Core V4 rejects a broken recent M15 sequence', () => {
   const f = fixture();
   f.recentM15[5].time += 300;
-  const setup = buildEurUsdTechnicalCoreV4(f);
+  const setup = buildEurUsdTechnicalCoreV4(f, { lookback: 8 });
   assert.equal(setup.candidate, 'WAIT');
   assert.match(setup.reasons.join(','), /recent_m15_setup_bars_not_contiguous/);
 });
