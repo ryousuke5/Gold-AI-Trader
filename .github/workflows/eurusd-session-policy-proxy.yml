@@ -71,6 +71,11 @@ jobs:
         with:
           name: eurusd-session-policy-data-1825d
           path: eurusd-session-policy-data
+      - name: Verify policy input is present
+        run: |
+          test -s eurusd-session-policy-data/eu_us_policy_daily.csv
+          echo "policy_rows=$(($(wc -l < eurusd-session-policy-data/eu_us_policy_daily.csv)-1))"
+          echo "policy_mask_path=eurusd-session-policy-data/eu_us_policy_daily.csv"
       - name: Run technical versus policy-filtered replay
         env:
           SESSION_CORE_DATA_FILE: 'eurusd-session-policy-data/eurusd-m15.json.gz'
