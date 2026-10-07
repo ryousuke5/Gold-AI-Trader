@@ -121,6 +121,24 @@ test('GOLD V4 pipeline accepts normalized completed-bar input', async () => {
   assert.equal(result.setup_type, 'H1_TREND_RANGE_BREAKOUT_RETEST');
 });
 
+test('GOLD V4 treats the known daily market break as tradable continuity', () => {
+  const f = buyFeatures();
+  f.recentM5 = f.recentM5.map((bar, i) =>
+    i >= 12 ? { ...bar, time: bar.time + 3900 } : bar
+  );
+  const result = buildGoldV4Setup(f);
+  assert.notEqual(result.reason, 'noncontiguous_recent_history');
+});
+
+test('GOLD V4 still rejects long weekend-style gaps', () => {
+  const f = buyFeatures();
+  f.recentM5 = f.recentM5.map((bar, i) =>
+    i >= 12 ? { ...bar, time: bar.time + 176700 } : bar
+  );
+  const result = buildGoldV4Setup(f);
+  assert.equal(result.reason, 'noncontiguous_recent_history');
+});
+
 test('GOLD V4 safely rejects insufficient history', () => {
   const f = buyFeatures();
   f.recentM5 = f.recentM5.slice(-5);
