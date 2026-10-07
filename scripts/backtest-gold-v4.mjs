@@ -422,7 +422,7 @@ function qualityGate(result) {
 async function runScenario(indM5, indH1, costs, periodEnd) {
   const latest = indM5.at(-1).time;
   const start = latest - CONFIG.lookbackDays * 86400;
-  const warmup = Math.max(300, CONFIG.rangeLookback + CONFIG.maxRetestBars + 10);
+  const warmup = Math.max(300, STRATEGY.rangeLookback + STRATEGY.maxRetestBars + 10);
   const firstEligibleIndex = indM5.findIndex((bar) => bar.time >= start);
   const loopStart = firstEligibleIndex >= 0 ? Math.max(warmup, firstEligibleIndex) : indM5.length;
   let equity = CONFIG.initialEquity;
