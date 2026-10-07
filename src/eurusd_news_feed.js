@@ -77,10 +77,16 @@ export async function refreshEurUsdNewsFeed(nowMs = Date.now()) {
 
     if (!response.ok) throw new Error('news_feed_http_' + response.status);
     const payload = await response.json();
-    const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.events) ? payload.events : [];
-    const events = rows.map(normalizeEvent).filter(Boolean).filter((event) => ['USD', 'EUR'].includes(event.currency));
-    if (!events.length) throw new Error('news_feed_empty');
+    const payloadHasEventsArray = Array.isArray(payload) || Array.isArray(payload?.events);
+    if (!payloadHasEventsArray) throw new Error('news_feed_invalid_shape');
 
+    const rows = Array.isArray(payload) ? payload : payload.events;
+    const events = rows
+      .map(normalizeEvent)
+      .filter(Boolean)
+      .filter((event) => ['USD', 'EUR'].includes(event.currency));
+
+    // An empty high-impact calendar is valid. It means no matching events were returned.
     state.events = events.sort((a, b) => Date.parse(a.scheduled_at) - Date.parse(b.scheduled_at));
     state.fetchedAtMs = nowMs;
     state.lastError = null;
