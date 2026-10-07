@@ -33,6 +33,8 @@ const C = {
 
 async function loadPolicyMask() {
   if (!C.policyMask) return [];
+  await fs.access(path.resolve(C.policyMask));
+
   const text = await fs.readFile(path.resolve(C.policyMask), 'utf8');
   const lines = text.replace(/^\\uFEFF/, '').trim().split(/\\r?\\n/).filter(Boolean);
   if (lines.length < 2) return [];
@@ -56,6 +58,7 @@ async function loadPolicyMask() {
     });
   }
   out.sort((a, b) => a.time - b.time);
+  if (!out.length) throw new Error('Policy mask was configured but produced zero valid rows: ' + C.policyMask);
   return out;
 }
 
@@ -280,6 +283,9 @@ async function main() {
   await fs.mkdir(C.out, { recursive: true });
   const raw = await loadBars();
   const policyMask = await loadPolicyMask();
+  if (C.policyMask && policyMask.length === 0) {
+    throw new Error('Policy mask input is configured but empty.');
+  }
   const m15 = withIndicators(raw);
   const h1 = withIndicators(aggregateH1(m15));
   const trades = [];
@@ -414,7 +420,7 @@ async function main() {
     recent_730_days: summarize(oos),
     policy_filtered_overall: policyMask.length ? summarize(policyTrades) : null,
     policy_filtered_recent_730_days: policyMask.length ? summarize(policyOos) : null,
-    policy_mask: policyMask.length ? { file: C.policyMask, rows: policyMask.length, min_confidence: C.policyMinConfidence } : null,
+    policy_mask: C.policyMask ? { file: C.policyMask, rows: policyMask.length, min_confidence: C.policyMinConfidence } : null,
     annual: annual(trades),
     policy_filtered_annual: policyMask.length ? annual(policyTrades) : null,
     diagnostics
@@ -426,6 +432,9 @@ async function main() {
     ...trades.map((t) => [t.signal_time, t.entry_time, t.exit_time, t.side, t.net_r, t.exit_reason, t.entry_gap_atr, t.effective_rr, t.breakout_time, t.range_atr, t.stop_atr].join(','))
   ].join('\n') + '\n');
 
+  if (C.policyMask && (report.policy_mask === null || report.diagnostics.policy_candidates === 0)) {
+    throw new Error('Policy replay integrity check failed: configured mask was not evaluated.');
+  }
   console.log(JSON.stringify(report, null, 2));
 }
 
