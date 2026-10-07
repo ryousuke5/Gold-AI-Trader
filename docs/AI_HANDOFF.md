@@ -2,10 +2,10 @@
 
 ## Current state
 
-Date: 2026-10-07
+Date: 2026-10-08
 Repository: ryousuke5/Gold-AI-Trader
 Branch: main
-Latest code commit: 68a90acac7f01f4d73d2071ab7828ecc1c4e0574
+Latest code commit: 9d68d58bcac586b1aaa62beaff3f36adbd611a03
 
 Real orders remain disabled.
 
@@ -185,10 +185,12 @@ Annual behavior is strongly regime-dependent:
 
 Conclusion: Session Core V1 is NOT a standalone validated strategy. It is only a candidate generator for environment-filter research.
 
-Current formal CI:
-- Session Core Run #2: 37624889957, completed success
-- Legacy Core Run #2: 37625030497, in progress
-- Session Policy Proxy Run #1: 37625758272, in progress
+Current validation status — 2026-10-08:
+- Previous policy-proxy replay attempt 37625758272 was invalid for judging the filter because it executed an older commit and did not load the policy mask.
+- The subsequent runs on commit efc0552... were cancelled when the session retest-bound fix was committed.
+- New validation is running on commit 9d68d58...; unit tests have already passed.
+- The current policy replay preparation job is 113018047220 (run 37687223366).
+- Real orders remain disabled until the corrected replay is fully analyzed.
 
 ### AI/fundamental policy
 Do not call live web search inside historical replay.
@@ -200,3 +202,14 @@ Existing replay infrastructure:
 - `scripts/build-gold-v2-ai-replay-dataset.mjs`
 
 Do not add the AI layer until a deterministic candidate core has an adequate sample and credible OOS behavior.
+
+
+## 2026-10-08 engineering correction
+
+A defensive causal constraint was added to src/eurusd_session_range_core_v1.js:
+- retest-touch scanning is explicitly bounded to maxRetestBars
+- retest touches must occur before the current confirmation bar
+
+A regression test was added in tests/eurusd_session_range_core_v1.test.js, and the repository test job passed on commit 9d68d58.
+
+This correction is intentionally treated as a validation gate: do not rely on any policy-filter performance result generated before commit 9d68d58.
