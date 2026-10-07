@@ -704,6 +704,21 @@ export function registerEurUsdRoutes(app) {
     }
   });
 
+  app.get('/api/eurusd/safety-status', auth, async (req, res) => {
+    try {
+      const feed = getEurUsdNewsFeedState();
+      res.json({
+        ok: true,
+        symbol: 'EURUSD',
+        safety_mode: 'FAIL_CLOSED',
+        ai_environment_enabled: aiEnvironmentEnabled(),
+        news_feed: feed
+      });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || 'EURUSD safety status failed' });
+    }
+  });
+
   app.get('/api/eurusd/status', auth, async (req, res) => {
     try {
       const state = await getState();
