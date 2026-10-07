@@ -718,6 +718,28 @@ export function registerEurUsdRoutes(app) {
     }
   });
 
+  app.post('/api/eurusd/safety-check', auth, async (req, res) => {
+    try {
+      const body = req.body || {};
+      const safety = body.safety && typeof body.safety === 'object' ? body.safety : {};
+      const result = evaluateEurUsdSafety({
+        nowMs: Date.now(),
+        safety,
+        newsFeed: getEurUsdNewsFeedState(),
+        config: getEurUsdRiskLimits().safety
+      });
+      res.json({
+        ok: true,
+        symbol: 'EURUSD',
+        safety_mode: 'FAIL_CLOSED',
+        evaluated_at: new Date().toISOString(),
+        safety: result
+      });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || 'EURUSD safety check failed' });
+    }
+  });
+
   app.get('/api/eurusd/status', auth, async (req, res) => {
     try {
       const state = await getState();
