@@ -11,6 +11,7 @@ import {
 } from './eurusd_ai.js';
 import { evaluateEurUsdRisk, getEurUsdRiskLimits } from './eurusd_risk.js';
 import { getEurUsdNewsFeedState } from './eurusd_news_feed.js';
+import { evaluateEurUsdSafety } from './eurusd_safety_gate.js';
 import {
   getRiskBySignal,
   getSignalByKey,
