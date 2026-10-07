@@ -1,4 +1,5 @@
 import {
+  dbEnabled,
   insertEurUsdForwardTrade,
   listEurUsdForwardOpenTrades,
   listEurUsdForwardTrades,
@@ -152,6 +153,7 @@ export async function maybeOpenEurUsdForwardTrade({
 } = {}) {
   const config = getEurUsdForwardConfig();
   if (!config.enabled) return { opened: false, reason: 'forward_test_disabled' };
+  if (!dbEnabled()) return { opened: false, reason: 'forward_persistence_unavailable' };
 
   const side = String(decision?.decision || 'WAIT').toUpperCase();
   if (!['BUY', 'SELL'].includes(side)) return { opened: false, reason: 'decision_wait' };
@@ -198,7 +200,10 @@ export async function maybeOpenEurUsdForwardTrade({
   };
 
   const inserted = await insertEurUsdForwardTrade(row);
-  return { opened: true, trade: inserted.row, persisted: inserted.persisted };
+  if (!inserted.persisted) {
+    return { opened: false, reason: 'forward_persistence_unavailable' };
+  }
+  return { opened: true, trade: inserted.row, persisted: true };
 }
 
 export function summarizeEurUsdForwardTrades(trades, nowMs = Date.now()) {
