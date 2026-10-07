@@ -5,7 +5,7 @@
 Date: 2026-10-08
 Repository: ryousuke5/Gold-AI-Trader
 Branch: main
-Latest code commit: 775d26d8cdb199bb942c8dd0bb44371c196e9833
+Latest code commit: 04df2da91597df97c318b5127fca442b9b76a795
 
 Real orders remain disabled.
 
@@ -228,47 +228,67 @@ Policy replay integrity hardening:
 Do not rely on any policy-filter performance result generated before these integrity checks.
 
 
-## 2026-10-08 safety-first live architecture
+## Safety / Live execution status — 2026-10-08
 
-The EURUSD live path is now designed so AI is optional:
-- Render production config sets EURUSD_AI_ENABLED=false.
-- When disabled, /api/eurusd/signal uses the deterministic technical setup directly and does not call OpenAI.
-- Existing AI test endpoints remain available for research only.
+The EURUSD implementation now has a safety-first live architecture with AI optional.
 
-Deterministic safety layer:
+### AI is optional
+- Render sets EURUSD_AI_ENABLED=false.
+- With AI disabled, /api/eurusd/signal does not call OpenAI and uses the deterministic technical candidate directly.
+- AI remains available only for explicit research/test endpoints.
+- Real orders remain disabled until strategy validation is complete.
+
+### Deterministic safety layer
+Implemented in:
 - src/eurusd_safety_gate.js
-- tests/eurusd_safety_gate.test.js
 - src/eurusd_news_feed.js
+- src/eurusd_risk.js
 
-Safety rules currently configured in Render:
-- maximum hold: 3600 seconds
-- Friday new-order cutoff: 20:00 UTC
+Current production settings:
+- max hold: 3600 seconds
+- Friday new-order block: 20:00 UTC
 - Friday force-close window: 20:30 UTC onward
 - Sunday reopen lock: 21:00 UTC for 90 minutes
-- daily rollover lock: 21:55–22:15 UTC
-- weekend-gap block: >0.50 ATR
-- weekend gap data is fail-closed for the first 12 hours of Monday
-- high-impact USD/EUR news: block new orders 60 minutes before and 60 minutes after
-- high-impact news exposure: force-close window from 15 minutes before through 15 minutes after the scheduled release
-- news feed freshness: 30 minutes maximum in production; missing/stale feed blocks new orders
+- rollover lock: 21:55–22:15 UTC
+- weekend gap block: >0.50 ATR
+- missing Monday gap data fails closed for the first 12 hours
+- high-impact USD/EUR news: block new orders 60 minutes before through 60 minutes after
+- high-impact news force-close window: 15 minutes before through 15 minutes after
+- stale/missing news feed blocks new orders in production
 
-The live news feed currently uses the free Finance Calendar JSON endpoint and refreshes every 10 minutes. The design intentionally fails closed if the feed is unavailable.
+The economic-calendar feed uses the free Finance Calendar JSON endpoint and refreshes every 10 minutes. A valid empty high-impact event list is now accepted as a healthy feed state; malformed payloads fail closed.
 
-MT4 telemetry:
-- mt4/EURUSDAIMonitor.mq4 remains monitor-only; it does not send orders.
-- It now reports weekend gap size in price and ATR terms and oldest open-position age.
-- Static validation explicitly checks the safety payload and rejects OrderSend/OrderClose execution tokens.
+### Continuous server safety check
+Added:
+- POST /api/eurusd/safety-check
+- GET /api/eurusd/safety-status
 
-Important XM timing note:
-- XM's current help material states Forex is open Monday 00:02 to Friday 23:58 GMT+2 with DST applying; therefore UTC cutoff settings are deliberately conservative rather than tied to a single broker-local clock. XM also documents rollover around the daily end-of-day window; do not rely on exact local display time alone. citeturn219317search0turn219317search20
+The MT4 executor can poll the safety endpoint continuously, so an important event occurring in the middle of an M15 bar does not have to wait for the next signal bar.
 
-Execution status:
-- Real orders remain disabled.
-- No EURUSD live OrderSend implementation has been enabled.
-- The next live-execution phase must be a separate disabled-by-default executor with:
-  1. server order_allowed gate
-  2. local fail-closed safety gate
-  3. max-hold forced close
-  4. news/weekend forced-close handling
-  5. idempotent execution-result reporting
-  6. demo/paper verification before any live approval
+### MT4 live executor
+Added:
+- mt4/EURUSDLiveTrader.mq4
+- scripts/validate-eurusd-live-trader.mjs
+
+Executor characteristics:
+- AllowAutoOrders=false by default
+- requires server order_allowed=true
+- requires local safety gate
+- checks execution-price deviation before OrderSend
+- checks free margin and broker symbol specifications
+- limits managed positions to the strategy's single-position model
+- closes managed positions when max hold is exceeded
+- can respond to server safety force-close decisions
+- reports FILLED/REJECTED results to /api/eurusd/execution-result with idempotency_key
+- no live trading is enabled by the repository/Render configuration
+
+### Validation
+Latest test workflow succeeded:
+- npm test: success
+- live executor static validator: success
+- existing Gold V4 smoke tests: success
+- Python self-tests/compile: success
+
+Latest EURUSD backtest workflow also succeeded for all matrix variants after the validator correction.
+
+Do not enable AllowAutoOrders or EURUSD_EXECUTION_ENABLED until the EURUSD strategy passes the agreed OOS/forward validation gate.
