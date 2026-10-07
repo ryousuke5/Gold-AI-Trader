@@ -44,7 +44,7 @@ test('Core V4 accepts a broad trend-pullback continuation candidate', () => {
 test('Core V4 does not require RSI as a hard entry condition', () => {
   const f = fixture();
   f.m15.rsi14 = 46;
-  const setup = buildEurUsdTechnicalCoreV4(f);
+  const setup = buildEurUsdTechnicalCoreV4(f, { lookback: 8 });
   assert.equal(setup.candidate, 'BUY', JSON.stringify(setup, null, 2));
 });
 
