@@ -100,3 +100,27 @@ test('forces close when position exceeds maximum hold time', () => {
   assert.equal(result.forceClose, true);
   assert.match(result.actions.join(','), /FORCE_CLOSE_OLDEST_POSITION/);
 });
+
+test('force closes positions in the high-impact news exposure window', () => {
+  const event = { name: 'NFP', currency: 'USD', impact: 'HIGH', scheduled_at: '2026-10-08T13:15:00Z' };
+  const feed = { fetchedAtMs: ts('2026-10-08T13:00:00Z'), events: [event] };
+  const result = evaluateEurUsdSafety({
+    nowMs: ts('2026-10-08T13:05:00Z'),
+    safety: { weekend_gap_known: true, weekend_gap_atr: 0.05, oldest_position_age_seconds: 120 },
+    config: { ...baseConfig, highImpactForceClosePreMinutes: 15, highImpactForceClosePostMinutes: 15 },
+    newsFeed: feed
+  });
+  assert.equal(result.forceClose, true);
+  assert.match(result.actions.join(','), /FORCE_CLOSE_NEWS_EXPOSED_POSITIONS/);
+});
+
+test('force closes positions before the configured Friday cutoff window', () => {
+  const result = evaluateEurUsdSafety({
+    nowMs: ts('2026-10-09T20:45:00Z'),
+    safety: { weekend_gap_known: true, weekend_gap_atr: 0.05, oldest_position_age_seconds: 120 },
+    config: baseConfig,
+    newsFeed: { fetchedAtMs: ts('2026-10-09T20:30:00Z'), events: [] }
+  });
+  assert.equal(result.forceClose, true);
+  assert.match(result.actions.join(','), /FORCE_CLOSE_WEEKEND_POSITIONS/);
+});
