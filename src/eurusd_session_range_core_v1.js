@@ -121,7 +121,9 @@ export function buildEurUsdSessionRangeCore(features = {}, config = {}) {
     const level = side === 'BUY' ? rangeHigh : rangeLow;
     const touchedBars = [];
 
-    for (let index = breakoutIndex + 1; index < m15.length - 1; index += 1) {
+    // A retest must occur within maxRetestBars after the breakout and before the current confirmation bar.
+    const retestEnd = Math.min(m15.length - 2, breakoutIndex + cfg.maxRetestBars);
+    for (let index = breakoutIndex + 1; index <= retestEnd; index += 1) {
       const b = m15[index];
       const touch = side === 'BUY'
         ? b.low <= level + cfg.retestToleranceAtr * atr
