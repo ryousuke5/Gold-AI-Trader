@@ -25,3 +25,29 @@ export async function updateState(patch){if(!supabase)return{row:{id:'global',..
 export async function getState(){if(!supabase)return null;const{data,error}=await supabase.from('gold_system_state').select('*').eq('id','global').maybeSingle();if(error)throw error;return data;}
 export async function insertEvent(row){if(!supabase)return{row,persisted:false};const{data,error}=await supabase.from('gold_system_events').insert(row).select().single();if(error)throw error;return{row:data,persisted:true};}
 export async function insertTradeResult(row){if(!supabase)return{row,persisted:false};const{data,error}=await supabase.from('gold_trade_results').upsert(row,{onConflict:'idempotency_key'}).select().single();if(error)throw error;return{row:data,persisted:true};}
+
+
+export async function insertEurUsdForwardTrade(row){
+  if(!supabase)return{row,persisted:false};
+  const{data,error}=await supabase.from('gold_eurusd_forward_trades').insert(row).select().single();
+  if(error)throw error;
+  return{row:data,persisted:true};
+}
+export async function listEurUsdForwardOpenTrades(){
+  if(!supabase)return[];
+  const{data,error}=await supabase.from('gold_eurusd_forward_trades').select('*').eq('status','OPEN').order('opened_at',{ascending:true});
+  if(error)throw error;
+  return data||[];
+}
+export async function listEurUsdForwardTrades({limit=5000}={}){
+  if(!supabase)return[];
+  const{data,error}=await supabase.from('gold_eurusd_forward_trades').select('*').order('opened_at',{ascending:true}).limit(Math.max(1,Math.min(20000,Number(limit)||5000)));
+  if(error)throw error;
+  return data||[];
+}
+export async function updateEurUsdForwardTrade(id,row){
+  if(!supabase)return{row:{id,...row},persisted:false};
+  const{data,error}=await supabase.from('gold_eurusd_forward_trades').update(row).eq('id',id).select().single();
+  if(error)throw error;
+  return{row:data,persisted:true};
+}
