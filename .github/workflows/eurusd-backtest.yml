@@ -97,6 +97,8 @@ jobs:
         run: npm test
       - name: Static validate EURUSD MT4 monitor
         run: npm run test:mt4
+      - name: Static validate EURUSD live executor
+        run: npm run test:mt4:live
       - name: Run 2-year technical backtest
         env:
           BACKTEST_LOOKBACK_DAYS: "1825"
