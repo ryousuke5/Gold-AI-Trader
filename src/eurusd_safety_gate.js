@@ -47,6 +47,9 @@ export function getEurUsdSafetyConfig(env = process.env) {
     newsFeedMaxAgeSeconds: envNum(env, 'EURUSD_NEWS_FEED_MAX_AGE_SECONDS', 1800, 60),
     highImpactPreBlockMinutes: envNum(env, 'EURUSD_NEWS_HIGH_PRE_BLOCK_MINUTES', 60, 0),
     highImpactPostBlockMinutes: envNum(env, 'EURUSD_NEWS_HIGH_POST_BLOCK_MINUTES', 60, 0),
+    highImpactForceClosePreMinutes: envNum(env, 'EURUSD_NEWS_HIGH_FORCE_CLOSE_PRE_MINUTES', 15, 0),
+    highImpactForceClosePostMinutes: envNum(env, 'EURUSD_NEWS_HIGH_FORCE_CLOSE_POST_MINUTES', 15, 0),
+    weekendForceCloseStartUtc: parseUtcMinutes(env?.EURUSD_WEEKEND_FORCE_CLOSE_START_UTC, 20 * 60 + 30),
     mediumImpactEnabled: envBool(env, 'EURUSD_NEWS_BLOCK_MEDIUM', false),
     mediumImpactPreBlockMinutes: envNum(env, 'EURUSD_NEWS_MEDIUM_PRE_BLOCK_MINUTES', 30, 0),
     mediumImpactPostBlockMinutes: envNum(env, 'EURUSD_NEWS_MEDIUM_POST_BLOCK_MINUTES', 30, 0),
@@ -170,10 +173,24 @@ export function evaluateEurUsdSafety({
   if (blockingEvent) {
     reasons.push(blockingEvent.impact === 'HIGH' ? 'high_impact_news_window' : 'medium_impact_news_window');
     actions.push('BLOCK_NEW_ORDERS');
+
+    const deltaMinutes = (nowMs - blockingEvent.scheduledAtMs) / 60000;
+    const forceCloseWindow = blockingEvent.impact === 'HIGH'
+      ? (-config.highImpactForceClosePreMinutes <= deltaMinutes && deltaMinutes <= config.highImpactForceClosePostMinutes)
+      : false;
+    if (forceCloseWindow) {
+      reasons.push('high_impact_news_force_close_window');
+      actions.push('FORCE_CLOSE_NEWS_EXPOSED_POSITIONS');
+    }
+  }
+
+  if (day === 5 && minutes >= config.weekendForceCloseStartUtc) {
+    reasons.push('weekend_force_close_window');
+    actions.push('FORCE_CLOSE_WEEKEND_POSITIONS');
   }
 
   const positionAgeSeconds = Number(safety.oldest_position_age_seconds);
-  let forceClose = false;
+  let forceClose = actions.some((action) => action.startsWith('FORCE_CLOSE'));
   if (positiveFinite(positionAgeSeconds) && positionAgeSeconds > config.maxHoldSeconds) {
     reasons.push('maximum_hold_time_exceeded');
     actions.push('FORCE_CLOSE_OLDEST_POSITION');
