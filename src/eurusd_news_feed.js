@@ -22,6 +22,18 @@ function addDays(dateText, days) {
   return date.toISOString().slice(0, 10);
 }
 
+export function parseEurUsdNewsPayload(payload) {
+  const payloadHasEventsArray = Array.isArray(payload) || Array.isArray(payload?.events);
+  if (!payloadHasEventsArray) throw new Error('news_feed_invalid_shape');
+
+  const rows = Array.isArray(payload) ? payload : payload.events;
+  return rows
+    .map(normalizeEvent)
+    .filter(Boolean)
+    .filter((event) => ['USD', 'EUR'].includes(event.currency))
+    .sort((a, b) => Date.parse(a.scheduled_at) - Date.parse(b.scheduled_at));
+}
+
 function normalizeEvent(raw) {
   const scheduled = raw?.scheduledAt || raw?.scheduled_at || raw?.time_utc || raw?.timeUtc || raw?.release_time || raw?.releaseTime;
   const timeMs = Date.parse(String(scheduled || ''));
@@ -77,17 +89,8 @@ export async function refreshEurUsdNewsFeed(nowMs = Date.now()) {
 
     if (!response.ok) throw new Error('news_feed_http_' + response.status);
     const payload = await response.json();
-    const payloadHasEventsArray = Array.isArray(payload) || Array.isArray(payload?.events);
-    if (!payloadHasEventsArray) throw new Error('news_feed_invalid_shape');
-
-    const rows = Array.isArray(payload) ? payload : payload.events;
-    const events = rows
-      .map(normalizeEvent)
-      .filter(Boolean)
-      .filter((event) => ['USD', 'EUR'].includes(event.currency));
-
     // An empty high-impact calendar is valid. It means no matching events were returned.
-    state.events = events.sort((a, b) => Date.parse(a.scheduled_at) - Date.parse(b.scheduled_at));
+    state.events = parseEurUsdNewsPayload(payload);
     state.fetchedAtMs = nowMs;
     state.lastError = null;
     return { ok: true, state: getEurUsdNewsFeedState() };
