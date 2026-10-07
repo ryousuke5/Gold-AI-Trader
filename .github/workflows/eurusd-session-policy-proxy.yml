@@ -1,5 +1,7 @@
 name: EURUSD Session Policy Proxy Research
 
+# Validation trigger: replay must run against the latest causal session-core implementation.
+
 on:
   push:
     branches: [main]
