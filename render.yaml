@@ -79,6 +79,10 @@ services:
         value: "60"
       - key: EURUSD_NEWS_HIGH_POST_BLOCK_MINUTES
         value: "60"
+      - key: EURUSD_NEWS_HIGH_FORCE_CLOSE_PRE_MINUTES
+        value: "15"
+      - key: EURUSD_NEWS_HIGH_FORCE_CLOSE_POST_MINUTES
+        value: "15"
       - key: EURUSD_NEWS_BLOCK_MEDIUM
         value: "false"
       - key: EURUSD_REQUIRE_GAP_DATA
@@ -91,6 +95,8 @@ services:
         value: "20:00"
       - key: EURUSD_WEEKEND_BLOCK_END_UTC
         value: "23:59"
+      - key: EURUSD_WEEKEND_FORCE_CLOSE_START_UTC
+        value: "20:30"
       - key: EURUSD_SUNDAY_REOPEN_UTC
         value: "21:00"
       - key: EURUSD_SUNDAY_REOPEN_LOCK_MINUTES
