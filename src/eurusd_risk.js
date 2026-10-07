@@ -1,4 +1,5 @@
 import { calculateLots } from './risk.js';
+import { evaluateEurUsdSafety, getEurUsdSafetyConfig } from './eurusd_safety_gate.js';
 
 function envNum(name, fallback) {
   const n = Number(process.env[name]);
@@ -24,7 +25,8 @@ export function getEurUsdRiskLimits() {
     maxStopAtr: Math.max(0.2, envNum('EURUSD_MAX_STOP_ATR', 1.50)),
     spreadAtrPctMax: Math.max(1, envNum('EURUSD_MAX_SPREAD_ATR_PCT', 15)),
     highImpactEventBlock: String(process.env.EURUSD_BLOCK_HIGH_IMPACT_24H ?? 'true').toLowerCase() !== 'false',
-    aiEnvironmentRequired: String(process.env.EURUSD_AI_ENVIRONMENT_REQUIRED ?? 'true').toLowerCase() !== 'false'
+    aiEnvironmentRequired: String(process.env.EURUSD_AI_ENVIRONMENT_REQUIRED ?? 'false').toLowerCase() !== 'false',
+    safety: getEurUsdSafetyConfig()
   };
 }
 
@@ -35,7 +37,8 @@ export function evaluateEurUsdRisk({
   account,
   signalCreatedAt = Date.now(),
   now = Date.now(),
-  fundamentalAssessment = null
+  fundamentalAssessment = null,
+  safetyContext = {}
 }) {
   const limits = getEurUsdRiskLimits();
   const reasons = [];
@@ -43,6 +46,12 @@ export function evaluateEurUsdRisk({
   const a = account || {};
   const direction = String(d.decision || 'WAIT').toUpperCase();
   const candidate = String(d.candidate || setup?.candidate || 'WAIT').toUpperCase();
+  const safety = evaluateEurUsdSafety({
+    nowMs: Number(safetyContext.nowMs) || now,
+    safety: safetyContext.safety || {},
+    newsFeed: safetyContext.newsFeed || null,
+    config: limits.safety
+  });
   const ageSeconds = Math.max(0, (now - signalCreatedAt) / 1000);
   const barAgeSeconds = Number.isFinite(Number(features.barTime)) && features.barTime > 0
     ? Math.max(0, (now - features.barTime * 1000) / 1000)
@@ -90,6 +99,9 @@ export function evaluateEurUsdRisk({
     if (Number(a.drawdown_pct || 0) >= Math.abs(limits.maxDrawdownPct)) reasons.push('drawdown_limit');
     if (a.risk_data_ready !== true) reasons.push('risk_data_not_ready');
     if (Number(a.trade_allowed || 0) !== 1) reasons.push('broker_trade_not_allowed');
+    if (!safety.newOrdersAllowed) {
+      reasons.push(...safety.reasons.map((reason) => 'safety_' + reason));
+    }
 
     const f = fundamentalAssessment || {};
     const environment = String(f.environment || d.ai_environment || 'INSUFFICIENT').toUpperCase();
@@ -173,7 +185,8 @@ export function evaluateEurUsdRisk({
           riskCash: Number(sizing.riskCash || 0),
           actualRR: rr,
           stopAtr,
-          spreadPips
+          spreadPips,
+          safety
         };
       }
 
@@ -190,6 +203,7 @@ export function evaluateEurUsdRisk({
     riskCash: 0,
     actualRR: 0,
     stopAtr: 0,
-    spreadPips: Number(features.spread) > 0 ? Number(features.spread) / 0.0001 : Infinity
+    spreadPips: Number(features.spread) > 0 ? Number(features.spread) / 0.0001 : Infinity,
+    safety
   };
 }
