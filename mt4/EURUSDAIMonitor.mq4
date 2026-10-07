@@ -737,7 +737,7 @@ int OnInit()
 {
    string sym = TradeSymbol();
 
-   Print("EURUSDAIMonitor 1.0: starting.",
+   Print("EURUSDAIMonitor 1.2: starting.",
          " symbol=", sym,
          " api=", NormalizeBaseUrl(),
          " timer=", TimerSeconds,
