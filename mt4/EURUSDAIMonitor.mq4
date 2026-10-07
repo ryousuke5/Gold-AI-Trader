@@ -1,6 +1,6 @@
 // Safety telemetry gate revision: validated server-side safety fields before execution is enabled.
 #property strict
-#property version   "1.1"
+#property version   "1.2"
 #property description "EURUSD M15 safety telemetry monitor. Sends completed-bar and gap/hold data to Render. No order execution."
 
 input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
@@ -574,6 +574,48 @@ bool BuildSignalPayload(string &payload, datetime &closedBarOpen, datetime &clos
 //---------------------------------------------------------
 // HTTP
 //---------------------------------------------------------
+bool ProbeHealth()
+{
+   string url = NormalizeBaseUrl() + "/health";
+   string headers = "X-Request-Id: EURUSD-HEALTH-" +
+                    IntegerToString((int)GetTickCount()) + "\r\n";
+   uchar postData[];
+   uchar result[];
+   string resultHeaders = "";
+
+   ResetLastError();
+
+   int httpCode = WebRequest(
+      "GET",
+      url,
+      headers,
+      MathMin(RequestTimeoutMs, 15000),
+      postData,
+      result,
+      resultHeaders
+   );
+
+   int errorCode = GetLastError();
+   string response = CharArrayToString(result, 0, -1, CP_UTF8);
+
+   Print("EURUSDAIMonitor: health probe HTTP=",
+         httpCode,
+         " error=",
+         errorCode,
+         " response_length=",
+         StringLen(response));
+
+   if(httpCode < 200 || httpCode >= 300)
+   {
+      Print("EURUSDAIMonitor: health probe failed. ",
+            "Check MT4 WebRequest allow-list: ",
+            NormalizeBaseUrl());
+      return false;
+   }
+
+   return true;
+}
+
 bool PostJson(string path, string payload, string &response)
 {
    string url = NormalizeBaseUrl() + path;
@@ -729,6 +771,21 @@ int OnInit()
    {
       Print("EURUSDAIMonitor: EventSetTimer failed. error=", GetLastError());
       return INIT_FAILED;
+   }
+
+   Print("EURUSDAIMonitor: timer started. interval_seconds=", TimerSeconds);
+
+   bool healthOk = ProbeHealth();
+   if(!healthOk)
+   {
+      Print("EURUSDAIMonitor: startup connectivity test failed. ",
+            "No signal request will be attempted until WebRequest is allowed.");
+   }
+   else
+   {
+      Print("EURUSDAIMonitor: startup connectivity test passed.");
+      Print("EURUSDAIMonitor: sending the current completed M15 bar immediately.");
+      OnTimer();
    }
 
    Print("EURUSDAIMonitor: attached. Monitor-only mode; no OrderSend/OrderClose logic.");
