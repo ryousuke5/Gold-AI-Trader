@@ -10,7 +10,7 @@ import {
   buildEurUsdFundamentalDecision
 } from './eurusd_ai.js';
 import { evaluateEurUsdRisk, getEurUsdRiskLimits } from './eurusd_risk.js';
-import { startEurUsdNewsFeedMonitor, getEurUsdNewsFeedState } from './eurusd_news_feed.js';
+import { getEurUsdNewsFeedState } from './eurusd_news_feed.js';
 import {
   getRiskBySignal,
   getSignalByKey,
@@ -165,7 +165,6 @@ function executionGate() {
 }
 
 export function registerEurUsdRoutes(app) {
-  startEurUsdNewsFeedMonitor();
   app.post('/api/eurusd/ai-test', auth, async (req, res) => {
     const requestId = String(req.headers['x-request-id'] || crypto.randomUUID());
     try {
