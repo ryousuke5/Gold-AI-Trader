@@ -472,6 +472,11 @@ async function runScenario(indM5, indH1, costs, periodEnd) {
 
     if (setup.candidate === 'WAIT') {
       diagnostic.setup_wait_reasons[setup.reason] = (diagnostic.setup_wait_reasons[setup.reason] || 0) + 1;
+      const waitStage = setup.diagnostics?.wait_stage;
+      if (waitStage) {
+        diagnostic.setup_wait_stages = diagnostic.setup_wait_stages || {};
+        diagnostic.setup_wait_stages[waitStage] = (diagnostic.setup_wait_stages[waitStage] || 0) + 1;
+      }
       continue;
     }
 
