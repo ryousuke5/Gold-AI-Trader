@@ -66,7 +66,14 @@ export function normalizeEurUsdFeatures(input = {}) {
       atr14: num(input.h1?.atr14)
     },
     recentM15: normalizeBars(input.recent_m15),
-    recentH1: normalizeBars(input.recent_h1)
+    recentH1: normalizeBars(input.recent_h1),
+    safety: {
+      weekend_gap_known: input.safety?.weekend_gap_known === true,
+      weekend_gap_price: num(input.safety?.weekend_gap_price),
+      weekend_gap_atr: num(input.safety?.weekend_gap_atr),
+      oldest_position_age_seconds: num(input.safety?.oldest_position_age_seconds),
+      gap_reference_time: num(input.safety?.gap_reference_time)
+    }
   };
 }
 
