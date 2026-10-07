@@ -121,33 +121,37 @@ export function buildEurUsdSessionRangeCore(features = {}, config = {}) {
     const level = side === 'BUY' ? rangeHigh : rangeLow;
     const touchedBars = [];
 
-    for (let index = breakoutIndex + 1; index <= m15.length - 1; index += 1) {
+    for (let index = breakoutIndex + 1; index < m15.length - 1; index += 1) {
       const b = m15[index];
       const touch = side === 'BUY'
         ? b.low <= level + cfg.retestToleranceAtr * atr
         : b.high >= level - cfg.retestToleranceAtr * atr;
       if (touch) touchedBars.push(b);
-
-      const body = Math.abs(b.close - b.open) / atr;
-      const confirmed = index === m15.length - 1 && (
-        side === 'BUY'
-          ? touch && b.close >= level + cfg.confirmationBufferAtr * atr && b.close > b.open && body >= cfg.confirmationBodyAtr
-          : touch && b.close <= level - cfg.confirmationBufferAtr * atr && b.close < b.open && body >= cfg.confirmationBodyAtr
-      );
-
-      if (confirmed) {
-        selected = {
-          side,
-          level,
-          breakout,
-          breakout_body_atr: bodyAtr,
-          breakout_close_location: closeLocation,
-          confirmation_index: index,
-          touched_bars: touchedBars
-        };
-        break;
-      }
     }
+
+    if (!touchedBars.length) continue;
+
+    const confirmation = m15.at(-1);
+    const confirmationBody = Math.abs(confirmation.close - confirmation.open) / atr;
+    const confirmed = side === 'BUY'
+      ? confirmation.close >= level + cfg.confirmationBufferAtr * atr &&
+        confirmation.close > confirmation.open &&
+        confirmationBody >= cfg.confirmationBodyAtr
+      : confirmation.close <= level - cfg.confirmationBufferAtr * atr &&
+        confirmation.close < confirmation.open &&
+        confirmationBody >= cfg.confirmationBodyAtr;
+
+    if (!confirmed) continue;
+
+    selected = {
+      side,
+      level,
+      breakout,
+      breakout_body_atr: bodyAtr,
+      breakout_close_location: closeLocation,
+      confirmation_index: m15.length - 1,
+      touched_bars: touchedBars
+    };
 
     if (selected) break;
   }
