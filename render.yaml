@@ -65,6 +65,10 @@ services:
         value: "48"
       - key: EURUSD_AI_ENABLED
         value: "false"
+      - key: EURUSD_FORWARD_TEST_ENABLED
+        value: "false"
+      - key: EURUSD_FORWARD_MAX_TRADES
+        value: "1"
       - key: EURUSD_AI_ENVIRONMENT_REQUIRED
         value: "false"
       - key: EURUSD_MAX_HOLD_SECONDS
