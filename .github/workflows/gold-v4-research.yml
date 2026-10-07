@@ -72,10 +72,10 @@ jobs:
               raise SystemExit(f"Too many chunks: {len(chunks)}")
           with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as fh:
               fh.write("chunks="+json.dumps(chunks,separators=(",",":"))+"\n")
-              fh.write(f"start_date={start_day.isoformat()}\\n")
-              fh.write(f"end_date={end_day.isoformat()}\\n")
-              fh.write(f"lookback_days={lookback_days}\\n")
-              fh.write(f"cache_version={cache_version}\\n")
+              fh.write(f"start_date={start_day.isoformat()}\n")
+              fh.write(f"end_date={end_day.isoformat()}\n")
+              fh.write(f"lookback_days={lookback_days}\n")
+              fh.write(f"cache_version={cache_version}\n")
           print(json.dumps({"window_start":start_day.isoformat(),"window_end_exclusive":end_day.isoformat(),"chunk_count":len(chunks),"cache_version":cache_version},indent=2))
           PY
 
@@ -152,6 +152,79 @@ jobs:
             gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
           retention-days: 7
 
+  recover:
+    needs: [plan, prepare]
+    if: ${{ always() && needs.prepare.result != 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        chunk: ${{ fromJSON(needs.plan.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore completed V4 M5 chunk
+        id: m5cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
+          key: xauusd-v4-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+          restore-keys: |
+            xauusd-v4-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+            xauusd-v4-m5--${{ runner.os }}-${{ matrix.chunk.id }}
+            xauusd-m5-v5-${{ runner.os }}-${{ matrix.chunk.id }}
+      - name: Restore V4 raw M1 checkpoint
+        if: steps.m5cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
+          key: xauusd-v4-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
+          restore-keys: |
+            xauusd-v4-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-
+            xauusd-v4-m1--${{ runner.os }}-${{ matrix.chunk.id }}-
+            xauusd-m1-v5-${{ runner.os }}-${{ matrix.chunk.id }}-
+      - name: Prepare directories
+        run: |
+          mkdir -p "gold-xauusd-data/raw/${{ matrix.chunk.id }}" gold-xauusd-data/chunks
+      - name: Validate resumable downloader
+        if: steps.m5cache.outputs.cache-hit != 'true'
+        run: python3 scripts/fetch-xauusd-m5-chunk.py --self-test
+      - name: Retry or resume V4 chunk
+        if: steps.m5cache.outputs.cache-hit != 'true'
+        run: |
+          python3 scripts/fetch-xauusd-m5-chunk.py \
+            --start-date "${{ matrix.chunk.start }}" \
+            --end-date "${{ matrix.chunk.end }}" \
+            --cache-dir "gold-xauusd-data/raw/${{ matrix.chunk.id }}" \
+            --output-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz" \
+            --manifest-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json" \
+            --request-delay 3 --timeout 90 --retries 16
+      - name: Save V4 raw M1 checkpoint
+        if: always() && steps.m5cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
+          key: xauusd-v4-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
+      - name: Save completed V4 M5 chunk
+        if: success() && steps.m5cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
+          key: xauusd-v4-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+      - name: Upload completed V4 chunk
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v4-xauusd-m5-recovery-${{ matrix.chunk.id }}
+          path: |
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
+          retention-days: 7
   assemble:
     needs: [plan, prepare]
     runs-on: ubuntu-latest
