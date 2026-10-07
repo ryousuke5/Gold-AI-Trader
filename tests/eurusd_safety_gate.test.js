@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateEurUsdSafety, getEurUsdSafetyConfig } from '../src/eurusd_safety_gate.js';
+import { parseEurUsdNewsPayload } from '../src/eurusd_news_feed.js';
 
 const baseConfig = {
   ...getEurUsdSafetyConfig({
@@ -123,4 +124,13 @@ test('force closes positions before the configured Friday cutoff window', () => 
   });
   assert.equal(result.forceClose, true);
   assert.match(result.actions.join(','), /FORCE_CLOSE_WEEKEND_POSITIONS/);
+});
+
+test('economic calendar parser accepts a valid empty high-impact event list', () => {
+  assert.deepEqual(parseEurUsdNewsPayload([]), []);
+  assert.deepEqual(parseEurUsdNewsPayload({ events: [] }), []);
+});
+
+test('economic calendar parser fails closed on an invalid payload shape', () => {
+  assert.throws(() => parseEurUsdNewsPayload({ data: [] }), /news_feed_invalid_shape/);
 });
