@@ -43,7 +43,7 @@ export function getEurUsdSafetyConfig(env = process.env) {
     weekendGapCheckHours: envNum(env, 'EURUSD_GAP_CHECK_AFTER_REOPEN_HOURS', 12, 1),
     maxWeekendGapAtr: envNum(env, 'EURUSD_WEEKEND_MAX_GAP_ATR', 0.50, 0.01),
     requireWeekendGapData: envBool(env, 'EURUSD_REQUIRE_GAP_DATA', true),
-    newsFeedRequired: envBool(env, 'EURUSD_NEWS_REQUIRE_FEED', true),
+    newsFeedRequired: envBool(env, 'EURUSD_NEWS_REQUIRE_FEED', false),
     newsFeedMaxAgeSeconds: envNum(env, 'EURUSD_NEWS_FEED_MAX_AGE_SECONDS', 1800, 60),
     highImpactPreBlockMinutes: envNum(env, 'EURUSD_NEWS_HIGH_PRE_BLOCK_MINUTES', 60, 0),
     highImpactPostBlockMinutes: envNum(env, 'EURUSD_NEWS_HIGH_POST_BLOCK_MINUTES', 60, 0),
