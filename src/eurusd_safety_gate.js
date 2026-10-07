@@ -143,7 +143,7 @@ export function evaluateEurUsdSafety({
 
   const gapAtr = Number(safety.weekend_gap_atr);
   const gapKnown = safety.weekend_gap_known === true && positiveFinite(gapAtr);
-  const gapCheckHours = config.gapCheckAfterReopenHours;
+  const gapCheckHours = config.weekendGapCheckHours;
   const mondayEarly = day === 1 && minutes < gapCheckHours * 60;
   if (mondayEarly) {
     if (!gapKnown && config.requireWeekendGapData) {
