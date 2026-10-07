@@ -1,0 +1,106 @@
+name: EURUSD Session Policy Proxy Research
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build-eurusd-policy-proxy.mjs'
+      - 'scripts/backtest-eurusd-session-range-core-v1.mjs'
+      - 'src/eurusd_session_range_core_v1.js'
+      - 'scripts/prepare-eurusd-core-v4-data.mjs'
+      - '.github/workflows/eurusd-session-policy-proxy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-session-policy-proxy
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run unit tests
+        run: npm test
+      - name: Prepare shared EURUSD M15 data
+        env:
+          CORE_V4_LOOKBACK_DAYS: '1825'
+          CORE_V4_PREPARED_DATA: 'eurusd-session-policy-data/eurusd-m15.json.gz'
+        run: node scripts/prepare-eurusd-core-v4-data.mjs
+      - name: Build point-in-time policy proxy
+        env:
+          POLICY_PROXY_START: '2019-01-01'
+          POLICY_PROXY_END: '2026-10-05'
+          POLICY_PROXY_OUTPUT: 'eurusd-session-policy-data/eu_us_policy_daily.csv'
+        run: node scripts/build-eurusd-policy-proxy.mjs
+      - name: Upload shared data and policy mask
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-session-policy-data-1825d
+          path: eurusd-session-policy-data/
+          retention-days: 7
+  research:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline_1p50
+            tp: '1.50'
+            retest_bars: '4'
+          - name: baseline_1p80
+            tp: '1.80'
+            retest_bars: '4'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Download shared inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: eurusd-session-policy-data-1825d
+          path: eurusd-session-policy-data
+      - name: Run technical versus policy-filtered replay
+        env:
+          SESSION_CORE_DATA_FILE: 'eurusd-session-policy-data/eurusd-m15.json.gz'
+          SESSION_CORE_POLICY_MASK: 'eurusd-session-policy-data/eu_us_policy_daily.csv'
+          SESSION_CORE_POLICY_MIN_CONFIDENCE: '0.65'
+          SESSION_CORE_OUTPUT_DIR: 'eurusd-session-policy-output'
+          SESSION_CORE_SPREAD_PIPS: '0.8'
+          SESSION_CORE_SLIPPAGE_PIPS: '0.1'
+          SESSION_CORE_MAX_HOLD_BARS: '96'
+          SESSION_CORE_MAX_ENTRY_GAP_ATR: '0.50'
+          SESSION_CORE_MIN_EFFECTIVE_RR: '1.30'
+          SESSION_CORE_BREAKOUT_START_UTC: '7'
+          SESSION_CORE_BREAKOUT_END_UTC: '15'
+          SESSION_CORE_MIN_RANGE_ATR: '0.30'
+          SESSION_CORE_MAX_RANGE_ATR: '2.50'
+          SESSION_CORE_BREAKOUT_ATR: '0.05'
+          SESSION_CORE_BREAKOUT_BODY_ATR: '0.20'
+          SESSION_CORE_BREAKOUT_CLOSE_LOCATION: '0.60'
+          SESSION_CORE_MAX_RETEST_BARS: '${{ matrix.retest_bars }}'
+          SESSION_CORE_RETEST_TOLERANCE_ATR: '0.25'
+          SESSION_CORE_CONFIRMATION_BUFFER_ATR: '0.02'
+          SESSION_CORE_CONFIRMATION_BODY_ATR: '0.10'
+          SESSION_CORE_STOP_BUFFER_ATR: '0.15'
+          SESSION_CORE_MIN_STOP_ATR: '0.40'
+          SESSION_CORE_MAX_STOP_ATR: '1.80'
+          SESSION_CORE_TP_R: '${{ matrix.tp }}'
+        run: node scripts/backtest-eurusd-session-range-core-v1.mjs
+      - name: Upload replay result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-session-policy-${{ matrix.name }}
+          path: eurusd-session-policy-output/
+          retention-days: 30
+          if-no-files-found: warn
