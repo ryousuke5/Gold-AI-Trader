@@ -70,6 +70,20 @@ test('Session core finds prior breakout and confirms on current retest bar', () 
   assert.ok(setup.take_profit > setup.entry_reference);
 });
 
+test('Session core rejects a retest that occurs after maxRetestBars', () => {
+  const f = fixture();
+  const breakoutIndex = f.recentM15.length - 3;
+  // Move the apparent retest beyond the allowed window while keeping the current confirmation bullish.
+  f.recentM15[breakoutIndex + 1] = {
+    ...f.recentM15[breakoutIndex + 1],
+    low: 1.1012,
+    close: 1.10125
+  };
+  const setup = buildEurUsdSessionRangeCore(f, { maxRetestBars: 1 });
+  assert.equal(setup.candidate, 'WAIT');
+  assert.match(setup.reasons.join(','), /breakout_retest_confirmation_filter/);
+});
+
 test('Session core rejects a confirmation without a prior retest', () => {
   const f = fixture();
   f.recentM15[f.recentM15.length - 2] = {
