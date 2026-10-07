@@ -7,6 +7,7 @@ import { analyzeWithOpenAI } from './src/ai.js';
 import { evaluateRisk, getRiskLimits, safeDecision } from './src/risk.js';
 import { dbEnabled, getRiskBySignal, getSignalByKey, getState, insertEvent, insertOrder, insertRisk, insertSignal, insertTradeResult, probeGoldDatabase, updateState } from './src/db.js';
 import { registerEurUsdRoutes } from './src/eurusd.js';
+import { startEurUsdNewsFeedMonitor } from './src/eurusd_news_feed.js';
 
 const app=express();
 app.disable('x-powered-by');
@@ -59,6 +60,7 @@ app.post('/api/gold/trade-result',auth,async(req,res)=>{try{const body=req.body|
 app.post('/api/gold/execution-result',auth,async(req,res)=>{try{const body=req.body||{};if(!body.signal_id||!body.idempotency_key)return res.status(400).json({ok:false,error:'signal_id and idempotency_key are required'});const signal=await getSignalByKey({signalId:String(body.signal_id)});if(!signal)return res.status(404).json({ok:false,error:'signal_not_found'});const riskCheck=await getRiskBySignal(String(body.signal_id));if(!riskCheck?.approved)return res.status(409).json({ok:false,error:'signal_was_not_risk_approved'});const side=String(body.side||'').toUpperCase();if(!['BUY','SELL'].includes(side)||side!==String(signal.decision).toUpperCase())return res.status(400).json({ok:false,error:'side_mismatch'});const status=String(body.status||'UNKNOWN').toUpperCase();const ticket=Number(body.mt4_ticket||0)||null;if(status==='FILLED'&&!ticket)return res.status(400).json({ok:false,error:'filled_order_requires_ticket'});const saved=await insertOrder({id:body.order_id||crypto.randomUUID(),signal_id:body.signal_id,idempotency_key:String(body.idempotency_key),symbol:String(body.symbol||defaultSymbol),mt4_ticket:ticket,side,requested_price:Number(body.requested_price||0)||null,filled_price:Number(body.filled_price||0)||null,volume:Number(body.volume||0)||null,stop_loss:Number(body.stop_loss||0)||null,take_profit:Number(body.take_profit||0)||null,status,broker_error:body.broker_error?String(body.broker_error):null,metadata:body.metadata||{},created_at:nowIso()});res.json({ok:true,persisted:saved.persisted,order:saved.row});}catch(error){res.status(500).json({ok:false,error:error.message});}});
 registerEurUsdRoutes(app);
 app.listen(port,async()=>{
+  startEurUsdNewsFeedMonitor();
   console.log(`Gold AI Trader V1 listening on ${port}`);
   const cfg=getGoldV2Config();
   console.log('[GOLD CONFIG] strategy_version=%s ai_only_on_candidate=%s risk_pct=%s range=%s-%s ATR breakout=%s body=%s close=%s volume=%s session_utc=%s-%s', strategyVersion, aiOnlyOnCandidate, getRiskLimits().maxRiskPct, cfg.minRangeAtr, cfg.maxRangeAtr, cfg.breakoutAtr, cfg.minBodyAtr, cfg.minCloseLocation, cfg.minVolumeRatio, cfg.sessionStartUtc, cfg.sessionEndUtc);
