@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/eurusd_technical_core_v4.js'
       - 'scripts/backtest-eurusd-technical-core-v4.mjs'
+      - 'scripts/prepare-eurusd-core-v4-data.mjs'
       - 'tests/eurusd_technical_core_v4.test.js'
       - '.github/workflows/eurusd-technical-core-v4.yml'
   workflow_dispatch:
@@ -15,9 +16,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  research:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Run unit tests once before matrix research
+        run: npm test
+      - name: Prepare shared EURUSD M15 dataset
+        env:
+          CORE_V4_LOOKBACK_DAYS: '1825'
+          CORE_V4_PREPARED_DATA: 'eurusd-core-v4-data/eurusd-m15.json.gz'
+        run: node scripts/prepare-eurusd-core-v4-data.mjs
+      - name: Upload shared EURUSD dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-core-v4-data-1825d
+          path: eurusd-core-v4-data/eurusd-m15.json.gz
+          retention-days: 7
+  research:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -38,19 +62,17 @@ jobs:
             spread: '0.8'
             slip: '0.1'
             tp: '1.80'
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - run: npm install --no-audit --no-fund
-
-      - name: Run unit tests
-        run: npm test
-
+      - name: Download shared EURUSD dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: eurusd-core-v4-data-1825d
+          path: eurusd-core-v4-data
       - name: Run technical core V4 five-year backtest
         env:
           CORE_V4_LOOKBACK_DAYS: '1825'
@@ -69,9 +91,9 @@ jobs:
           CORE_V4_MIN_CLOSE_LOCATION: '0.60'
           CORE_V4_MIN_H1_AGREEMENT: '0.50'
           CORE_V4_TAKE_PROFIT_R: '${{ matrix.tp }}'
+          CORE_V4_DATA_FILE: 'eurusd-core-v4-data/eurusd-m15.json.gz'
           CORE_V4_OUTPUT_DIR: 'eurusd-core-v4-backtest-output'
         run: node scripts/backtest-eurusd-technical-core-v4.mjs
-
       - name: Upload research result
         if: always()
         uses: actions/upload-artifact@v4
