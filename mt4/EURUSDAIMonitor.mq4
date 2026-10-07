@@ -1,3 +1,4 @@
+// Safety telemetry gate revision: validated server-side safety fields before execution is enabled.
 #property strict
 #property version   "1.1"
 #property description "EURUSD M15 safety telemetry monitor. Sends completed-bar and gap/hold data to Render. No order execution."
