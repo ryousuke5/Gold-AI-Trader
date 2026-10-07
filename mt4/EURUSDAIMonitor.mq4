@@ -547,8 +547,6 @@ bool BuildSignalPayload(string &payload, datetime &closedBarOpen, datetime &clos
    json += "\"oldest_position_age_seconds\":" + IntegerToString(oldestPositionAge);
    json += "},";
    json += "\"account\":{";
-   json += "},";
-   json += "\"account\":{";
    json += "\"equity\":" + JsonNumber(equity, 2) + ",";
    json += "\"balance\":" + JsonNumber(balance, 2) + ",";
    json += "\"open_positions\":" + IntegerToString(OpenPositions(sym)) + ",";
