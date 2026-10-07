@@ -34,7 +34,7 @@ function fixture() {
 test('Core V4 accepts a broad trend-pullback continuation candidate', () => {
   const f = fixture();
   assert.equal(buildEurUsdH1TrendTechnicalCoreV4Trend(f), 'UP');
-  const setup = buildEurUsdTechnicalCoreV4(f);
+  const setup = buildEurUsdTechnicalCoreV4(f, { lookback: 8 });
   assert.equal(setup.candidate, 'BUY', JSON.stringify(setup, null, 2));
   assert.equal(setup.setup_type, 'EURUSD_H1_TREND_M15_PULLBACK_CORE_V4');
   assert.ok(setup.stop_atr >= 0.40 && setup.stop_atr <= 1.80);
