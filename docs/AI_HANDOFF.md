@@ -292,3 +292,45 @@ Latest test workflow succeeded:
 Latest EURUSD backtest workflow also succeeded for all matrix variants after the validator correction.
 
 Do not enable AllowAutoOrders or EURUSD_EXECUTION_ENABLED until the EURUSD strategy passes the agreed OOS/forward validation gate.
+
+
+## 2026-10-08 deterministic forward validation
+
+Forward-validation mode is implemented without real order execution.
+
+Files:
+- src/eurusd_forward.js
+- tests/eurusd_forward.test.js
+- docs/EURUSD_FORWARD_RUNBOOK.md
+
+Behavior:
+- AI is disabled for the forward stage.
+- /api/eurusd/signal settles any existing forward paper trade using the newest completed M15 bar.
+- A new paper trade opens only when deterministic technical setup + risk.approved + safety.newOrdersAllowed all pass.
+- At most one forward paper trade is held.
+- Same-bar SL/TP ambiguity is resolved conservatively with SL-first.
+- Safety force-close and maximum-hold conditions close paper trades at current side-specific market price.
+- Forward results are persisted through the existing gold_orders table using FORWARD_* statuses and standardized gold_trade_results records.
+- /api/eurusd/forward-status returns PF, expectancy, net R, max DD, win rate, trade count and latest paper trades.
+- Forward mode is enabled in render.yaml, but EURUSD_EXECUTION_ENABLED and EURUSD_LIVE_TRADING_APPROVED remain false.
+
+Current Render configuration target:
+- EURUSD_AI_ENABLED=false
+- EURUSD_AI_ENVIRONMENT_REQUIRED=false
+- EURUSD_FORWARD_TEST_ENABLED=true
+- EURUSD_FORWARD_MAX_TRADES=1
+- EURUSD_EXECUTION_ENABLED=false
+- EURUSD_LIVE_TRADING_APPROVED=false
+- strategy version: eurusd-m15-h1-deterministic-forward-v1
+
+Validation:
+- npm test: success
+- npm run test:mt4:live: success
+- existing Gold V4 smoke checks: success
+- existing Python self-tests/compile: success
+- latest EURUSD backtest matrix jobs: success
+- latest full CI run: success
+
+Deployment note:
+- Code/config is committed to GitHub.
+- Render deployment/runtime verification is not yet confirmed because the connected Render MCP session has no selected workspace. Do not claim that the forward test is already running until Render health and the /api/eurusd/forward-status endpoint are checked.
