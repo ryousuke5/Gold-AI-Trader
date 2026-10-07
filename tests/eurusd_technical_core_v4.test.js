@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeEurUsdFeatures } from '../src/eurusd_features.js';
-import { buildEurUsdH1TrendTechnicalCoreV4Trend, buildEurUsdTechnicalCoreV4 } from '../src/eurusd_technical_core_v4.js';
+import { eurUsdH1TrendTechnicalCoreV4Trend, buildEurUsdTechnicalCoreV4 } from '../src/eurusd_technical_core_v4.js';
 
 function fixture() {
   const t = 1727000000;
