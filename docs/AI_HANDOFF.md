@@ -166,16 +166,29 @@ Architecture:
 
 The implementation received causal-timestamp and retest-definition fixes before research.
 
-An independent local prototype on the same five-year data found one exploratory configuration (07:00–15:00, retest within 4 bars, 1.5R) with:
-- 45 trades over five years
-- overall PF 0.810, expectancy -0.124R
-- last two years: 11 trades, PF 2.566, expectancy +0.577R
+Formal Session Core Run #2 (37624889957) completed successfully.
 
-This is not production evidence. It suggests regime sensitivity and justifies checking the formal CI result before deciding whether an environment filter is worth testing.
+Five-year formal results:
+- baseline 1.50R: 51 trades, PF 0.599, expectancy -0.287R, net -14.62R, max DD 20.28R
+  - recent 730d: 13 trades, PF 1.677, expectancy +0.317R, net +4.13R
+- extended 07:00–17:00: 73 trades, PF 0.705, expectancy -0.200R, net -14.63R, max DD 21.44R
+  - recent 730d: 20 trades, PF 1.174, expectancy +0.097R, net +1.94R
+- baseline 1.80R: 52 trades, PF 0.627, expectancy -0.276R, net -14.36R, max DD 20.41R
+  - recent 730d: 14 trades, PF 1.676, expectancy +0.344R, net +4.81R
+- baseline retest6: 62 trades, PF 0.745, expectancy -0.169R, net -10.49R, max DD 16.92R
+  - recent 730d: 17 trades, PF 1.699, expectancy +0.318R, net +5.40R
+
+Annual behavior is strongly regime-dependent:
+- 2021–2023 were materially negative across variants
+- 2024–2026 improved, with 2026 strongly positive
+- this pattern is not enough to claim stable profitability
+
+Conclusion: Session Core V1 is NOT a standalone validated strategy. It is only a candidate generator for environment-filter research.
 
 Current formal CI:
-- Session Core Run #2: 37624889957, in progress
+- Session Core Run #2: 37624889957, completed success
 - Legacy Core Run #2: 37625030497, in progress
+- Session Policy Proxy Run #1: 37625758272, in progress
 
 ### AI/fundamental policy
 Do not call live web search inside historical replay.
