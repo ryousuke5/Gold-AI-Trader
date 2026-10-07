@@ -386,7 +386,13 @@ test('balanced-weekly mode uses the frequency-tuned technical parameters', () =>
 });
 
 test('risk gate blocks a technically approved trade during high-impact news', () => {
-  const f = baseFeatures({ bar_time: 1727096700 });
+  const seed = baseFeatures();
+  const targetBarTime = 1727096700;
+  const shift = targetBarTime - seed.recentM15.at(-1).time;
+  const f = baseFeatures({
+    bar_time: targetBarTime,
+    recent_m15: seed.recentM15.map((bar) => ({ ...bar, time: bar.time + shift }))
+  });
   const setup = buildEurUsdSetup(f);
   assert.equal(setup.candidate, 'BUY');
 
@@ -443,7 +449,13 @@ test('risk gate blocks a technically approved trade during high-impact news', ()
 });
 
 test('risk gate blocks new entries when maximum holding time is exceeded', () => {
-  const f = baseFeatures({ bar_time: 1727096700 });
+  const seed = baseFeatures();
+  const targetBarTime = 1727096700;
+  const shift = targetBarTime - seed.recentM15.at(-1).time;
+  const f = baseFeatures({
+    bar_time: targetBarTime,
+    recent_m15: seed.recentM15.map((bar) => ({ ...bar, time: bar.time + shift }))
+  });
   const setup = buildEurUsdSetup(f);
   assert.equal(setup.candidate, 'BUY');
 
