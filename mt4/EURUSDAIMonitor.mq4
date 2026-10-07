@@ -305,6 +305,118 @@ string RecentH1Json(string sym, int digits)
    return out;
 }
 
+// --------------------------------------------------------
+// Safety telemetry
+// --------------------------------------------------------
+int OldestOpenPositionAgeSeconds(string sym)
+{
+   datetime oldest = 0;
+   datetime now = TimeCurrent();
+
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+         continue;
+
+      if(OrderSymbol() != sym || OrderMagicNumber() != MagicNumber)
+         continue;
+
+      int type = OrderType();
+      if(type != OP_BUY && type != OP_SELL)
+         continue;
+
+      datetime openTime = OrderOpenTime();
+      if(openTime <= 0)
+         continue;
+
+      if(oldest == 0 || openTime < oldest)
+         oldest = openTime;
+   }
+
+   if(oldest <= 0)
+      return 0;
+
+   return MathMax(0, (int)(now - oldest));
+}
+
+bool WeekendGapMetrics(string sym, double &gapPrice, double &gapAtr, bool &known, datetime &fridayCloseTime, datetime &mondayOpenTime)
+{
+   gapPrice = 0.0;
+   gapAtr = 0.0;
+   known = false;
+   fridayCloseTime = 0;
+   mondayOpenTime = 0;
+
+   datetime latestOpen = iTime(sym, PERIOD_M15, 1);
+   if(latestOpen <= 0)
+      return false;
+
+   if(TimeDayOfWeek(latestOpen) != 1)
+      return true;
+
+   int mondayYear = TimeYear(latestOpen);
+   int mondayMonth = TimeMonth(latestOpen);
+   int mondayDay = TimeDay(latestOpen);
+
+   int firstMondayShift = -1;
+   int maxScan = MathMin(600, iBars(sym, PERIOD_M15) - 1);
+
+   for(int shift = maxScan; shift >= 1; shift--)
+   {
+      datetime t = iTime(sym, PERIOD_M15, shift);
+      if(t <= 0)
+         continue;
+
+      if(TimeDayOfWeek(t) != 1)
+         continue;
+
+      if(TimeYear(t) == mondayYear &&
+         TimeMonth(t) == mondayMonth &&
+         TimeDay(t) == mondayDay)
+      {
+         firstMondayShift = shift;
+         break;
+      }
+   }
+
+   if(firstMondayShift < 1)
+      return true;
+
+   mondayOpenTime = iTime(sym, PERIOD_M15, firstMondayShift);
+   double mondayOpenPrice = iOpen(sym, PERIOD_M15, firstMondayShift);
+   if(!(mondayOpenTime > 0 && mondayOpenPrice > 0.0))
+      return true;
+
+   int fridayShift = -1;
+   for(int shift = firstMondayShift + 1; shift <= maxScan; shift++)
+   {
+      datetime t = iTime(sym, PERIOD_M15, shift);
+      if(t <= 0 || t >= mondayOpenTime)
+         continue;
+
+      if(TimeDayOfWeek(t) == 5)
+      {
+         fridayShift = shift;
+         break;
+      }
+   }
+
+   if(fridayShift < 0)
+      return true;
+
+   fridayCloseTime = iTime(sym, PERIOD_M15, fridayShift) + 900;
+   double fridayClose = iClose(sym, PERIOD_M15, fridayShift);
+   double atr = iATR(sym, PERIOD_M15, 14, 1);
+
+   if(!(fridayClose > 0.0 && atr > 0.0))
+      return true;
+
+   gapPrice = MathAbs(mondayOpenPrice - fridayClose);
+   gapAtr = gapPrice / atr;
+   known = true;
+   return true;
+}
+
 //---------------------------------------------------------
 // Build EURUSD M15 signal payload
 //---------------------------------------------------------
@@ -418,6 +530,23 @@ bool BuildSignalPayload(string &payload, datetime &closedBarOpen, datetime &clos
    json += "},";
    json += "\"recent_m15\":" + RecentM15Json(sym, digits) + ",";
    json += "\"recent_h1\":" + RecentH1Json(sym, digits);
+   json += "},";
+   double weekendGapPrice = 0.0;
+   double weekendGapAtr = 0.0;
+   bool weekendGapKnown = false;
+   datetime fridayCloseTime = 0;
+   datetime mondayOpenTime = 0;
+   WeekendGapMetrics(sym, weekendGapPrice, weekendGapAtr, weekendGapKnown, fridayCloseTime, mondayOpenTime);
+   int oldestPositionAge = OldestOpenPositionAgeSeconds(sym);
+   json += "\"safety\":{";
+   json += "\"weekend_gap_known\":" + (weekendGapKnown ? "true" : "false") + ",";
+   json += "\"weekend_gap_price\":" + JsonNumber(weekendGapPrice, digits) + ",";
+   json += "\"weekend_gap_atr\":" + JsonNumber(weekendGapAtr, 4) + ",";
+   json += "\"gap_reference_time\":" + IntegerToString((int)mondayOpenTime) + ",";
+   json += "\"friday_close_time\":" + IntegerToString((int)fridayCloseTime) + ",";
+   json += "\"oldest_position_age_seconds\":" + IntegerToString(oldestPositionAge);
+   json += "},";
+   json += "\"account\":{";
    json += "},";
    json += "\"account\":{";
    json += "\"equity\":" + JsonNumber(equity, 2) + ",";
