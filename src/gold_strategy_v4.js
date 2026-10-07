@@ -96,6 +96,9 @@ export function buildGoldV4Setup(features = {}, config = {}) {
   if (!trendUp && !trendDown) return { candidate: 'WAIT', trend: 'RANGE', reason: 'h1_trend_filter' };
 
   const earliestBreakout = Math.max(cfg.rangeLookback, signalIndex - cfg.maxRetestBars);
+  let sawBreakout = false;
+  let sawRetest = false;
+  let sawConfirmation = false;
   for (let breakoutIndex = signalIndex - 1; breakoutIndex >= earliestBreakout; breakoutIndex -= 1) {
     const age = signalIndex - breakoutIndex;
     if (age < 1 || age > cfg.maxRetestBars) continue;
@@ -128,6 +131,7 @@ export function buildGoldV4Setup(features = {}, config = {}) {
       breakoutCloseLocation <= 1 - cfg.breakoutCloseLocation;
 
     if (!buyBreak && !sellBreak) continue;
+    sawBreakout = true;
 
     const side = buyBreak ? 'BUY' : 'SELL';
     const level = side === 'BUY' ? range.high : range.low;
@@ -136,6 +140,7 @@ export function buildGoldV4Setup(features = {}, config = {}) {
       cfg.retestToleranceAtr, cfg.maxRetestDepthAtr
     );
     if (!touches.length) continue;
+    sawRetest = true;
 
     const signalRange = signal.high - signal.low;
     const signalBody = Math.abs(signal.close - signal.open);
@@ -156,6 +161,7 @@ export function buildGoldV4Setup(features = {}, config = {}) {
       (m5.ema20 - signal.close) / m5.atr14 <= cfg.maxExtensionAtr;
 
     if (!buyConfirmed && !sellConfirmed) continue;
+    sawConfirmation = true;
 
     const retestLow = Math.min(...touches.map((t) => t.low));
     const retestHigh = Math.max(...touches.map((t) => t.high));
@@ -203,5 +209,17 @@ export function buildGoldV4Setup(features = {}, config = {}) {
     };
   }
 
-  return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'no_valid_breakout_retest' };
+  const waitStage = sawConfirmation
+    ? 'stop_geometry_filter'
+    : sawRetest
+      ? 'confirmation_filter'
+      : sawBreakout
+        ? 'retest_filter'
+        : 'breakout_filter';
+  return {
+    candidate: 'WAIT',
+    trend: trendUp ? 'UP' : 'DOWN',
+    reason: 'no_valid_breakout_retest',
+    diagnostics: { wait_stage: waitStage }
+  };
 }
