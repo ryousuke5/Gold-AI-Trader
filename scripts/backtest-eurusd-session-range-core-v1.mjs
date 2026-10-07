@@ -28,7 +28,8 @@ const C = {
   maxStopAtr: Number(process.env.SESSION_CORE_MAX_STOP_ATR || 1.80),
   tpR: Number(process.env.SESSION_CORE_TP_R || 1.50),
   policyMask: process.env.SESSION_CORE_POLICY_MASK || '',
-  policyMinConfidence: Number(process.env.SESSION_CORE_POLICY_MIN_CONFIDENCE || 0.65)
+  policyMinConfidence: Number(process.env.SESSION_CORE_POLICY_MIN_CONFIDENCE || 0.65),
+  requirePolicyMask: String(process.env.SESSION_CORE_REQUIRE_POLICY_MASK || '').toLowerCase() === 'true'
 };
 
 async function loadPolicyMask() {
@@ -283,8 +284,16 @@ async function main() {
   await fs.mkdir(C.out, { recursive: true });
   const raw = await loadBars();
   const policyMask = await loadPolicyMask();
-  if (C.policyMask && policyMask.length === 0) {
-    throw new Error('Policy mask input is configured but empty.');
+  console.log(JSON.stringify({
+    replay_input_check: {
+      policy_mask_configured: Boolean(C.policyMask),
+      policy_mask_path: C.policyMask || null,
+      policy_mask_rows: policyMask.length,
+      require_policy_mask: C.requirePolicyMask
+    }
+  }));
+  if ((C.policyMask || C.requirePolicyMask) && policyMask.length === 0) {
+    throw new Error('Policy mask is required but zero valid rows were loaded.');
   }
   const m15 = withIndicators(raw);
   const h1 = withIndicators(aggregateH1(m15));
@@ -420,7 +429,9 @@ async function main() {
     recent_730_days: summarize(oos),
     policy_filtered_overall: policyMask.length ? summarize(policyTrades) : null,
     policy_filtered_recent_730_days: policyMask.length ? summarize(policyOos) : null,
-    policy_mask: C.policyMask ? { file: C.policyMask, rows: policyMask.length, min_confidence: C.policyMinConfidence } : null,
+    policy_mask: C.policyMask || C.requirePolicyMask
+      ? { file: C.policyMask || null, rows: policyMask.length, min_confidence: C.policyMinConfidence }
+      : null,
     annual: annual(trades),
     policy_filtered_annual: policyMask.length ? annual(policyTrades) : null,
     diagnostics
@@ -432,7 +443,7 @@ async function main() {
     ...trades.map((t) => [t.signal_time, t.entry_time, t.exit_time, t.side, t.net_r, t.exit_reason, t.entry_gap_atr, t.effective_rr, t.breakout_time, t.range_atr, t.stop_atr].join(','))
   ].join('\n') + '\n');
 
-  if (C.policyMask && (report.policy_mask === null || report.diagnostics.policy_candidates === 0)) {
+  if ((C.policyMask || C.requirePolicyMask) && (report.policy_mask === null || report.diagnostics.policy_candidates === 0)) {
     throw new Error('Policy replay integrity check failed: configured mask was not evaluated.');
   }
   console.log(JSON.stringify(report, null, 2));
