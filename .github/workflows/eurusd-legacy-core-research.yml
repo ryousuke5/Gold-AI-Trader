@@ -1,0 +1,128 @@
+name: EURUSD Legacy Range Breakout Core Research
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/eurusd_features.js'
+      - 'scripts/backtest-eurusd-legacy-core.mjs'
+      - 'scripts/prepare-eurusd-core-v4-data.mjs'
+      - '.github/workflows/eurusd-legacy-core-research.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eurusd-legacy-core-research
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Prepare shared EURUSD M15 dataset
+        env:
+          CORE_V4_LOOKBACK_DAYS: '1825'
+          CORE_V4_PREPARED_DATA: 'eurusd-legacy-core-data/eurusd-m15.json.gz'
+        run: node scripts/prepare-eurusd-core-v4-data.mjs
+      - name: Upload shared dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-legacy-core-data-1825d
+          path: eurusd-legacy-core-data/eurusd-m15.json.gz
+          retention-days: 7
+  research:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: current
+            lookback: '6'
+            min_range: '0.75'
+            max_range: '2.00'
+            breakout: '0.10'
+            body: '0.35'
+            close_loc: '0.70'
+            volume: '1.10'
+            buy_rsi_min: '50'
+            buy_rsi_max: '68'
+            sell_rsi_min: '32'
+            sell_rsi_max: '50'
+            tp: '2.00'
+          - name: no_volume
+            lookback: '6'
+            min_range: '0.75'
+            max_range: '2.00'
+            breakout: '0.10'
+            body: '0.35'
+            close_loc: '0.70'
+            volume: '0.50'
+            buy_rsi_min: '50'
+            buy_rsi_max: '68'
+            sell_rsi_min: '32'
+            sell_rsi_max: '50'
+            tp: '2.00'
+          - name: balanced
+            lookback: '5'
+            min_range: '0.50'
+            max_range: '2.50'
+            breakout: '0.05'
+            body: '0.25'
+            close_loc: '0.60'
+            volume: '1.10'
+            buy_rsi_min: '48'
+            buy_rsi_max: '70'
+            sell_rsi_min: '30'
+            sell_rsi_max: '52'
+            tp: '2.00'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Download shared dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: eurusd-legacy-core-data-1825d
+          path: eurusd-legacy-core-data
+      - name: Run legacy core five-year backtest
+        env:
+          LEGACY_CORE_DATA_FILE: 'eurusd-legacy-core-data/eurusd-m15.json.gz'
+          LEGACY_CORE_OUTPUT_DIR: 'eurusd-legacy-core-backtest-output'
+          LEGACY_CORE_SPREAD_PIPS: '0.8'
+          LEGACY_CORE_SLIPPAGE_PIPS: '0.1'
+          LEGACY_CORE_MAX_HOLD_BARS: '96'
+          LEGACY_CORE_COOLDOWN_BARS: '2'
+          LEGACY_CORE_RANGE_LOOKBACK: '${{ matrix.lookback }}'
+          LEGACY_CORE_MIN_RANGE_ATR: '${{ matrix.min_range }}'
+          LEGACY_CORE_MAX_RANGE_ATR: '${{ matrix.max_range }}'
+          LEGACY_CORE_BREAKOUT_ATR: '${{ matrix.breakout }}'
+          LEGACY_CORE_MIN_BODY_ATR: '${{ matrix.body }}'
+          LEGACY_CORE_BREAKOUT_CLOSE_LOCATION: '${{ matrix.close_loc }}'
+          LEGACY_CORE_MIN_VOLUME_RATIO: '${{ matrix.volume }}'
+          LEGACY_CORE_BUY_RSI_MIN: '${{ matrix.buy_rsi_min }}'
+          LEGACY_CORE_BUY_RSI_MAX: '${{ matrix.buy_rsi_max }}'
+          LEGACY_CORE_SELL_RSI_MIN: '${{ matrix.sell_rsi_min }}'
+          LEGACY_CORE_SELL_RSI_MAX: '${{ matrix.sell_rsi_max }}'
+          LEGACY_CORE_MIN_STOP_ATR: '0.50'
+          LEGACY_CORE_MAX_STOP_ATR: '1.50'
+          LEGACY_CORE_TP_R: '${{ matrix.tp }}'
+          LEGACY_CORE_MAX_SPREAD_PIPS: '1.20'
+          LEGACY_CORE_MAX_SPREAD_TO_TP_PCT: '12'
+        run: node scripts/backtest-eurusd-legacy-core.mjs
+      - name: Upload research result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-legacy-core-${{ matrix.name }}
+          path: eurusd-legacy-core-backtest-output/
+          retention-days: 30
+          if-no-files-found: warn
