@@ -66,11 +66,9 @@ services:
       - key: EURUSD_AI_ENABLED
         value: "false"
       - key: EURUSD_FORWARD_TEST_ENABLED
-        value: "false"
+        value: "true"
       - key: EURUSD_FORWARD_MAX_TRADES
         value: "1"
-      - key: EURUSD_AI_ENVIRONMENT_REQUIRED
-        value: "false"
       - key: EURUSD_MAX_HOLD_SECONDS
         value: "3600"
       - key: EURUSD_NEWS_REQUIRE_FEED
@@ -124,7 +122,7 @@ services:
       - key: EURUSD_MIN_AI_ENVIRONMENT_CONFIDENCE
         value: "0.65"
       - key: EURUSD_AI_ENVIRONMENT_REQUIRED
-        value: "true"
+        value: "false"
       - key: EURUSD_RANGE_LOOKBACK
         value: "5"
       - key: EURUSD_MIN_RANGE_ATR
