@@ -15,7 +15,7 @@ test('SELL trade takes target when only target is hit', () => {
   const bar = { high: 1.1005, low: 1.0975 };
   const exit = chooseBarExit(trade, bar);
   assert.deepEqual(exit, { price: 1.0980, reason: 'TAKE_PROFIT' });
-  assert.equal(settlementR('SELL', 1.1000, 1.1010, exit.price), 2);
+  assert.ok(Math.abs(settlementR('SELL', 1.1000, 1.1010, exit.price) - 2) < 1e-9);
 });
 
 test('forward summary computes PF, expectancy and max drawdown in R', () => {
