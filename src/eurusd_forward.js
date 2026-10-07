@@ -58,6 +58,8 @@ function markStatus(rMultiple) {
   return 'BREAKEVEN';
 }
 
+export { listEurUsdForwardTrades };
+
 export function getEurUsdForwardConfig() {
   return {
     enabled: envBool('EURUSD_FORWARD_TEST_ENABLED', false),
