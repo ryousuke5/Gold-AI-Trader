@@ -384,3 +384,108 @@ test('balanced-weekly mode uses the frequency-tuned technical parameters', () =>
   assert.equal(setup.candidate, 'BUY');
   assert.equal(setup.setup_type, 'BREAKOUT');
 });
+
+test('risk gate blocks a technically approved trade during high-impact news', () => {
+  const f = baseFeatures({ bar_time: 1727096700 });
+  const setup = buildEurUsdSetup(f);
+  assert.equal(setup.candidate, 'BUY');
+
+  const decision = {
+    decision: 'BUY',
+    candidate: 'BUY',
+    confidence: setup.quality_score / 100,
+    risk_reward: setup.risk_reward,
+    entry: setup.entry,
+    stop_loss: setup.stop_loss,
+    take_profit: setup.take_profit,
+    ai_environment: { status: 'FAVORABLE', confidence: 0.80 }
+  };
+
+  const risk = evaluateEurUsdRisk({
+    decision,
+    setup,
+    features: f,
+    account: {
+      equity: 100000,
+      open_positions: 0,
+      daily_pnl_pct: 0,
+      drawdown_pct: 0,
+      risk_data_ready: true,
+      trade_allowed: 1,
+      tick_size: 0.00001,
+      tick_value: 1,
+      min_lot: 0.01,
+      max_lot: 100,
+      lot_step: 0.01
+    },
+    signalCreatedAt: 1727096700000,
+    now: 1727096700000,
+    fundamentalAssessment: favorableAiAssessment(),
+    safetyContext: {
+      nowMs: 1727096700000,
+      safety: { weekend_gap_known: true, weekend_gap_atr: 0.05, oldest_position_age_seconds: 120 },
+      newsFeed: {
+        fetchedAtMs: 1727096400000,
+        events: [{
+          name: 'NFP',
+          currency: 'USD',
+          impact: 'HIGH',
+          scheduled_at: '2024-09-23T13:15:00Z'
+        }]
+      }
+    }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.reasons.includes('safety_high_impact_news_window'));
+  assert.ok(risk.reasons.includes('safety_high_impact_news_force_close_window'));
+  assert.equal(risk.safety.forceClose, true);
+});
+
+test('risk gate blocks new entries when maximum holding time is exceeded', () => {
+  const f = baseFeatures({ bar_time: 1727096700 });
+  const setup = buildEurUsdSetup(f);
+  assert.equal(setup.candidate, 'BUY');
+
+  const decision = {
+    decision: 'BUY',
+    candidate: 'BUY',
+    confidence: setup.quality_score / 100,
+    risk_reward: setup.risk_reward,
+    entry: setup.entry,
+    stop_loss: setup.stop_loss,
+    take_profit: setup.take_profit,
+    ai_environment: { status: 'FAVORABLE', confidence: 0.80 }
+  };
+
+  const risk = evaluateEurUsdRisk({
+    decision,
+    setup,
+    features: f,
+    account: {
+      equity: 100000,
+      open_positions: 1,
+      daily_pnl_pct: 0,
+      drawdown_pct: 0,
+      risk_data_ready: true,
+      trade_allowed: 1,
+      tick_size: 0.00001,
+      tick_value: 1,
+      min_lot: 0.01,
+      max_lot: 100,
+      lot_step: 0.01
+    },
+    signalCreatedAt: 1727096700000,
+    now: 1727096700000,
+    fundamentalAssessment: favorableAiAssessment(),
+    safetyContext: {
+      nowMs: 1727100301000,
+      safety: { weekend_gap_known: true, weekend_gap_atr: 0.05, oldest_position_age_seconds: 3601 },
+      newsFeed: { fetchedAtMs: 1727100000000, events: [] }
+    }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.reasons.includes('safety_maximum_hold_time_exceeded'));
+  assert.equal(risk.safety.forceClose, true);
+});
