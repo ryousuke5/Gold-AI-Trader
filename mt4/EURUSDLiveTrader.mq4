@@ -790,18 +790,29 @@ bool LocalNewOrderSafetyAllowed(string sym)
    return true;
 }
 
-bool RunServerSafetyCheck(string sym, string &response)
+bool RunServerSafetyCheck(string sym, string &response, bool &newOrdersAllowed)
 {
+   double gapPrice = 0.0;
+   double gapAtr = 0.0;
+   bool gapKnown = false;
+   datetime fridayCloseTime = 0;
+   datetime mondayOpenTime = 0;
+   WeekendGapMetrics(sym, gapPrice, gapAtr, gapKnown, fridayCloseTime, mondayOpenTime);
+
    string payload = "{";
    payload += "\"safety\":{";
    payload += "\"oldest_position_age_seconds\":" + IntegerToString(OldestManagedPositionAgeSeconds(sym)) + ",";
-   payload += "\"weekend_gap_known\":false,";
-   payload += "\"weekend_gap_price\":0,";
-   payload += "\"weekend_gap_atr\":0";
+   payload += "\"weekend_gap_known\":" + (gapKnown ? "true" : "false") + ",";
+   payload += "\"weekend_gap_price\":" + JsonNumber(gapPrice, 5) + ",";
+   payload += "\"weekend_gap_atr\":" + JsonNumber(gapAtr, 4) + ",";
+   payload += "\"gap_reference_time\":" + IntegerToString((int)mondayOpenTime);
    payload += "}}";
 
    if(!PostJson("/api/eurusd/safety-check", payload, response))
+   {
+      newOrdersAllowed = false;
       return false;
+   }
 
    if(JsonHasTrue(response, "forceClose"))
    {
@@ -809,7 +820,8 @@ bool RunServerSafetyCheck(string sym, string &response)
          return false;
    }
 
-   if(!JsonHasTrue(response, "newOrdersAllowed"))
+   newOrdersAllowed = JsonHasTrue(response, "newOrdersAllowed");
+   if(!newOrdersAllowed)
       Print("EURUSDLiveTrader: server safety blocks new orders. response=", response);
 
    return true;
@@ -959,12 +971,24 @@ void OnTimer()
    if(OldestManagedPositionAgeSeconds(sym) > MaxHoldSeconds)
       CloseManagedPositions("local_max_hold");
 
+   datetime utcNow = TimeGMT();
+   int utcDay = TimeDayOfWeek(utcNow);
+   int utcMinutes = TimeHour(utcNow) * 60 + TimeMinute(utcNow);
+   if(utcDay == 5 && utcMinutes >= (20 * 60 + 30))
+      CloseManagedPositions("local_weekend_force_close");
+
    datetime now = TimeCurrent();
    if(g_lastSafetyCheckAt == 0 || (now - g_lastSafetyCheckAt) >= SafetyCheckSeconds)
    {
       string safetyResponse = "";
-      if(!RunServerSafetyCheck(sym, safetyResponse))
+      bool serverNewOrdersAllowed = false;
+      if(!RunServerSafetyCheck(sym, safetyResponse, serverNewOrdersAllowed))
+      {
          Print("EURUSDLiveTrader: server safety check failed; order path stays fail-closed.");
+         return;
+      }
+      if(CountManagedPositions(sym) == 0 && !serverNewOrdersAllowed)
+         return;
       g_lastSafetyCheckAt = now;
    }
 
