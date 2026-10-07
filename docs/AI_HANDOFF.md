@@ -5,7 +5,7 @@
 Date: 2026-10-08
 Repository: ryousuke5/Gold-AI-Trader
 Branch: main
-Latest code commit: 9d68d58bcac586b1aaa62beaff3f36adbd611a03
+Latest code commit: b1db5f48e74fb1e06479be6edea6da796dbfab40
 
 Real orders remain disabled.
 
@@ -210,6 +210,19 @@ A defensive causal constraint was added to src/eurusd_session_range_core_v1.js:
 - retest-touch scanning is explicitly bounded to maxRetestBars
 - retest touches must occur before the current confirmation bar
 
-A regression test was added in tests/eurusd_session_range_core_v1.test.js, and the repository test job passed on commit 9d68d58.
+A regression test was added in tests/eurusd_session_range_core_v1.test.js, and the repository test job passed.
 
-This correction is intentionally treated as a validation gate: do not rely on any policy-filter performance result generated before commit 9d68d58.
+Corrected Session Core replay after this change:
+- baseline 1.50R: 51 trades, PF 0.544, expectancy -0.336R, net -17.12R, max DD 22.78R
+- recent 730d: 13 trades, PF 1.677, expectancy +0.317R, net +4.13R
+- baseline 1.80R and other variants also completed successfully on the corrected code
+
+This confirms the session core remains regime-dependent and is not promotion-ready.
+
+Policy replay integrity hardening:
+- the replay now checks that a configured policy-mask file exists and contains valid rows
+- CI explicitly requires the policy mask
+- runtime diagnostics report the configured path and loaded row count
+- a configured policy replay with zero evaluated policy candidates now fails instead of producing a false successful result
+
+Do not rely on any policy-filter performance result generated before these integrity checks.
