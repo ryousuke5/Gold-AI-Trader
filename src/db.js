@@ -38,7 +38,7 @@ export async function insertEurUsdForwardTrade(row){
     side: row.side,
     requested_price: row.entry,
     filled_price: row.entry,
-    volume: Number(row.account_snapshot?.calculated_lots || 0) || null,
+    volume: Number(row.metadata?.calculated_lots || 0) || null,
     stop_loss: row.stop_loss,
     take_profit: row.take_profit,
     status: 'FORWARD_OPEN',
@@ -69,13 +69,8 @@ function mapForwardOrder(row){
   const rawStatus = String(row?.status || '');
   const status = rawStatus === 'FORWARD_OPEN'
     ? 'OPEN'
-    : String(result.status || '').toUpperCase() || (
-        rawStatus === 'FORWARD_WIN' ? 'WIN'
-        : rawStatus === 'FORWARD_LOSS' ? 'LOSS'
-        : rawStatus === 'FORWARD_BREAKEVEN' ? 'BREAKEVEN'
-        : rawStatus === 'FORWARD_EXPIRED' ? 'EXPIRED'
-        : 'OPEN'
-      );
+    : String(result.status || '').toUpperCase() || 'OPEN';
+
   return {
     id: row.id,
     signal_id: row.signal_id,
@@ -83,7 +78,7 @@ function mapForwardOrder(row){
     symbol: row.symbol,
     timeframe: 'M15',
     side: row.side,
-    entry: Number(row.filled_price ?? row.requested_price ?? 0),
+    entry: Number(row.requested_price ?? 0),
     stop_loss: Number(row.stop_loss ?? 0),
     take_profit: Number(row.take_profit ?? 0),
     risk_reward: Number(forward.risk_reward ?? 0),
@@ -120,17 +115,30 @@ export async function listEurUsdForwardTrades({limit=5000}={}){
 
 export async function updateEurUsdForwardTrade(id,row){
   if(!supabase)return{row:{id,...row},persisted:false};
+
   const statusMap = {
     WIN: 'FORWARD_WIN',
     LOSS: 'FORWARD_LOSS',
     BREAKEVEN: 'FORWARD_BREAKEVEN',
     EXPIRED: 'FORWARD_EXPIRED'
   };
+  const normalizedStatus = String(row.status || '').toUpperCase();
+  const orderStatus = statusMap[normalizedStatus] || 'FORWARD_OPEN';
+
+  const existing = await supabase.from('gold_orders')
+    .select('metadata')
+    .eq('id',id)
+    .single();
+  if(existing.error)throw existing.error;
+
+  const existingMetadata = existing.data?.metadata || {};
   const metadata = {
-    ...(row.metadata || {}),
+    ...existingMetadata,
+    mode: 'FORWARD_PAPER',
     forward: {
+      ...(existingMetadata.forward || {}),
       result: {
-        status: row.status,
+        status: normalizedStatus,
         exit_price: row.exit_price ?? null,
         exit_at: row.exit_at ?? null,
         exit_bar_time: row.exit_bar_time ?? null,
@@ -140,12 +148,33 @@ export async function updateEurUsdForwardTrade(id,row){
       }
     }
   };
-  const orderStatus = statusMap[String(row.status || '').toUpperCase()] || 'FORWARD_OPEN';
+
   const{data,error}=await supabase.from('gold_orders').update({
     status: orderStatus,
-    filled_price: row.exit_price ?? undefined,
     metadata
   }).eq('id',id).select().single();
   if(error)throw error;
+
+  if(['WIN','LOSS','BREAKEVEN','EXPIRED'].includes(normalizedStatus)){
+    const result = Number(row.r_multiple || 0) > 0 ? 'WIN'
+      : Number(row.r_multiple || 0) < 0 ? 'LOSS'
+      : 'BREAKEVEN';
+
+    const tradeResult = await supabase.from('gold_trade_results').upsert({
+      order_id: id,
+      idempotency_key: 'FORWARD-RESULT-' + String(id),
+      mt4_ticket: null,
+      symbol: 'EURUSD',
+      result,
+      profit: null,
+      r_multiple: Number(row.r_multiple || 0),
+      holding_seconds: Math.round(Number(row.holding_seconds || 0)),
+      exit_reason: row.exit_reason || null,
+      metadata: { mode: 'FORWARD_PAPER', forward_status: normalizedStatus },
+      created_at: row.exit_at || new Date().toISOString()
+    },{onConflict:'idempotency_key'}).select().single();
+    if(tradeResult.error)throw tradeResult.error;
+  }
+
   return{row:mapForwardOrder(data),persisted:true};
 }
