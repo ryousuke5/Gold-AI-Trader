@@ -59,7 +59,7 @@ test('fails closed when Monday gap data is missing', () => {
 
 test('blocks high-impact EUR event before release and after release', () => {
   const event = { name: 'ECB Rate Decision', currency: 'EUR', impact: 'HIGH', scheduled_at: '2026-10-08T13:15:00Z' };
-  const feed = { fetchedAtMs: ts('2026-10-08T12:00:00Z'), events: [event] };
+  const feed = { fetchedAtMs: ts('2026-10-08T13:30:00Z'), events: [event] };
 
   const before = evaluateEurUsdSafety({
     nowMs: ts('2026-10-08T12:30:00Z'),
