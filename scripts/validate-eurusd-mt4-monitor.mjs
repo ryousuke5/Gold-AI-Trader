@@ -17,7 +17,7 @@ const requiredTokens = [
   'X-Gold-API-Key',
   'WeekendGapMetrics',
   'OldestOpenPositionAgeSeconds',
-  '"safety":{',
+  'json += "\\"safety\\":{"',
   'weekend_gap_atr',
   'oldest_position_age_seconds'
 ];
