@@ -1,6 +1,6 @@
 #property strict
-#property version   "1.0"
-#property description "EURUSD M15 AI monitor. Sends completed-bar data to Render. No order execution."
+#property version   "1.1"
+#property description "EURUSD M15 safety telemetry monitor. Sends completed-bar and gap/hold data to Render. No order execution."
 
 input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
 input string ApiKey = "CHANGE_ME";
