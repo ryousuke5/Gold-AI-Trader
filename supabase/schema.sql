@@ -83,6 +83,45 @@ create table if not exists public.gold_trade_results (
   created_at timestamptz not null default now()
 );
 
+CREATE TABLE IF NOT EXISTS public.gold_eurusd_forward_trades (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  signal_id uuid NOT NULL REFERENCES public.gold_ai_signals(id),
+  strategy_version text NOT NULL,
+  symbol text NOT NULL CHECK (symbol = 'EURUSD'),
+  timeframe text NOT NULL CHECK (timeframe = 'M15'),
+  side text NOT NULL CHECK (side IN ('BUY','SELL')),
+  entry numeric NOT NULL,
+  stop_loss numeric NOT NULL,
+  take_profit numeric NOT NULL,
+  risk_reward numeric NOT NULL,
+  risk_distance numeric NOT NULL,
+  opened_at timestamptz NOT NULL,
+  opened_bar_time timestamptz NOT NULL,
+  status text NOT NULL CHECK (status IN ('OPEN','WIN','LOSS','BREAKEVEN','EXPIRED')),
+  exit_price numeric,
+  exit_at timestamptz,
+  exit_bar_time timestamptz,
+  exit_reason text,
+  r_multiple numeric,
+  holding_seconds bigint,
+  safety_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb,
+  account_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT gold_eurusd_forward_trades_signal_unique UNIQUE (signal_id)
+);
+
+CREATE INDEX IF NOT EXISTS gold_eurusd_forward_trades_open_idx
+  ON public.gold_eurusd_forward_trades(status, opened_at);
+
+CREATE INDEX IF NOT EXISTS gold_eurusd_forward_trades_opened_at_idx
+  ON public.gold_eurusd_forward_trades(opened_at DESC);
+
+ALTER TABLE public.gold_eurusd_forward_trades ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE public.gold_eurusd_forward_trades FROM anon, authenticated, public;
+GRANT ALL ON TABLE public.gold_eurusd_forward_trades TO service_role;
+
 create table if not exists public.gold_system_events (
   id uuid primary key default gen_random_uuid(),
   level text not null,
