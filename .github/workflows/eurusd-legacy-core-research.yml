@@ -26,13 +26,13 @@ jobs:
       - run: npm install --no-audit --no-fund
       - name: Prepare shared EURUSD M15 dataset
         env:
-          CORE_V4_LOOKBACK_DAYS: '1825'
+          CORE_V4_LOOKBACK_DAYS: '3650'
           CORE_V4_PREPARED_DATA: 'eurusd-legacy-core-data/eurusd-m15.json.gz'
         run: node scripts/prepare-eurusd-core-v4-data.mjs
       - name: Upload shared dataset
         uses: actions/upload-artifact@v4
         with:
-          name: eurusd-legacy-core-data-1825d
+          name: eurusd-legacy-core-data-3650d
           path: eurusd-legacy-core-data/eurusd-m15.json.gz
           retention-days: 7
   research:
@@ -91,7 +91,7 @@ jobs:
       - name: Download shared dataset
         uses: actions/download-artifact@v4
         with:
-          name: eurusd-legacy-core-data-1825d
+          name: eurusd-legacy-core-data-3650d
           path: eurusd-legacy-core-data
       - name: Run legacy core five-year backtest
         env:
