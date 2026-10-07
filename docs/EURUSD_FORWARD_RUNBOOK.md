@@ -123,4 +123,4 @@ Operational confirmation:
 - Render service Gold-AI-Trader-1 is Live.
 - Latest deployment contains commit f6de938cfc40960e6d5c79695a7d022e800475ab.
 - No Render application errors were observed immediately after the deployment.
-- Forward status remains unverified until MT4 submits the first authenticated M15 request.
+- EURUSDAIMonitor v1.2 performs a startup /health connectivity probe and immediately attempts the current completed M15 bar after a successful probe.\n- Forward status remains unverified until MT4 submits the first authenticated M15 request.
