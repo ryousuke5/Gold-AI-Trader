@@ -3,10 +3,13 @@ const n = (v, fallback = 0) => {
   return Number.isFinite(x) ? x : fallback;
 };
 
+const MAX_TRADABLE_GAP_SECONDS = 4200;
+
 function contiguous(bars) {
   if (!Array.isArray(bars) || bars.length < 2) return false;
   for (let i = 1; i < bars.length; i += 1) {
-    if (bars[i].time - bars[i - 1].time !== 300) return false;
+    const gap = bars[i].time - bars[i - 1].time;
+    if (!(gap === 300 || (gap > 300 && gap <= MAX_TRADABLE_GAP_SECONDS))) return false;
   }
   return true;
 }
