@@ -21,7 +21,7 @@ function barCloseMs(features) {
   return time > 0 ? time * 1000 + 900000 : Date.now();
 }
 
-function settlementR(side, entry, stopLoss, exitPrice) {
+export function settlementR(side, entry, stopLoss, exitPrice) {
   const risk = Math.abs(entry - stopLoss);
   if (!(risk > 0)) return 0;
   return side === 'BUY'
@@ -29,7 +29,7 @@ function settlementR(side, entry, stopLoss, exitPrice) {
     : (entry - exitPrice) / risk;
 }
 
-function chooseBarExit(trade, bar) {
+export function chooseBarExit(trade, bar) {
   const side = String(trade.side).toUpperCase();
   const high = Number(bar.high);
   const low = Number(bar.low);
