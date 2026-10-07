@@ -10,6 +10,7 @@ import {
   buildEurUsdFundamentalDecision
 } from './eurusd_ai.js';
 import { evaluateEurUsdRisk, getEurUsdRiskLimits } from './eurusd_risk.js';
+import { startEurUsdNewsFeedMonitor, getEurUsdNewsFeedState } from './eurusd_news_feed.js';
 import {
   getRiskBySignal,
   getSignalByKey,
@@ -118,6 +119,39 @@ function executionEnabled() {
   return String(process.env.EURUSD_EXECUTION_ENABLED || 'false').toLowerCase() === 'true';
 }
 
+function aiEnvironmentEnabled() {
+  return String(process.env.EURUSD_AI_ENABLED || 'false').toLowerCase() === 'true';
+}
+
+function buildTechnicalOnlyDecision(setup) {
+  const candidate = String(setup?.candidate || 'WAIT').toUpperCase();
+  if (!['BUY', 'SELL'].includes(candidate)) {
+    return buildDecision(setup, emptyFundamental('AI environment filter disabled and technical setup was WAIT.'), null);
+  }
+
+  const confidence = Math.min(1, Math.max(0, Number(setup?.quality_score || 100) / 100));
+  return {
+    decision: candidate,
+    candidate,
+    confidence,
+    market_regime: setup?.trend === 'UP' ? 'TREND_UP' : setup?.trend === 'DOWN' ? 'TREND_DOWN' : 'RANGE',
+    entry: Number(setup.entry),
+    stop_loss: Number(setup.stop_loss),
+    take_profit: Number(setup.take_profit),
+    risk_reward: Number(setup.risk_reward),
+    reason: 'technical_setup_confirmed_ai_disabled',
+    invalid_reasons: [],
+    ai_environment: {
+      status: 'DISABLED',
+      confidence: 1,
+      freshness: 'CURRENT',
+      event_risk_next_24h: 'UNKNOWN',
+      event_summary: 'AI environment filter disabled.'
+    },
+    fundamental: emptyFundamental('AI environment filter disabled.')
+  };
+}
+
 export function eurUsdLiveTradingApproved() {
   return String(process.env.EURUSD_LIVE_TRADING_APPROVED || 'false').toLowerCase() === 'true';
 }
@@ -131,6 +165,7 @@ function executionGate() {
 }
 
 export function registerEurUsdRoutes(app) {
+  startEurUsdNewsFeedMonitor();
   app.post('/api/eurusd/ai-test', auth, async (req, res) => {
     const requestId = String(req.headers['x-request-id'] || crypto.randomUUID());
     try {
@@ -241,6 +276,8 @@ export function registerEurUsdRoutes(app) {
       let decision;
       if (setup.candidate === 'WAIT') {
         decision = buildDecision(setup, emptyFundamental('AI fundamental search skipped because M15 setup was WAIT.'), null);
+      } else if (!aiEnvironmentEnabled()) {
+        decision = buildTechnicalOnlyDecision(setup);
       } else {
         fundamental = await analyzeEurUsdFundamental({
           features,
@@ -260,7 +297,12 @@ export function registerEurUsdRoutes(app) {
         account,
         signalCreatedAt,
         now: Date.now(),
-        fundamentalAssessment: fundamental?.assessment || null
+        fundamentalAssessment: fundamental?.assessment || null,
+        safetyContext: {
+          nowMs: Date.now(),
+          safety: features.safety || {},
+          newsFeed: getEurUsdNewsFeedState()
+        }
       });
 
       const signalRow = {
@@ -361,6 +403,8 @@ export function registerEurUsdRoutes(app) {
         execution_enabled: executionEnabled(),
         live_trading_approved: eurUsdLiveTradingApproved(),
         execution_gate: gate,
+        ai_environment_enabled: aiEnvironmentEnabled(),
+        safety: risk.safety,
         persisted: true,
         orders_executed: false
       });
