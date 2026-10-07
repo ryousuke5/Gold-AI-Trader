@@ -9,6 +9,7 @@ const requiredTokens = [
   'OrderSend(',
   'OrderClose(',
   'RunServerSafetyCheck',
+  'WeekendGapMetrics',
   'LocalNewOrderSafetyAllowed',
   'OldestManagedPositionAgeSeconds',
   '/api/eurusd/signal',
@@ -16,6 +17,7 @@ const requiredTokens = [
   '/api/eurusd/execution-result',
   'order_allowed',
   'server_safety_force_close',
+  'local_weekend_force_close',
   'execution_price_deviation',
   'MagicNumber'
 ];
