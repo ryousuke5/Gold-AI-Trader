@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { buildEurUsdTechnicalCoreV4 } from '../src/eurusd_technical_core_v4.js';
 import { normalizeEurUsdFeatures } from '../src/eurusd_features.js';
 
@@ -146,7 +147,29 @@ function features(m15, i, h1, h1i) {
   });
 }
 
+async function loadPreparedBars(file) {
+  const raw = await fs.readFile(path.resolve(file));
+  const text = file.endsWith('.gz') ? gunzipSync(raw).toString('utf8') : raw.toString('utf8');
+  const rows = JSON.parse(text);
+  if (!Array.isArray(rows)) throw new Error('Prepared EURUSD data must be an array');
+  const now = Date.now();
+  return rows.map((b) => ({
+    time: Number(b.time),
+    open: Number(b.open),
+    high: Number(b.high),
+    low: Number(b.low),
+    close: Number(b.close),
+    volume: Number(b.volume) || 0
+  })).filter((b) =>
+    Number.isFinite(b.time) && b.open > 0 &&
+    b.high >= b.low && b.high >= b.open && b.high >= b.close &&
+    b.low <= b.open && b.low <= b.close &&
+    (b.time + 900) * 1000 <= now
+  ).sort((a, b) => a.time - b.time);
+}
+
 async function fetchBars() {
+  if (process.env.CORE_V4_DATA_FILE) return loadPreparedBars(process.env.CORE_V4_DATA_FILE);
   const mod = await import('dukascopy-node');
   const get = mod.getHistoricalRates || mod.default?.getHistoricalRates;
   if (typeof get !== 'function') throw new Error('dukascopy-node getHistoricalRates export missing');
