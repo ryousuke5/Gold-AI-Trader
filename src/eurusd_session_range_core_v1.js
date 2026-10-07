@@ -177,9 +177,8 @@ export function buildEurUsdSessionRangeCore(features = {}, config = {}) {
     };
   }
 
-  const relevantRetests = m15.slice(m15.length - cfg.maxRetestBars, confirmationIndex + 1).filter(Boolean);
-  const retestLow = Math.min(...(relevantRetests.length ? relevantRetests : retestBars).map((b) => b.low));
-  const retestHigh = Math.max(...(relevantRetests.length ? relevantRetests : retestBars).map((b) => b.high));
+  const retestLow = Math.min(...retestBars.map((b) => b.low));
+  const retestHigh = Math.max(...retestBars.map((b) => b.high));
 
   const ref = m15[confirmationIndex];
   const stop = side === 'BUY'
