@@ -14,7 +14,12 @@ const requiredTokens = [
   'bar_time',
   'recent_m15',
   'recent_h1',
-  'X-Gold-API-Key'
+  'X-Gold-API-Key',
+  'WeekendGapMetrics',
+  'OldestOpenPositionAgeSeconds',
+  '"safety":{',
+  'weekend_gap_atr',
+  'oldest_position_age_seconds'
 ];
 
 for (const token of requiredTokens) {
@@ -140,3 +145,13 @@ for (const signature of functions) {
 console.log('MQL4 EURUSD monitor static validation: PASS');
 console.log('Order execution API scan: PASS');
 console.log('Bracket/string structure scan: PASS');
+
+const accountObjectCount = (source.match(/json \+= "\\"account\\":\{/g) || []).length;
+if (accountObjectCount !== 1) {
+  throw new Error('Expected exactly one account JSON object, found: ' + accountObjectCount);
+}
+
+const safetyObjectCount = (source.match(/json \+= "\\"safety\\":\{/g) || []).length;
+if (safetyObjectCount !== 1) {
+  throw new Error('Expected exactly one safety JSON object, found: ' + safetyObjectCount);
+}
