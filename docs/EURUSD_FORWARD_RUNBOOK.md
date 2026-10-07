@@ -97,3 +97,30 @@ POST /api/eurusd/safety-check performs a current fail-closed safety evaluation u
 Missing/stale news feed, invalid event payload, missing weekend-gap telemetry during the configured Monday window, or failed server safety checks must not create a new forward trade.
 
 No real order should be executed in this stage.
+
+
+## MT4 connection setup — 2026-10-08
+
+Active Render service:
+- URL: https://gold-ai-trader-1.onrender.com
+
+For the AI-free forward stage, attach EURUSDAIMonitor.mq4 to an EURUSD M15 chart.
+
+Required MT4 inputs:
+- ApiBaseUrl = https://gold-ai-trader-1.onrender.com
+- ApiKey = the same GOLD_API_KEY configured on Render
+- EnableSignalRequests = true
+- TimerSeconds = 5
+
+The monitor submits one completed M15 bar per bar key and does not execute orders.
+
+Do not enable the live executor for this stage. EURUSDLiveTrader.mq4 is retained for a later DEMO/live phase and its AllowAutoOrders default remains false.
+
+MT4 must also allow WebRequest to:
+- https://gold-ai-trader-1.onrender.com
+
+Operational confirmation:
+- Render service Gold-AI-Trader-1 is Live.
+- Latest deployment contains commit f6de938cfc40960e6d5c79695a7d022e800475ab.
+- No Render application errors were observed immediately after the deployment.
+- Forward status remains unverified until MT4 submits the first authenticated M15 request.
