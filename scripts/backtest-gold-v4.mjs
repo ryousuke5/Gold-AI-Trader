@@ -423,6 +423,8 @@ async function runScenario(indM5, indH1, costs, periodEnd) {
   const latest = indM5.at(-1).time;
   const start = latest - CONFIG.lookbackDays * 86400;
   const warmup = Math.max(300, CONFIG.rangeLookback + CONFIG.maxRetestBars + 10);
+  const firstEligibleIndex = indM5.findIndex((bar) => bar.time >= start);
+  const loopStart = firstEligibleIndex >= 0 ? Math.max(warmup, firstEligibleIndex) : indM5.length;
   let equity = CONFIG.initialEquity;
   const trades = [];
   const state = { day: null, dayStartEquity: equity, peak: equity };
@@ -438,10 +440,11 @@ async function runScenario(indM5, indH1, costs, periodEnd) {
     setup_wait_reasons: {}
   };
   let nextAvailable = 0;
+  let loop_iterations = 0;
 
-  for (let i = warmup; i < indM5.length - 1; i += 1) {
+  for (let i = loopStart; i < indM5.length - 1; i += 1) {
+    loop_iterations += 1;
     const signal = indM5[i];
-    if (signal.time < start) continue;
     diagnostic.signals_evaluated += 1;
     if (i < nextAvailable) continue;
 
@@ -500,6 +503,26 @@ async function runScenario(indM5, indH1, costs, periodEnd) {
     nextAvailable = exitIndex >= 0 ? Math.min(indM5.length, exitIndex + 1) : i + 2;
   }
 
+  diagnostic.loop_iterations = loop_iterations;
+  diagnostic.loop_start_index = loopStart;
+  diagnostic.first_eligible_index = firstEligibleIndex;
+  diagnostic.lookback_bars = Math.max(0, indM5.length - loopStart);
+  diagnostic.lookback_start_utc = new Date(Math.max(start, indM5[0].time) * 1000).toISOString();
+  diagnostic.lookback_end_utc = new Date(indM5.at(-1).time * 1000).toISOString();
+
+  if (diagnostic.loop_iterations <= 0 || diagnostic.signals_evaluated <= 0) {
+    throw new Error(JSON.stringify({
+      code: 'V4_NO_SIGNAL_EVALUATION',
+      latest: indM5.at(-1)?.time ?? null,
+      start,
+      warmup,
+      firstEligibleIndex,
+      loopStart,
+      bars: indM5.length,
+      lookbackDays: CONFIG.lookbackDays
+    }));
+  }
+
   const summary = summarize(trades, CONFIG.initialEquity);
   const recent365 = periodSummary(trades, CONFIG.initialEquity, 365, periodEnd);
   const annual = annualSummary(trades);
@@ -516,6 +539,15 @@ async function main() {
   const indH1 = addIndicators(aggregateH1(raw));
   const latest = indM5.at(-1).time;
   const periodEnd = latest + 300;
+
+  console.log(JSON.stringify({
+    version: 'GOLD_V4',
+    sanity: 'data_loaded',
+    bars: indM5.length,
+    first_utc: new Date(indM5[0].time * 1000).toISOString(),
+    last_utc: new Date(indM5.at(-1).time * 1000).toISOString(),
+    lookback_days: CONFIG.lookbackDays
+  }));
 
   const results = {};
   for (const [name, costs] of Object.entries(COSTS)) {
