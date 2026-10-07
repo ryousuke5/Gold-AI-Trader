@@ -208,7 +208,7 @@ function simulate(bars, index, setup) {
     : (entry - exitPrice) / stopDistance;
 
   return {
-    signal_time: new Date(bars[index].time * 1000).toISOString(),
+    signal_time: new Date((bars[index].time + 900) * 1000).toISOString(),
     entry_time: new Date(next.time * 1000).toISOString(),
     exit_time: new Date(bars[exitIndex].time * 1000).toISOString(),
     side,
@@ -235,7 +235,7 @@ async function main() {
     if (i < nextAvailable) continue;
     const signal = m15[i];
     if (![signal.ema20, signal.ema50, signal.atr14].every(Number.isFinite)) continue;
-    const h1Index = latestH1Index(h1, signal.time);
+    const h1Index = latestH1Index(h1, signal.time + 900);
     const h = h1[h1Index];
     if (!h || ![h.close, h.ema20, h.ema50, h.ema200].every(Number.isFinite)) continue;
 
@@ -244,10 +244,10 @@ async function main() {
       bid: signal.close - (C.spread * 0.0001) / 2,
       ask: signal.close + (C.spread * 0.0001) / 2,
       spread: C.spread * 0.0001,
-      barTime: signal.time,
+      barTime: signal.time + 900,
       m15: { atr14: signal.atr14 },
       h1: { close: h.close, ema20: h.ema20, ema50: h.ema50, ema200: h.ema200 },
-      recentM15: m15.slice(Math.max(0, i - 79), i + 1).map((b) => ({ ...b, time: b.time })),
+      recentM15: m15.slice(Math.max(0, i - 79), i + 1).map((b) => ({ ...b, time: b.time + 900 })),
     };
 
     const setup = buildEurUsdSessionRangeCore(feature, {
