@@ -27,9 +27,9 @@ const requiredTokens = [
 
 for (const { file, source } of sources) {
   for (const token of requiredTokens) {
-  if (!source.includes(token)) {
-    throw new Error('Missing required token: ' + token);
-  }
+    if (!source.includes(token)) {
+      throw new Error(file + ': Missing required token: ' + token);
+    }
   }
 }
 
