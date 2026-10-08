@@ -16,6 +16,8 @@ button{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
 .item{display:flex;gap:7px;align-items:center}.dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}.dot.good{background:var(--good)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;min-width:0}.card h2{margin:0;font-size:20px}.meta{color:var(--muted);font-size:12px;margin-top:2px}
 .headrow{display:flex;justify-content:space-between;gap:12px;align-items:start}.chip{border:1px solid var(--line);padding:4px 8px;border-radius:999px;font-size:12px;white-space:nowrap}.chip.good{color:var(--good);border-color:#2f7150}.chip.warn{color:var(--warn);border-color:#80662b}.chip.bad{color:var(--bad);border-color:#7e3b3b}
+.enginebox{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:8px}.engineitem{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}.engineitem .k{color:var(--muted);font-size:11px}.engineitem .v{font-size:17px;font-weight:800;margin-top:2px}.engineitem .detail{font-size:11px;color:var(--muted);margin-top:3px}.engine-on{color:var(--good)}.execution-off{color:var(--good)}.execution-on{color:var(--bad)}
+@media(max-width:600px){.enginebox{grid-template-columns:1fr}}
 .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}.metric{background:var(--panel2);border-radius:10px;padding:11px}.metric .k{color:var(--muted);font-size:11px}.metric .v{font-size:19px;font-weight:700;margin-top:2px}
 .section{margin-top:16px}.section h3{margin:0 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .bars{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.bar{background:var(--panel2);border-radius:9px;padding:10px}.bar .k{font-size:11px;color:var(--muted)}.bar .v{font-size:20px;font-weight:700}
@@ -88,6 +90,14 @@ const pct=v=>Number.isFinite(Number(v))?Number(v).toFixed(1)+'%':'—';
 const cls=v=>String(v).toUpperCase()==='BUY'?'buy':String(v).toUpperCase()==='SELL'?'sell':'wait';
 function setDot(id,state){const e=document.getElementById(id);e.className='dot '+(state?'good':'bad');}
 function chip(text,state='good'){return '<span class="chip '+state+'">'+text+'</span>';}
+function engineStatus(engine,liveGate){
+  const running=engine?.enabled===true&&String(engine?.status||'').toUpperCase()==='RUNNING';
+  const executionOn=liveGate===true;
+  return '<div class="enginebox">'+
+    '<div class="engineitem"><div class="k">判定エンジン</div><div class="v '+(running?'engine-on':'execution-on')+'">'+(running?'稼働中':'停止')+'</div><div class="detail">BUY / SELL / WAIT の判定処理</div></div>'+
+    '<div class="engineitem"><div class="k">実売買</div><div class="v '+(executionOn?'execution-on':'execution-off')+'">'+(executionOn?'ON':'OFF')+'</div><div class="detail">'+(executionOn?'実注文を許可':'実注文は停止中。Forward/Paperのみ')+'</div></div>'+
+  '</div>';
+}
 function tradeRows(rows){
   return (rows||[]).map(t=>'<tr><td>'+fmtTime(t.opened_at)+'</td><td class="'+cls(t.side)+'">'+esc(t.side)+'</td><td class="num">'+fmt(t.entry)+'</td><td class="num">'+fmt(t.stop_loss)+'</td><td class="num">'+fmt(t.take_profit)+'</td><td>'+esc(t.status)+'</td><td class="num">'+(t.r_multiple==null?'—':Number(t.r_multiple).toFixed(2))+'</td><td>'+fmtTime(t.exit_at)+'</td></tr>').join('')||'<tr><td colspan="8">データなし</td></tr>';
 }
@@ -98,11 +108,11 @@ function signalRows(eu,gold){
   const rows=[...(eu.latest_signals||[]),...(gold.latest_signals||[])].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at)).slice(0,50);
   return rows.map(s=>'<tr><td>'+fmtTime(s.created_at)+'</td><td>'+esc(s.symbol)+'</td><td class="'+cls(s.candidate)+'">'+esc(s.candidate)+'</td><td class="'+cls(s.decision)+'">'+esc(s.decision)+'</td><td class="num">'+(Number(s.confidence)*100).toFixed(0)+'%</td><td>'+esc(s.market_regime||'—')+'</td><td>'+ (s.openai_response_id?'ON':'OFF')+'</td><td>'+esc(s.strategy_version||'—')+'</td></tr>').join('')||'<tr><td colspan="8">データなし</td></tr>';
 }
-function cardMarket(title,meta,signals,extra){
+function cardMarket(title,meta,signals,extra,engine,liveGate){
   const c=signals.candidate_counts_all_time||{BUY:0,SELL:0,WAIT:0};
   const latest=signals.latest_signals?.[0];
   return '<div class="card"><div class="headrow"><div><h2>'+title+'</h2><div class="meta">'+meta+'</div></div>'+chip(latest?(latest.decision||'WAIT'):'NO SIGNAL',latest?.decision==='BUY'?'good':latest?.decision==='SELL'?'bad':'warn')+'</div>'+
-  '<div class="metrics"><div class="metric"><div class="k">総シグナル</div><div class="v num">'+fmt(signals.total_signals)+'</div></div><div class="metric"><div class="k">最新候補</div><div class="v">'+esc(latest?.candidate||'—')+'</div></div><div class="metric"><div class="k">最新判定</div><div class="v">'+esc(latest?.decision||'—')+'</div></div><div class="metric"><div class="k">最終シグナル</div><div class="v" style="font-size:13px">'+fmtTime(signals.latest_signal_at)+'</div></div></div>'+
+  engineStatus(engine,liveGate)+'<div class="metrics"><div class="metric"><div class="k">総シグナル</div><div class="v num">'+fmt(signals.total_signals)+'</div></div><div class="metric"><div class="k">最新候補</div><div class="v">'+esc(latest?.candidate||'—')+'</div></div><div class="metric"><div class="k">最新判定</div><div class="v">'+esc(latest?.decision||'—')+'</div></div><div class="metric"><div class="k">最終シグナル</div><div class="v" style="font-size:13px">'+fmtTime(signals.latest_signal_at)+'</div></div></div>'+
   '<div class="section"><h3>Candidate 全期間</h3><div class="bars"><div class="bar"><div class="k">BUY</div><div class="v buy">'+fmt(c.BUY)+'</div></div><div class="bar"><div class="k">SELL</div><div class="v sell">'+fmt(c.SELL)+'</div></div><div class="bar"><div class="k">WAIT</div><div class="v wait">'+fmt(c.WAIT)+'</div></div></div></div>'+extra+'</div>';
 }
 function render(data){
