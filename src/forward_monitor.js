@@ -45,6 +45,58 @@ export function summarizeSignalRows(rows = []) {
   };
 }
 
+export function summarizeGoldFilterFunnel(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const orderedReasons = [
+    ['session_filter', '取引時間'],
+    ['h1_trend_filter', 'H1トレンド'],
+    ['insufficient_or_noncontiguous_range', 'M5レンジ連続性'],
+    ['compression_filter', 'レンジ圧縮'],
+    ['impulse_body_filter', 'ブレイク足実体'],
+    ['volume_expansion_filter', '出来高拡大'],
+    ['breakout_trigger_filter', 'ブレイク幅'],
+    ['close_location_filter', '終値位置'],
+    ['m5_rsi_filter', 'M5 RSI'],
+    ['m5_ema_alignment_filter', 'M5 EMA整合'],
+    ['extension_filter', '過伸展'],
+    ['stop_distance_filter', 'SL距離'],
+    ['trend_compression_breakout_confirmed', '候補成立']
+  ];
+  const reasonCounts = {};
+  let recognized = 0;
+  for (const row of list) {
+    const reason = String(row?.reason || '').trim();
+    if (orderedReasons.some(([key]) => key === reason)) {
+      reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+      recognized += 1;
+    }
+  }
+
+  let reached = recognized;
+  const stages = [];
+  for (const [reason, label] of orderedReasons) {
+    const failed = reason === 'trend_compression_breakout_confirmed' ? 0 : Number(reasonCounts[reason] || 0);
+    const passed = Math.max(0, reached - failed);
+    stages.push({
+      reason,
+      label,
+      reached,
+      failed,
+      passed,
+      pass_rate_pct: reached > 0 ? passed / reached * 100 : null
+    });
+    reached = passed;
+  }
+
+  return {
+    sampled_rows: list.length,
+    recognized_rows: recognized,
+    unclassified_rows: Math.max(0, list.length - recognized),
+    coverage_pct: list.length ? recognized / list.length * 100 : 0,
+    stages
+  };
+}
+
 export function summarizeTradeResultRows(rows = []) {
   const list = Array.isArray(rows) ? rows : [];
   const wins = list.filter(row => finiteNumber(row?.r_multiple) > 0);
@@ -81,10 +133,14 @@ async function summarizeSignalSource({
     listRecentSignals({ symbols: values, timeframe, strategyVersion, limit: recentLimit })
   ]);
   const sampled = summarizeSignalRows(latestSignals);
+  const filterFunnel = symbols?.length && values.some(value => GOLD_SYMBOLS.includes(value))
+    ? summarizeGoldFilterFunnel(latestSignals)
+    : null;
   return {
     total_signals: total,
     candidate_counts_all_time: { BUY: buy, SELL: sell, WAIT: wait },
     recent: sampled,
+    filter_funnel: filterFunnel,
     latest_signals: latestSignals
   };
 }
@@ -100,13 +156,13 @@ export async function buildForwardMonitorSnapshot(nowMs = Date.now()) {
       symbol: 'EURUSD',
       timeframe: 'M15',
       strategyVersion: eurStrategy,
-      recentLimit: 40
+      recentLimit: 200
     }),
     summarizeSignalSource({
       symbols: GOLD_SYMBOLS,
       timeframe: 'M5',
       strategyVersion: goldStrategy,
-      recentLimit: 40
+      recentLimit: 200
     }),
     listTradeResults({ symbols: GOLD_SYMBOLS, limit: 500 })
   ]);
