@@ -104,7 +104,7 @@ No real order should be executed in this stage.
 Active Render service:
 - URL: https://gold-ai-trader-1.onrender.com
 
-For the AI-free forward stage, attach EURUSDAIMonitor.mq4 to an EURUSD M15 chart.
+For the AI-free forward stage, attach the uniquely named EURUSDAIMonitorV12.mq4 to an EURUSD M15 chart. This avoids accidentally loading an older compiled EURUSDAIMonitor.ex4.
 
 Required MT4 inputs:
 - ApiBaseUrl = https://gold-ai-trader-1.onrender.com
@@ -123,4 +123,4 @@ Operational confirmation:
 - Render service Gold-AI-Trader-1 is Live.
 - Latest deployment contains commit f6de938cfc40960e6d5c79695a7d022e800475ab.
 - No Render application errors were observed immediately after the deployment.
-- EURUSDAIMonitor v1.2 performs a startup /health connectivity probe and immediately attempts the current completed M15 bar after a successful probe.\n- Forward status remains unverified until MT4 submits the first authenticated M15 request.
+- Forward status remains unverified until MT4 submits the first authenticated M15 request.
