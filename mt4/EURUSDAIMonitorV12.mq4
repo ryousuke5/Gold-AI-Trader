@@ -722,7 +722,7 @@ bool SendCurrentBar(bool bypassRetryWindow)
    }
 
    datetime maxRetryUntil =
-      currentClosedBarOpen + MaxRetryMinutes * 60;
+      currentClosedBarOpen + 900 + MaxRetryMinutes * 60;
 
    if(!bypassRetryWindow && TimeCurrent() > maxRetryUntil)
    {
