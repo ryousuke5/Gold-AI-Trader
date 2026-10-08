@@ -15,6 +15,7 @@ input int    MagicNumber = 26100301;
 
 datetime g_lastClosedM15Open = 0;
 datetime g_lastAttemptAt = 0;
+datetime g_retryExpiredBarOpen = 0;
 bool g_apiConfigReady = false;
 
 //---------------------------------------------------------
@@ -726,11 +727,15 @@ bool SendCurrentBar(bool bypassRetryWindow)
 
    if(!bypassRetryWindow && TimeCurrent() > maxRetryUntil)
    {
-      Print("EURUSDAIMonitorV13: send skipped. retry window expired.",
-            " bar_open=",
-            TimeToString(currentClosedBarOpen, TIME_DATE|TIME_MINUTES),
-            " max_retry_until=",
-            TimeToString(maxRetryUntil, TIME_DATE|TIME_MINUTES));
+      if(g_retryExpiredBarOpen != currentClosedBarOpen)
+      {
+         Print("EURUSDAIMonitorV13: send skipped. retry window expired.",
+               " bar_open=",
+               TimeToString(currentClosedBarOpen, TIME_DATE|TIME_MINUTES),
+               " max_retry_until=",
+               TimeToString(maxRetryUntil, TIME_DATE|TIME_MINUTES));
+         g_retryExpiredBarOpen = currentClosedBarOpen;
+      }
       return false;
    }
 
