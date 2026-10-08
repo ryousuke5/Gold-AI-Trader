@@ -24,7 +24,7 @@ test('summarizeTradeResultRows computes PF expectancy and win rate', () => {
   assert.equal(result.wins, 1);
   assert.equal(result.losses, 1);
   assert.equal(result.breakeven, 1);
-  assert.equal(result.win_rate_pct, 100 / 3);
+  assert.ok(Math.abs(result.win_rate_pct - (100 / 3)) < 1e-12);
   assert.equal(result.net_r, 1);
   assert.equal(result.profit_factor, 2);
   assert.equal(result.expectancy_r, 1 / 3);
