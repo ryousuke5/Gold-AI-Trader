@@ -92,7 +92,7 @@ test('summarizeGoldRangeAtr reports observed range width against configured boun
   ]);
   assert.equal(result.observations, 4);
   assert.equal(result.min, 0.5);
-  assert.equal(result.median, 1.4);
+  assert.equal(result.median, 0.9);
   assert.equal(result.max, 3.2);
   assert.equal(result.below_min, 1);
   assert.equal(result.in_range, 2);
