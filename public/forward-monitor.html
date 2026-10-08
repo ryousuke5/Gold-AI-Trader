@@ -81,6 +81,7 @@ const keyInput=document.getElementById('key'), errorBox=document.getElementById(
 keyInput.value=sessionStorage.getItem('gold_api_key')||'';
 document.getElementById('connect').onclick=()=>{sessionStorage.setItem('gold_api_key',keyInput.value.trim());load();};
 document.getElementById('refresh').onclick=load;
+const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const fmtTime=v=>v?new Date(v).toLocaleString('ja-JP',{hour12:false}):'—';
 const fmt=v=>new Intl.NumberFormat('ja-JP',{maximumFractionDigits:2}).format(Number(v)||0);
 const pct=v=>Number.isFinite(Number(v))?Number(v).toFixed(1)+'%':'—';
@@ -88,20 +89,20 @@ const cls=v=>String(v).toUpperCase()==='BUY'?'buy':String(v).toUpperCase()==='SE
 function setDot(id,state){const e=document.getElementById(id);e.className='dot '+(state?'good':'bad');}
 function chip(text,state='good'){return '<span class="chip '+state+'">'+text+'</span>';}
 function tradeRows(rows){
-  return (rows||[]).map(t=>'<tr><td>'+fmtTime(t.opened_at)+'</td><td class="'+cls(t.side)+'">'+t.side+'</td><td class="num">'+fmt(t.entry)+'</td><td class="num">'+fmt(t.stop_loss)+'</td><td class="num">'+fmt(t.take_profit)+'</td><td>'+t.status+'</td><td class="num">'+(t.r_multiple==null?'—':Number(t.r_multiple).toFixed(2))+'</td><td>'+fmtTime(t.exit_at)+'</td></tr>').join('')||'<tr><td colspan="8">データなし</td></tr>';
+  return (rows||[]).map(t=>'<tr><td>'+fmtTime(t.opened_at)+'</td><td class="'+cls(t.side)+'">'+esc(t.side)+'</td><td class="num">'+fmt(t.entry)+'</td><td class="num">'+fmt(t.stop_loss)+'</td><td class="num">'+fmt(t.take_profit)+'</td><td>'+esc(t.status)+'</td><td class="num">'+(t.r_multiple==null?'—':Number(t.r_multiple).toFixed(2))+'</td><td>'+fmtTime(t.exit_at)+'</td></tr>').join('')||'<tr><td colspan="8">データなし</td></tr>';
 }
 function resultRows(rows){
-  return (rows||[]).map(t=>'<tr><td>'+fmtTime(t.created_at)+'</td><td>'+t.symbol+'</td><td>'+t.result+'</td><td class="num">'+Number(t.r_multiple||0).toFixed(2)+'</td><td>'+String(t.exit_reason||'—')+'</td></tr>').join('')||'<tr><td colspan="5">データなし</td></tr>';
+  return (rows||[]).map(t=>'<tr><td>'+fmtTime(t.created_at)+'</td><td>'+esc(t.symbol)+'</td><td>'+t.result+'</td><td class="num">'+Number(t.r_multiple||0).toFixed(2)+'</td><td>'+esc(t.exit_reason||'—')+'</td></tr>').join('')||'<tr><td colspan="5">データなし</td></tr>';
 }
 function signalRows(eu,gold){
   const rows=[...(eu.latest_signals||[]),...(gold.latest_signals||[])].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at)).slice(0,50);
-  return rows.map(s=>'<tr><td>'+fmtTime(s.created_at)+'</td><td>'+s.symbol+'</td><td class="'+cls(s.candidate)+'">'+s.candidate+'</td><td class="'+cls(s.decision)+'">'+s.decision+'</td><td class="num">'+(Number(s.confidence)*100).toFixed(0)+'%</td><td>'+String(s.market_regime||'—')+'</td><td>'+ (s.openai_response_id?'ON':'OFF')+'</td><td>'+String(s.strategy_version||'—')+'</td></tr>').join('')||'<tr><td colspan="8">データなし</td></tr>';
+  return rows.map(s=>'<tr><td>'+fmtTime(s.created_at)+'</td><td>'+esc(s.symbol)+'</td><td class="'+cls(s.candidate)+'">'+esc(s.candidate)+'</td><td class="'+cls(s.decision)+'">'+esc(s.decision)+'</td><td class="num">'+(Number(s.confidence)*100).toFixed(0)+'%</td><td>'+esc(s.market_regime||'—')+'</td><td>'+ (s.openai_response_id?'ON':'OFF')+'</td><td>'+esc(s.strategy_version||'—')+'</td></tr>').join('')||'<tr><td colspan="8">データなし</td></tr>';
 }
 function cardMarket(title,meta,signals,extra){
   const c=signals.candidate_counts_all_time||{BUY:0,SELL:0,WAIT:0};
   const latest=signals.latest_signals?.[0];
   return '<div class="card"><div class="headrow"><div><h2>'+title+'</h2><div class="meta">'+meta+'</div></div>'+chip(latest?(latest.decision||'WAIT'):'NO SIGNAL',latest?.decision==='BUY'?'good':latest?.decision==='SELL'?'bad':'warn')+'</div>'+
-  '<div class="metrics"><div class="metric"><div class="k">総シグナル</div><div class="v num">'+fmt(signals.total_signals)+'</div></div><div class="metric"><div class="k">最新候補</div><div class="v">'+(latest?.candidate||'—')+'</div></div><div class="metric"><div class="k">最新判定</div><div class="v">'+(latest?.decision||'—')+'</div></div><div class="metric"><div class="k">最終シグナル</div><div class="v" style="font-size:13px">'+fmtTime(signals.latest_signal_at)+'</div></div></div>'+
+  '<div class="metrics"><div class="metric"><div class="k">総シグナル</div><div class="v num">'+fmt(signals.total_signals)+'</div></div><div class="metric"><div class="k">最新候補</div><div class="v">'+esc(latest?.candidate||'—')+'</div></div><div class="metric"><div class="k">最新判定</div><div class="v">'+esc(latest?.decision||'—')+'</div></div><div class="metric"><div class="k">最終シグナル</div><div class="v" style="font-size:13px">'+fmtTime(signals.latest_signal_at)+'</div></div></div>'+
   '<div class="section"><h3>Candidate 全期間</h3><div class="bars"><div class="bar"><div class="k">BUY</div><div class="v buy">'+fmt(c.BUY)+'</div></div><div class="bar"><div class="k">SELL</div><div class="v sell">'+fmt(c.SELL)+'</div></div><div class="bar"><div class="k">WAIT</div><div class="v wait">'+fmt(c.WAIT)+'</div></div></div></div>'+extra+'</div>';
 }
 function render(data){
