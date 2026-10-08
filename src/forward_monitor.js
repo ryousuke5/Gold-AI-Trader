@@ -19,9 +19,10 @@ function finiteNumber(value, fallback = 0) {
 
 export function summarizeSignalRows(rows = []) {
   const list = Array.isArray(rows) ? rows : [];
+  const ordered = [...list].sort((a, b) => Date.parse(b?.created_at || '') - Date.parse(a?.created_at || ''));
   const candidate = { BUY: 0, SELL: 0, WAIT: 0 };
   const decision = { BUY: 0, SELL: 0, WAIT: 0 };
-  for (const row of list) {
+  for (const row of ordered) {
     const c = String(row?.candidate || 'WAIT').toUpperCase();
     const d = String(row?.decision || 'WAIT').toUpperCase();
     if (candidate[c] !== undefined) candidate[c] += 1;
@@ -31,9 +32,9 @@ export function summarizeSignalRows(rows = []) {
     sampled_rows: list.length,
     candidate,
     decision,
-    latest_signal_at: list[0]?.created_at || null,
-    latest_candidate: String(list[0]?.candidate || 'WAIT').toUpperCase(),
-    latest_decision: String(list[0]?.decision || 'WAIT').toUpperCase()
+    latest_signal_at: ordered[0]?.created_at || null,
+    latest_candidate: String(ordered[0]?.candidate || 'WAIT').toUpperCase(),
+    latest_decision: String(ordered[0]?.decision || 'WAIT').toUpperCase()
   };
 }
 
