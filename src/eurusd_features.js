@@ -31,6 +31,14 @@ function minLow(bars) {
   return bars.reduce((min, b) => Math.min(min, b.low), Infinity);
 }
 
+function getDirectionalBreakoutDistanceAtr(trend, close, rangeHigh, rangeLow, atr) {
+  if (!(Number.isFinite(atr) && atr > 0)) return null;
+  if (trend === 'UP') return (close - rangeHigh) / atr;
+  if (trend === 'DOWN') return (rangeLow - close) / atr;
+  // A RANGE/unclear H1 regime has no directional breakout side to measure.
+  return null;
+}
+
 function average(values) {
   const valid = values.filter((v) => Number.isFinite(v));
   return valid.length ? valid.reduce((sum, v) => sum + v, 0) / valid.length : 0;
@@ -199,7 +207,7 @@ export function buildEurUsdSetup(f, options = {}) {
       range_low: 0,
       range_width: 0,
       range_width_atr: 0,
-      breakout_distance_atr: 0,
+      breakout_distance_atr: null,
       breakout_body_atr: 0,
       breakout_close_location: 0,
       volume_ratio: 0,
@@ -421,9 +429,7 @@ export function buildEurUsdSetup(f, options = {}) {
       range_low: rangeLow,
       range_width: rangeWidth,
       range_width_atr: rangeWidthAtr,
-      breakout_distance_atr: atr > 0
-        ? (trend === 'UP' ? (latest.close - rangeHigh) : (rangeLow - latest.close)) / atr
-        : 0,
+      breakout_distance_atr: getDirectionalBreakoutDistanceAtr(trend, latest.close, rangeHigh, rangeLow, atr),
       breakout_body_atr: bodyAtr,
       breakout_close_location: closeLocation,
       volume_ratio: volumeRatio,
@@ -455,9 +461,7 @@ export function buildEurUsdSetup(f, options = {}) {
     range_low: rangeLow,
     range_width: rangeWidth,
     range_width_atr: rangeWidthAtr,
-    breakout_distance_atr: atr > 0
-      ? (finalCandidate === 'BUY' ? (latest.close - rangeHigh) : (rangeLow - latest.close)) / atr
-      : 0,
+    breakout_distance_atr: getDirectionalBreakoutDistanceAtr(trend, latest.close, rangeHigh, rangeLow, atr),
     breakout_body_atr: bodyAtr,
     breakout_close_location: closeLocation,
     volume_ratio: volumeRatio,
