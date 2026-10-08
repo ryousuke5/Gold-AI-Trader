@@ -386,3 +386,37 @@ Next step:
 4. For EURUSD, evaluate deterministic candidate frequency, WAIT/BUY/SELL distribution, signal persistence, and forward paper-trade statistics.
 5. For Gold, record every successful `/api/gold/signal` response, especially candidate/decision/risk/openai fields when a non-WAIT candidate occurs.
 6. Do not promote to live execution without a statistically credible OOS/forward validation result.
+
+
+## 2026-10-08 Forward Monitor V1
+
+A read-only unified dashboard was added at `/forward-monitor`.
+
+### What it shows
+- EURUSD M15 deterministic forward summary: total signals, BUY/SELL/WAIT candidate counts, forward trades, win rate, PF, expectancy, net R, max DD, trades/week.
+- Gold M5 V2 runtime summary: total signals, BUY/SELL/WAIT candidate counts, latest signals, recorded trade-result metrics.
+- Recent combined EURUSD + Gold signals.
+- EURUSD forward trades and Gold trade results.
+- DB probe state, EURUSD AI flag, EURUSD execution/live gate, Gold state/auto-trading/live gate.
+- EURUSD news-feed safety status.
+
+### Security / operation
+- `GET /api/forward-monitor` is protected by the existing `X-Gold-API-Key` authentication.
+- The HTML shell is public, but data is not.
+- The browser stores the API key only in `sessionStorage` and sends it as a request header.
+- No OpenAI key, Supabase secret, or other server secret is returned by the monitor.
+- Refresh interval is 30 seconds.
+- No order-execution code was added.
+
+### Validation
+- Added pure summary tests in `tests/forward_monitor.test.js`.
+- Latest CI test run must pass before deployment.
+- Render auto-deploy remains OFF; manual deploy is required after validation.
+
+### Resume rule
+If interrupted, read this section and continue from:
+1. latest `Gold AI Trader Tests` result for the monitor commits
+2. trigger a manual Render deploy only after CI passes
+3. verify `/health` and `/forward-monitor`
+4. enter the existing `GOLD_API_KEY` in the monitor UI and confirm live DB data
+5. keep EURUSD execution and Gold auto-orders OFF during forward observation
