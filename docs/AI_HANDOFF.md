@@ -483,3 +483,20 @@ Operational note:
 - The locally attached `EURUSDAIMonitorV13` must be replaced with the updated main-branch source, compiled in MetaEditor, and reattached/reinitialized.
 - Then check for `EURUSD M15 signal processed` instead of `retry window expired`, and confirm the Forward Monitor's EURUSD diagnostic count increases after a new M15 bar.
 - Keep all real execution disabled; V13 remains monitor-only and contains no order execution calls.
+
+
+## 2026-10-09 EURUSD forward-monitor diagnostic correction
+
+Monitor observation:
+- 7 total M15 signals, all WAIT; 0 forward trades.
+- Technical diagnostics available for 2/7 signals. Older rows may predate diagnostic-token storage; collect more fresh signals before drawing aggregate conclusions.
+- Recent WAIT reasons included unclear H1 trend, M15 EMA/RSI misalignment, spread filter failure, insufficient breakout penetration, weak close location, and missing volume confirmation.
+- Observed average spread was 2.10 pips versus the configured 1.20-pip maximum. Do not loosen the spread gate solely to increase frequency; validate broker spread and replay with realistic transaction costs.
+
+Code correction:
+- Previously `breakout_distance_atr` used the downside formula whenever H1 trend was not UP, including when trend was RANGE. This could fabricate a negative directional distance during an unclear regime.
+- The metric is now null when H1 direction is unavailable or required bars/range are invalid, and null values are excluded from the dashboard average.
+- Entry criteria, trading thresholds, AI settings, and real execution settings are unchanged. Real orders remain OFF.
+- Regression tests cover RANGE diagnostics and null-average handling.
+
+Resume from this checkpoint: verify the GitHub test workflow, promote the tested diagnostic-only change to main, deploy the server change manually because Render auto-deploy is disabled, then collect several fresh M15 signals and confirm Breakout ATR is only averaged when H1 has a clear UP/DOWN direction.
