@@ -428,3 +428,30 @@ If interrupted, read this section and continue from:
 - Forward Monitor reads these diagnostics and reports observed min/median/max/mean plus below/in/above-bound counts.
 - Historical signals created before diagnostic persistence cannot be backfilled without the original M5/H1 feature snapshot; treat Range ATR observations as post-deployment only.
 - Resume rule: collect a meaningful sample before changing compression thresholds; compare candidate variants by PF, expectancy, Max DD, trade frequency and cost stress.
+
+
+## 2026-10-09 Gold V2 Range ATR research matrix engineering update
+
+The Gold V2 five-year research pipeline was strengthened without changing production strategy parameters.
+
+Changes:
+- `scripts/backtest-gold-v2.mjs` now reports a fixed 3-year IS / 2-year OOS split in addition to five-year and recent-365d metrics.
+- `.github/workflows/gold-v2-research.yml` already includes the research-only Range ATR variants `4.0 / 4.5 / 5.0 / 5.5`, and now adds an `aggregate-results` job.
+- The aggregate job downloads all matrix artifacts and produces:
+  - `gold_v2_research_matrix.json`
+  - `gold_v2_research_matrix.csv`
+  - `gold_v2_research_matrix.md`
+- The summary ranks variants by OOS expectancy/PF and keeps baseline vs conservative cost-stress metrics visible in one report.
+- Conservative cost scenario remains spread >= 0.75 + slippage >= 0.10.
+- Production Gold V2 remains unchanged at range ATR 0.8-2.8 and real execution OFF.
+
+Latest commits:
+- `40a25340e78581617b3180aed4c5ba70f8d657b2` — fixed 3y IS / 2y OOS metrics
+- `e5bf24c402b980bbf1c25a8c8652958f3efadc97` — consolidated research matrix report
+
+Resume rule:
+1. Check the latest `GOLD V2 Five-Year Research` run triggered by the commits above.
+2. Wait for all Range ATR matrix variants to finish.
+3. Inspect the consolidated `gold-v2-research-matrix-summary` artifact.
+4. Compare 5y, 3y IS, 2y OOS and conservative-cost metrics before touching production parameters.
+5. Do not enable real orders or change Gold V2 production thresholds from research results alone.
