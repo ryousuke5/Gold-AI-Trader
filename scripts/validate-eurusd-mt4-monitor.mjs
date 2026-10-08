@@ -142,6 +142,7 @@ const functions = [
   'string NormalizeBaseUrl',
   'string JsonEscape',
   'bool BuildSignalPayload',
+  'bool SendCurrentBar',
   'bool PostJson',
   'void OnTimer',
   'int OnInit',
