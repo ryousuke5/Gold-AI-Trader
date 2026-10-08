@@ -97,8 +97,41 @@ export function summarizeGoldFilterFunnel(rows = []) {
   };
 }
 
+function normalizeInvalidReasons(value) {
+  if (Array.isArray(value)) return value.map(item => String(item || ''));
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map(item => String(item || ''));
+    } catch {}
+    return [trimmed];
+  }
+  return value && typeof value === 'object' ? Object.values(value).map(item => String(item || '')) : [];
+}
+
 function extractGoldV2Diagnostics(row) {
-  const reasons = Array.isArray(row?.invalid_reasons) ? row.invalid_reasons : [];
+  const reasons = normalizeInvalidReasons(row?.invalid_reasons);
+  const rangeToken = reasons.find(value => String(value || '').startsWith('GOLD_V2_RANGE_ATR:'));
+  if (rangeToken) {
+    const rangeAtr = Number(String(rangeToken).slice('GOLD_V2_RANGE_ATR:'.length));
+    const configToken = reasons.find(value => String(value || '').startsWith('GOLD_V2_DIAG:'));
+    let parsed = {};
+    if (configToken) {
+      try { parsed = JSON.parse(String(configToken).slice('GOLD_V2_DIAG:'.length)); } catch {}
+    }
+    const minRangeAtr = Number(parsed?.min_range_atr);
+    const maxRangeAtr = Number(parsed?.max_range_atr);
+    if (Number.isFinite(rangeAtr)) {
+      return {
+        ...parsed,
+        range_atr: rangeAtr,
+        min_range_atr: Number.isFinite(minRangeAtr) ? minRangeAtr : 0.8,
+        max_range_atr: Number.isFinite(maxRangeAtr) ? maxRangeAtr : 2.8
+      };
+    }
+  }
   const raw = reasons.find(value => String(value || '').startsWith('GOLD_V2_DIAG:'));
   if (!raw) return null;
   try {
