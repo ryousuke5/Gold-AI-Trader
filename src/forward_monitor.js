@@ -134,7 +134,10 @@ export function summarizeEurUsdSetup(rows = []) {
   }
   const observations = list.map(extractEurUsdDiagnostics).filter(Boolean);
   const avg = key => {
-    const values = observations
+    const eligible = key === 'breakout_distance_atr'
+      ? observations.filter(row => ['UP', 'DOWN'].includes(String(row?.trend || '').toUpperCase()))
+      : observations;
+    const values = eligible
       .map(row => row?.[key])
       .filter(value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)))
       .map(Number);
