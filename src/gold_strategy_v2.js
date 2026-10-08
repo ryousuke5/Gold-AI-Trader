@@ -76,20 +76,27 @@ export function buildGoldV2Setup(features = {}, config = {}) {
 
   const rangeWidth = range.high - range.low;
   const rangeAtr = rangeWidth / m5.atr14;
+  const rangeDiagnostics = {
+    range_width: rangeWidth,
+    m5_atr: m5.atr14,
+    range_atr: rangeAtr,
+    min_range_atr: cfg.minRangeAtr,
+    max_range_atr: cfg.maxRangeAtr
+  };
   if (!(rangeWidth > 0) || rangeAtr < cfg.minRangeAtr || rangeAtr > cfg.maxRangeAtr) {
-    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'compression_filter' };
+    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'compression_filter', diagnostics: rangeDiagnostics };
   }
 
   const candleRange = signal.high - signal.low;
   const body = Math.abs(signal.close - signal.open);
   if (!(candleRange > 0) || body / m5.atr14 < cfg.minBodyAtr) {
-    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'impulse_body_filter' };
+    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'impulse_body_filter', diagnostics: rangeDiagnostics };
   }
 
   const closeLocation = (signal.close - signal.low) / candleRange;
   const volumeRatio = range.averageVolume > 0 ? n(signal.volume) / range.averageVolume : 0;
   if (range.averageVolume > 0 && volumeRatio < cfg.minVolumeRatio) {
-    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'volume_expansion_filter' };
+    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'volume_expansion_filter', diagnostics: rangeDiagnostics };
   }
 
   const breakoutDistanceUp = signal.close - range.high;
@@ -97,35 +104,35 @@ export function buildGoldV2Setup(features = {}, config = {}) {
 
   if (trendUp) {
     if (breakoutDistanceUp < cfg.breakoutAtr * m5.atr14) {
-      return { candidate: 'WAIT', trend: 'UP', reason: 'breakout_trigger_filter' };
+      return { candidate: 'WAIT', trend: 'UP', reason: 'breakout_trigger_filter', diagnostics: rangeDiagnostics };
     }
     if (closeLocation < cfg.minCloseLocation) {
-      return { candidate: 'WAIT', trend: 'UP', reason: 'close_location_filter' };
+      return { candidate: 'WAIT', trend: 'UP', reason: 'close_location_filter', diagnostics: rangeDiagnostics };
     }
     if (m5.rsi14 < cfg.buyRsiMin || m5.rsi14 > cfg.buyRsiMax) {
-      return { candidate: 'WAIT', trend: 'UP', reason: 'm5_rsi_filter' };
+      return { candidate: 'WAIT', trend: 'UP', reason: 'm5_rsi_filter', diagnostics: rangeDiagnostics };
     }
     if (signal.close < m5.ema20) {
-      return { candidate: 'WAIT', trend: 'UP', reason: 'm5_ema_alignment_filter' };
+      return { candidate: 'WAIT', trend: 'UP', reason: 'm5_ema_alignment_filter', diagnostics: rangeDiagnostics };
     }
     if ((signal.close - m5.ema20) / m5.atr14 > cfg.maxExtensionAtr) {
-      return { candidate: 'WAIT', trend: 'UP', reason: 'extension_filter' };
+      return { candidate: 'WAIT', trend: 'UP', reason: 'extension_filter', diagnostics: rangeDiagnostics };
     }
   } else if (trendDown) {
     if (breakoutDistanceDown < cfg.breakoutAtr * m5.atr14) {
-      return { candidate: 'WAIT', trend: 'DOWN', reason: 'breakout_trigger_filter' };
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'breakout_trigger_filter', diagnostics: rangeDiagnostics };
     }
     if (closeLocation > 1 - cfg.minCloseLocation) {
-      return { candidate: 'WAIT', trend: 'DOWN', reason: 'close_location_filter' };
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'close_location_filter', diagnostics: rangeDiagnostics };
     }
     if (m5.rsi14 < cfg.sellRsiMin || m5.rsi14 > cfg.sellRsiMax) {
-      return { candidate: 'WAIT', trend: 'DOWN', reason: 'm5_rsi_filter' };
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'm5_rsi_filter', diagnostics: rangeDiagnostics };
     }
     if (signal.close > m5.ema20) {
-      return { candidate: 'WAIT', trend: 'DOWN', reason: 'm5_ema_alignment_filter' };
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'm5_ema_alignment_filter', diagnostics: rangeDiagnostics };
     }
     if ((m5.ema20 - signal.close) / m5.atr14 > cfg.maxExtensionAtr) {
-      return { candidate: 'WAIT', trend: 'DOWN', reason: 'extension_filter' };
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'extension_filter', diagnostics: rangeDiagnostics };
     }
   } else {
     return { candidate: 'WAIT', trend: 'RANGE', reason: 'breakout_trigger_filter' };
@@ -142,7 +149,7 @@ export function buildGoldV2Setup(features = {}, config = {}) {
   const stopDistance = Math.abs(referenceEntry - stop);
   const stopAtr = stopDistance / m5.atr14;
   if (stopAtr < cfg.minStopAtr || stopAtr > cfg.maxStopAtr) {
-    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'stop_distance_filter' };
+    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'stop_distance_filter', diagnostics: rangeDiagnostics };
   }
 
   const target = side === 'BUY'
