@@ -186,6 +186,7 @@ test('H1 range blocks the M15 breakout', () => {
   assert.equal(setup.trend, 'RANGE');
   assert.equal(setup.candidate, 'WAIT');
   assert.ok(setup.reasons.includes('h1_trend_not_clear'));
+  assert.equal(setup.breakout_distance_atr, null);
 });
 
 test('AI environment validation requires fresh evidence and multiple sources', () => {
