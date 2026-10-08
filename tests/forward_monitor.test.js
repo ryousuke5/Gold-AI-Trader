@@ -80,3 +80,23 @@ test('summarizeGoldFilterFunnel calculates sequential filter pass rates', () => 
   assert.equal(rsi.failed, 1);
   assert.equal(confirmed.passed, 1);
 });
+
+
+test('summarizeGoldRangeAtr reports observed range width against configured bounds', () => {
+  const result = summarizeGoldRangeAtr([
+    { invalid_reasons: ['GOLD_V2_DIAG:{"range_atr":0.5,"min_range_atr":0.8,"max_range_atr":2.8}'] },
+    { invalid_reasons: ['GOLD_V2_DIAG:{"range_atr":0.9,"min_range_atr":0.8,"max_range_atr":2.8}'] },
+    { invalid_reasons: ['GOLD_V2_DIAG:{"range_atr":1.4,"min_range_atr":0.8,"max_range_atr":2.8}'] },
+    { invalid_reasons: ['GOLD_V2_DIAG:{"range_atr":3.2,"min_range_atr":0.8,"max_range_atr":2.8}'] },
+    { invalid_reasons: ['unrelated'] }
+  ]);
+  assert.equal(result.observations, 4);
+  assert.equal(result.min, 0.5);
+  assert.equal(result.median, 1.4);
+  assert.equal(result.max, 3.2);
+  assert.equal(result.below_min, 1);
+  assert.equal(result.in_range, 2);
+  assert.equal(result.above_max, 1);
+  assert.equal(result.configured_min, 0.8);
+  assert.equal(result.configured_max, 2.8);
+});
