@@ -362,3 +362,27 @@ Next step:
 3. Confirm startup health + first completed-bar signal logs.
 4. Verify Render logs show `/api/eurusd/signal`, `openai.called=false`, and deterministic decision data.
 5. Continue deterministic EURUSD performance validation before any AI layer or live execution.
+
+
+## 2026-10-08 runtime stabilization checkpoint
+
+### Gold V18
+- MT4 GoldAITraderV18 was confirmed using the current Render primary URL `https://gold-ai-trader-1.onrender.com` (runtime log: `url_length=37`).
+- Previous HTTP 401 authentication failures and subsequent MT4 WebRequest 4060 errors are resolved.
+- Successful runtime response confirmed: `ok=true`, `strategy_version=gold-m5-h1-v2`, `candidate=WAIT`, with no order execution.
+- GitHub source `mt4/GoldAITraderV18.mq4` was updated to keep `ApiBaseUrl` aligned with the current Render primary URL.
+- Do not change the Gold strategy or database configuration based on the resolved auth issue.
+
+### EURUSD V13
+- `mt4/EURUSDAIMonitorV13.mq4` had a retry-window log spam bug: expired bars were logged every 5 seconds indefinitely.
+- Fixed with `g_retryExpiredBarOpen`, so `retry window expired` is emitted at most once per M15 bar.
+- GitHub commit: `109bd24425807612a2b1c904cb466212b786be3d`.
+- Real order execution remains absent/disabled.
+
+### Current operating procedure
+1. Keep Gold auto-orders OFF and EURUSD execution OFF.
+2. Keep EURUSD V13 and Gold V18 running as monitor/forward components only.
+3. Collect roughly 3 hours of logs, but do not treat log volume alone as evidence of profitability.
+4. For EURUSD, evaluate deterministic candidate frequency, WAIT/BUY/SELL distribution, signal persistence, and forward paper-trade statistics.
+5. For Gold, record every successful `/api/gold/signal` response, especially candidate/decision/risk/openai fields when a non-WAIT candidate occurs.
+6. Do not promote to live execution without a statistically credible OOS/forward validation result.
