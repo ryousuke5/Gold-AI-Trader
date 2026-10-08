@@ -496,6 +496,7 @@ Monitor observation:
 Code correction:
 - Previously `breakout_distance_atr` used the downside formula whenever H1 trend was not UP, including when trend was RANGE. This could fabricate a negative directional distance during an unclear regime.
 - The metric is now null when H1 direction is unavailable or required bars/range are invalid, and null values are excluded from the dashboard average.
+- The dashboard also excludes stored breakout-distance values whose diagnostic trend is not UP/DOWN, so legacy RANGE rows from before the fix cannot contaminate the average.
 - Entry criteria, trading thresholds, AI settings, and real execution settings are unchanged. Real orders remain OFF.
 - Regression tests cover RANGE diagnostics and null-average handling.
 
