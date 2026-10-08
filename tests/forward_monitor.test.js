@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summarizeSignalRows, summarizeTradeResultRows, summarizeGoldFilterFunnel, summarizeGoldRangeAtr } from '../src/forward_monitor.js';
+import { summarizeSignalRows, summarizeTradeResultRows, summarizeGoldFilterFunnel, summarizeGoldRangeAtr, summarizeEurUsdSetup } from '../src/forward_monitor.js';
 
 test('summarizeSignalRows counts candidate and decision distribution', () => {
   const result = summarizeSignalRows([
@@ -99,4 +99,31 @@ test('summarizeGoldRangeAtr reports observed range width against configured boun
   assert.equal(result.above_max, 1);
   assert.equal(result.configured_min, 0.8);
   assert.equal(result.configured_max, 2.8);
+});
+
+
+test('summarizeEurUsdSetup exposes technical WAIT reasons and averages', () => {
+  const result = summarizeEurUsdSetup([
+    {
+      invalid_reasons: [
+        'technical_setup_wait',
+        'range_width_outside_atr_band',
+        'EURUSD_SETUP_DIAG:{"range_width_atr":2.4,"breakout_distance_atr":0.05,"breakout_body_atr":0.25,"breakout_close_location":0.61,"volume_ratio":0.9,"spread_pips":1.0,"spread_atr_pct":10}'
+      ]
+    },
+    {
+      invalid_reasons: [
+        'technical_setup_wait',
+        'breakout_penetration_too_small',
+        'EURUSD_SETUP_DIAG:{"range_width_atr":1.6,"breakout_distance_atr":0.02,"breakout_body_atr":0.31,"breakout_close_location":0.68,"volume_ratio":1.1,"spread_pips":0.8,"spread_atr_pct":8}'
+      ]
+    }
+  ]);
+  assert.equal(result.observations, 2);
+  assert.equal(result.reason_counts.technical_setup_wait, 2);
+  assert.equal(result.reason_counts.range_width_outside_atr_band, 1);
+  assert.equal(result.reason_counts.breakout_penetration_too_small, 1);
+  assert.equal(result.averages.range_width_atr, 2);
+  assert.equal(result.averages.breakout_distance_atr, 0.035);
+  assert.equal(result.averages.spread_pips, 0.9);
 });
