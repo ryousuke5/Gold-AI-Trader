@@ -382,6 +382,17 @@ export function registerEurUsdRoutes(app) {
             reason: forwardSettlement.length ? 'settled_trade_on_current_bar' : 'forward_test_disabled'
           };
 
+      console.log('[eurusd/forward]', requestId, JSON.stringify({
+        candidate: setup.candidate,
+        decision: decision.decision,
+        risk_approved: risk.approved === true,
+        safety_new_orders_allowed: risk.safety?.newOrdersAllowed === true,
+        opened: forwardOpen.opened === true,
+        reason: forwardOpen.reason || null,
+        trade_id: forwardOpen.trade?.id || null,
+        signal_id: signalId
+      }));
+
       if (fundamental?.webSearchUsed) {
         try {
           await insertEvent({
