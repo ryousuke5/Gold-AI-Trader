@@ -10,6 +10,7 @@ const requiredTokens = [
   '#property strict',
   'EventSetTimer',
   'OnTimer',
+  'currentClosedBarOpen + 900 + MaxRetryMinutes * 60',
   'BuildSignalPayload',
   'PostJson',
   'PERIOD_M15',
