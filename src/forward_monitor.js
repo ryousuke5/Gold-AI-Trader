@@ -111,6 +111,48 @@ function normalizeInvalidReasons(value) {
   return value && typeof value === 'object' ? Object.values(value).map(item => String(item || '')) : [];
 }
 
+function extractEurUsdDiagnostics(row) {
+  const reasons = normalizeInvalidReasons(row?.invalid_reasons);
+  const raw = reasons.find(value => String(value || '').startsWith('EURUSD_SETUP_DIAG:'));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(String(raw).slice('EURUSD_SETUP_DIAG:'.length));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function summarizeEurUsdSetup(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const reasons = {};
+  for (const row of list) {
+    for (const reason of normalizeInvalidReasons(row?.invalid_reasons)) {
+      if (!reason || String(reason).startsWith('EURUSD_SETUP_DIAG:')) continue;
+      reasons[reason] = (reasons[reason] || 0) + 1;
+    }
+  }
+  const observations = list.map(extractEurUsdDiagnostics).filter(Boolean);
+  const avg = key => {
+    const values = observations.map(row => Number(row?.[key])).filter(Number.isFinite);
+    return values.length ? values.reduce((sum,v)=>sum+v,0)/values.length : null;
+  };
+  return {
+    sampled_rows: list.length,
+    observations: observations.length,
+    reason_counts: reasons,
+    averages: {
+      range_width_atr: avg('range_width_atr'),
+      breakout_distance_atr: avg('breakout_distance_atr'),
+      breakout_body_atr: avg('breakout_body_atr'),
+      breakout_close_location: avg('breakout_close_location'),
+      volume_ratio: avg('volume_ratio'),
+      spread_pips: avg('spread_pips'),
+      spread_atr_pct: avg('spread_atr_pct')
+    }
+  };
+}
+
 function extractGoldV2Diagnostics(row) {
   const reasons = normalizeInvalidReasons(row?.invalid_reasons);
   const rangeToken = reasons.find(value => String(value || '').startsWith('GOLD_V2_RANGE_ATR:'));
@@ -233,6 +275,7 @@ async function summarizeSignalSource({
     total_signals: total,
     candidate_counts_all_time: { BUY: buy, SELL: sell, WAIT: wait },
     recent: sampled,
+    eurusd_setup: symbols?.length === 0 || values.includes('EURUSD') ? summarizeEurUsdSetup(latestSignals) : null,
     filter_funnel: filterFunnel,
     range_atr: symbols?.length && values.some(value => GOLD_SYMBOLS.includes(value))
       ? summarizeGoldRangeAtr(latestSignals)
