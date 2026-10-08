@@ -22,19 +22,26 @@ export function summarizeSignalRows(rows = []) {
   const ordered = [...list].sort((a, b) => Date.parse(b?.created_at || '') - Date.parse(a?.created_at || ''));
   const candidate = { BUY: 0, SELL: 0, WAIT: 0 };
   const decision = { BUY: 0, SELL: 0, WAIT: 0 };
+  const reasonCounts = {};
   for (const row of ordered) {
     const c = String(row?.candidate || 'WAIT').toUpperCase();
     const d = String(row?.decision || 'WAIT').toUpperCase();
     if (candidate[c] !== undefined) candidate[c] += 1;
     if (decision[d] !== undefined) decision[d] += 1;
+    const reason = String(row?.reason || '').trim();
+    if (reason) reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
   }
+  const latestWait = ordered.find(row => String(row?.candidate || '').toUpperCase() === 'WAIT');
   return {
     sampled_rows: list.length,
     candidate,
     decision,
     latest_signal_at: ordered[0]?.created_at || null,
     latest_candidate: String(ordered[0]?.candidate || 'WAIT').toUpperCase(),
-    latest_decision: String(ordered[0]?.decision || 'WAIT').toUpperCase()
+    latest_decision: String(ordered[0]?.decision || 'WAIT').toUpperCase(),
+    latest_reason: String(ordered[0]?.reason || '').trim() || null,
+    latest_wait_reason: String(latestWait?.reason || '').trim() || null,
+    reason_counts: reasonCounts
   };
 }
 
