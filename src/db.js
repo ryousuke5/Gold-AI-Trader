@@ -27,6 +27,71 @@ export async function insertEvent(row){if(!supabase)return{row,persisted:false};
 export async function insertTradeResult(row){if(!supabase)return{row,persisted:false};const{data,error}=await supabase.from('gold_trade_results').upsert(row,{onConflict:'idempotency_key'}).select().single();if(error)throw error;return{row:data,persisted:true};}
 
 
+export async function countSignals({
+  symbols = [],
+  symbol = null,
+  timeframe = null,
+  strategyVersion = null,
+  candidate = null,
+  decision = null,
+  aiCalled = null
+} = {}) {
+  if (!supabase) return 0;
+  let q = supabase.from('gold_ai_signals').select('id', { count: 'exact', head: true });
+  const values = Array.isArray(symbols) && symbols.length ? symbols : symbol ? [symbol] : [];
+  if (values.length === 1) q = q.eq('symbol', values[0]);
+  else if (values.length > 1) q = q.in('symbol', values);
+  if (timeframe) q = q.eq('timeframe', timeframe);
+  if (strategyVersion) q = q.eq('strategy_version', strategyVersion);
+  if (candidate) q = q.eq('candidate', candidate);
+  if (decision) q = q.eq('decision', decision);
+  if (aiCalled === true) q = q.not('openai_response_id', 'is', null);
+  if (aiCalled === false) q = q.is('openai_response_id', null);
+  const { count, error } = await q;
+  if (error) throw error;
+  return Number(count || 0);
+}
+
+export async function listRecentSignals({
+  symbols = [],
+  symbol = null,
+  timeframe = null,
+  strategyVersion = null,
+  limit = 50
+} = {}) {
+  if (!supabase) return [];
+  let q = supabase.from('gold_ai_signals')
+    .select('id,symbol,timeframe,bar_time,strategy_version,candidate,decision,confidence,market_regime,reason,openai_response_id,model,created_at')
+    .order('created_at', { ascending: false })
+    .limit(Math.max(1, Math.min(500, Number(limit) || 50)));
+  const values = Array.isArray(symbols) && symbols.length ? symbols : symbol ? [symbol] : [];
+  if (values.length === 1) q = q.eq('symbol', values[0]);
+  else if (values.length > 1) q = q.in('symbol', values);
+  if (timeframe) q = q.eq('timeframe', timeframe);
+  if (strategyVersion) q = q.eq('strategy_version', strategyVersion);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
+export async function listTradeResults({
+  symbols = [],
+  symbol = null,
+  limit = 500
+} = {}) {
+  if (!supabase) return [];
+  let q = supabase.from('gold_trade_results')
+    .select('id,order_id,symbol,result,profit,r_multiple,holding_seconds,exit_reason,metadata,created_at')
+    .order('created_at', { ascending: false })
+    .limit(Math.max(1, Math.min(5000, Number(limit) || 500)));
+  const values = Array.isArray(symbols) && symbols.length ? symbols : symbol ? [symbol] : [];
+  if (values.length === 1) q = q.eq('symbol', values[0]);
+  else if (values.length > 1) q = q.in('symbol', values);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
 export async function insertEurUsdForwardTrade(row){
   if(!supabase)return{row,persisted:false};
   const order = {
