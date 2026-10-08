@@ -12,6 +12,8 @@ test('summarizeSignalRows counts candidate and decision distribution', () => {
   assert.deepEqual(result.decision, { BUY: 1, SELL: 0, WAIT: 2 });
   assert.equal(result.latest_candidate, 'SELL');
   assert.equal(result.latest_decision, 'WAIT');
+  assert.equal(result.latest_wait_reason, null);
+  assert.deepEqual(result.reason_counts, {});
 });
 
 test('summarizeTradeResultRows computes PF expectancy and win rate', () => {
@@ -28,4 +30,20 @@ test('summarizeTradeResultRows computes PF expectancy and win rate', () => {
   assert.equal(result.net_r, 1);
   assert.equal(result.profit_factor, 2);
   assert.equal(result.expectancy_r, 1 / 3);
+});
+
+
+test('summarizeSignalRows exposes latest WAIT reason and reason distribution', () => {
+  const result = summarizeSignalRows([
+    { candidate: 'WAIT', decision: 'WAIT', reason: 'h1_trend_filter', created_at: '2026-10-08T00:00:00Z' },
+    { candidate: 'WAIT', decision: 'WAIT', reason: 'breakout_trigger_filter', created_at: '2026-10-08T00:01:00Z' },
+    { candidate: 'BUY', decision: 'BUY', reason: 'trend_compression_breakout_confirmed', created_at: '2026-10-08T00:02:00Z' }
+  ]);
+  assert.equal(result.latest_reason, 'trend_compression_breakout_confirmed');
+  assert.equal(result.latest_wait_reason, 'breakout_trigger_filter');
+  assert.deepEqual(result.reason_counts, {
+    h1_trend_filter: 1,
+    breakout_trigger_filter: 1,
+    trend_compression_breakout_confirmed: 1
+  });
 });
