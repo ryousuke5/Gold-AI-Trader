@@ -700,7 +700,7 @@ void OnTimer()
    if(g_lastAttemptAt > 0 && (TimeCurrent() - g_lastAttemptAt) < RetrySeconds)
       return;
 
-   datetime maxRetryUntil = currentClosedBarOpen + MaxRetryMinutes * 60;
+   datetime maxRetryUntil = currentClosedBarOpen + 900 + MaxRetryMinutes * 60;
    if(TimeCurrent() > maxRetryUntil)
       return;
 
