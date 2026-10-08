@@ -439,6 +439,11 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const exitIndex=m5Ind.findIndex((b,idx)=>idx>i+1 && b.time>trade.exit_time);
     nextAvailable=exitIndex<0?m5Ind.length:exitIndex;
   }
+  // Fixed 3y IS / 2y OOS split anchored to the dataset's latest available bar.
+  // These windows are evaluation-only and do not alter candidate generation.
+  const oos730 = periodSummary(trades, config.initialEquity, 730, latest);
+  const oosStart = latest - 730 * 86400;
+  const is1095 = periodSummary(trades, config.initialEquity, 1095, oosStart);
   const recent365 = periodSummary(trades, config.initialEquity, 365, latest);
   const yearly = annualSummary(trades, config.initialEquity);
   const positiveYears = yearly.filter((y)=>y.net_r > 0).length;
@@ -454,7 +459,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
     passed: Boolean(summary.trades >= 30 && summary.profit_factor >= 1.15 && summary.expectancy_R >= 0.05 && summary.max_drawdown_pct <= 5 && recent365.trades >= 8 && recent365.profit_factor >= 1.00 && positiveYears >= 3)
   };
   return {
-    summary,recent365,annual:yearly,positiveYears,qualityGate,trades,
+    summary,recent365,is1095,oos730,annual:yearly,positiveYears,qualityGate,trades,
     signals_evaluated:signalsEvaluated,
     candidates,candidates_buy:candidatesBuy,candidates_sell:candidatesSell,
     setup_wait_reasons:setupWaitReasons,
@@ -527,7 +532,7 @@ async function main() {
     data_quality:dataQuality(rawM5),
     cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{spread_price:costScenarios(config).find(c=>c.name===name).spreadPrice,slippage_price:costScenarios(config).find(c=>c.name===name).slippagePrice}])),
     results:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{
-      summary:r.summary,recent365:r.recent365,annual:r.annual,positiveYears:r.positiveYears,qualityGate:r.qualityGate,
+      summary:r.summary,recent365:r.recent365,is1095:r.is1095,oos730:r.oos730,annual:r.annual,positiveYears:r.positiveYears,qualityGate:r.qualityGate,
       signals_evaluated:r.signals_evaluated,candidates:r.candidates,candidates_buy:r.candidates_buy,candidates_sell:r.candidates_sell,
       setup_wait_reasons:r.setup_wait_reasons,risk_gate_blocks:r.risk_gate_blocks,
       rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap
