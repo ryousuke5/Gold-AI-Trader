@@ -420,3 +420,11 @@ If interrupted, read this section and continue from:
 3. verify `/health` and `/forward-monitor`
 4. enter the existing `GOLD_API_KEY` in the monitor UI and confirm live DB data
 5. keep EURUSD execution and Gold auto-orders OFF during forward observation
+
+
+## 2026-10-09 Gold V2 Range ATR diagnostics
+- Gold V2 keeps the current range compression bounds unchanged at 0.8-2.8 ATR.
+- Diagnostic values are persisted on new Gold signals via invalid_reasons tokens (`GOLD_V2_DIAG:*` and `GOLD_V2_RANGE_ATR:*`).
+- Forward Monitor reads these diagnostics and reports observed min/median/max/mean plus below/in/above-bound counts.
+- Historical signals created before diagnostic persistence cannot be backfilled without the original M5/H1 feature snapshot; treat Range ATR observations as post-deployment only.
+- Resume rule: collect a meaningful sample before changing compression thresholds; compare candidate variants by PF, expectancy, Max DD, trade frequency and cost stress.
