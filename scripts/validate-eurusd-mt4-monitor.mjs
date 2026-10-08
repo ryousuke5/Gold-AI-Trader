@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 
-const files = ['mt4/EURUSDAIMonitor.mq4', 'mt4/EURUSDAIMonitorV12.mq4'];
+const files = ['mt4/EURUSDAIMonitor.mq4', 'mt4/EURUSDAIMonitorV12.mq4', 'mt4/EURUSDAIMonitorV13.mq4'];
 const sources = await Promise.all(files.map(async (file) => ({
   file,
   source: await fs.readFile(file, 'utf8')
