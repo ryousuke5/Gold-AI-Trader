@@ -1,7 +1,10 @@
 import fs from 'node:fs/promises';
 
-const file = 'mt4/EURUSDAIMonitor.mq4';
-const source = await fs.readFile(file, 'utf8');
+const files = ['mt4/EURUSDAIMonitor.mq4', 'mt4/EURUSDAIMonitorV12.mq4'];
+const sources = await Promise.all(files.map(async (file) => ({
+  file,
+  source: await fs.readFile(file, 'utf8')
+})));
 
 const requiredTokens = [
   '#property strict',
@@ -22,9 +25,11 @@ const requiredTokens = [
   'oldest_position_age_seconds'
 ];
 
-for (const token of requiredTokens) {
+for (const { file, source } of sources) {
+  for (const token of requiredTokens) {
   if (!source.includes(token)) {
     throw new Error('Missing required token: ' + token);
+  }
   }
 }
 
@@ -36,14 +41,21 @@ const forbiddenOrderTokens = [
   'OrderCloseBy('
 ];
 
-for (const token of forbiddenOrderTokens) {
-  if (source.includes(token)) {
-    throw new Error('Order-execution token is forbidden in monitor EA: ' + token);
+for (const { file, source } of sources) {
+  for (const token of forbiddenOrderTokens) {
+    if (source.includes(token)) {
+      throw new Error(file + ': Order-execution token is forbidden in monitor EA: ' + token);
+    }
   }
 }
 
+for (const { file, source } of sources) {
 if (!source.includes('StringReplace(value, "\\\"", "\\\\\\"");')) {
-  throw new Error('JsonEscape quote escaping line is missing or malformed');
+  throw new Error(file + ': JsonEscape quote escaping line is missing or malformed');
+}
+if (!source.includes('bool ProbeHealth()') || !source.includes('startup connectivity test passed.') || !source.includes('sending the current completed M15 bar immediately.')) {
+  throw new Error(file + ': startup health probe/immediate send is missing');
+}
 }
 
 function scanStructure(text) {
@@ -121,7 +133,7 @@ function scanStructure(text) {
   }
 }
 
-scanStructure(source);
+for (const { file, source } of sources) scanStructure(source);
 
 const functions = [
   'string TrimText',
@@ -136,9 +148,11 @@ const functions = [
   'void OnDeinit'
 ];
 
-for (const signature of functions) {
-  if (!source.includes(signature)) {
-    throw new Error('Missing required function signature: ' + signature);
+for (const { file, source } of sources) {
+  for (const signature of functions) {
+    if (!source.includes(signature)) {
+      throw new Error(file + ': Missing required function signature: ' + signature);
+    }
   }
 }
 
@@ -146,6 +160,7 @@ console.log('MQL4 EURUSD monitor static validation: PASS');
 console.log('Order execution API scan: PASS');
 console.log('Bracket/string structure scan: PASS');
 
+for (const { file, source } of sources) {
 const accountObjectCount = (source.match(/json \+= "\\"account\\":\{/g) || []).length;
 if (accountObjectCount !== 1) {
   throw new Error('Expected exactly one account JSON object, found: ' + accountObjectCount);
@@ -153,5 +168,7 @@ if (accountObjectCount !== 1) {
 
 const safetyObjectCount = (source.match(/json \+= "\\"safety\\":\{/g) || []).length;
 if (safetyObjectCount !== 1) {
-  throw new Error('Expected exactly one safety JSON object, found: ' + safetyObjectCount);
+  throw new Error(file + ': Expected exactly one safety JSON object, found: ' + safetyObjectCount);
 }
+}
+
