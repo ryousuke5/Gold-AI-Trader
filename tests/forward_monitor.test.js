@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summarizeSignalRows, summarizeTradeResultRows } from '../src/forward_monitor.js';
+import { summarizeSignalRows, summarizeTradeResultRows, summarizeGoldFilterFunnel } from '../src/forward_monitor.js';
 
 test('summarizeSignalRows counts candidate and decision distribution', () => {
   const result = summarizeSignalRows([
@@ -46,4 +46,37 @@ test('summarizeSignalRows exposes latest WAIT reason and reason distribution', (
     breakout_trigger_filter: 1,
     trend_compression_breakout_confirmed: 1
   });
+});
+
+
+test('summarizeGoldFilterFunnel calculates sequential filter pass rates', () => {
+  const result = summarizeGoldFilterFunnel([
+    { reason: 'h1_trend_filter' },
+    { reason: 'compression_filter' },
+    { reason: 'compression_filter' },
+    { reason: 'volume_expansion_filter' },
+    { reason: 'm5_rsi_filter' },
+    { reason: 'trend_compression_breakout_confirmed' },
+    { reason: 'Rule filter found no eligible setup.' }
+  ]);
+  assert.equal(result.sampled_rows, 7);
+  assert.equal(result.recognized_rows, 6);
+  assert.equal(result.unclassified_rows, 1);
+  assert.equal(result.coverage_pct, 6 / 7 * 100);
+
+  const h1 = result.stages.find(stage => stage.reason === 'h1_trend_filter');
+  const compression = result.stages.find(stage => stage.reason === 'compression_filter');
+  const volume = result.stages.find(stage => stage.reason === 'volume_expansion_filter');
+  const rsi = result.stages.find(stage => stage.reason === 'm5_rsi_filter');
+  const confirmed = result.stages.find(stage => stage.reason === 'trend_compression_breakout_confirmed');
+
+  assert.deepEqual(h1, {
+    reason: 'h1_trend_filter', label: 'H1トレンド', reached: 6, failed: 1, passed: 5, pass_rate_pct: 5 / 6 * 100
+  });
+  assert.deepEqual(compression, {
+    reason: 'compression_filter', label: 'レンジ圧縮', reached: 5, failed: 2, passed: 3, pass_rate_pct: 3 / 5 * 100
+  });
+  assert.equal(volume.failed, 1);
+  assert.equal(rsi.failed, 1);
+  assert.equal(confirmed.passed, 1);
 });
