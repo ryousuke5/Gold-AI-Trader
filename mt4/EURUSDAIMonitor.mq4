@@ -1,6 +1,6 @@
 // Safety telemetry gate revision: validated server-side safety fields before execution is enabled.
 #property strict
-#property version   "1.2"
+#property version   "1.3"
 #property description "EURUSD M15 safety telemetry monitor. Sends completed-bar and gap/hold data to Render. No order execution."
 
 input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
@@ -73,7 +73,7 @@ bool IsValidApiConfiguration()
    bool urlOk = (StringFind(base, "https://") == 0);
    bool keyOk = (StringLen(TrimText(ApiKey)) >= 16 && TrimText(ApiKey) != "CHANGE_ME");
 
-   Print("EURUSDAIMonitor: config check url_ok=",
+   Print("EURUSDAIMonitor LEGACY-NAME V1.3: config check url_ok=",
          (urlOk ? "true" : "false"),
          " key_ok=",
          (keyOk ? "true" : "false"),
@@ -737,7 +737,7 @@ int OnInit()
 {
    string sym = TradeSymbol();
 
-   Print("EURUSDAIMonitor 1.2: starting.",
+   Print("EURUSDAIMonitor LEGACY-NAME V1.3: starting.",
          " symbol=", sym,
          " api=", NormalizeBaseUrl(),
          " timer=", TimerSeconds,
