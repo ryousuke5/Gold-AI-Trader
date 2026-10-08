@@ -123,6 +123,18 @@ export async function buildForwardMonitorSnapshot(nowMs = Date.now()) {
         status: dbProbe?.status || 'unknown'
       },
       gold_state: state || null,
+      signal_engines: {
+        eurusd: {
+          enabled: true,
+          status: 'RUNNING',
+          mode: 'DETERMINISTIC_TECHNICAL'
+        },
+        gold: {
+          enabled: true,
+          status: 'RUNNING',
+          mode: 'GOLD_V2_RULE_ENGINE'
+        }
+      },
       real_execution: {
         eurusd: {
           execution_enabled: eurExecutionEnabled,
