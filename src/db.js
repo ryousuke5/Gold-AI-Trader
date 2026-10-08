@@ -61,7 +61,7 @@ export async function listRecentSignals({
 } = {}) {
   if (!supabase) return [];
   let q = supabase.from('gold_ai_signals')
-    .select('id,symbol,timeframe,bar_time,strategy_version,candidate,decision,confidence,market_regime,reason,openai_response_id,model,created_at')
+    .select('id,symbol,timeframe,bar_time,strategy_version,candidate,decision,confidence,market_regime,reason,invalid_reasons,openai_response_id,model,created_at')
     .order('created_at', { ascending: false })
     .limit(Math.max(1, Math.min(500, Number(limit) || 50)));
   const values = Array.isArray(symbols) && symbols.length ? symbols : symbol ? [symbol] : [];
