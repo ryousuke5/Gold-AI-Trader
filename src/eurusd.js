@@ -319,6 +319,23 @@ export function registerEurUsdRoutes(app) {
             nowMs: Date.now()
           })
         : [];
+      const eurSetupDiagnostics = {
+        range_width_atr: Number(setup.range_width_atr),
+        breakout_distance_atr: Number(setup.breakout_distance_atr),
+        breakout_body_atr: Number(setup.breakout_body_atr),
+        breakout_close_location: Number(setup.breakout_close_location),
+        volume_ratio: Number(setup.volume_ratio),
+        spread_pips: Number(setup.spread_pips),
+        spread_atr_pct: Number(setup.spread_atr_pct),
+        stop_atr: Number(setup.stop_atr),
+        trend: String(setup.trend || ''),
+        setup_reasons: Array.isArray(setup.reasons) ? setup.reasons.map(String) : []
+      };
+      const eurInvalidReasons = [
+        ...(Array.isArray(decision.invalid_reasons) ? decision.invalid_reasons : []),
+        ...(Array.isArray(setup.reasons) ? setup.reasons.map(String) : []),
+        'EURUSD_SETUP_DIAG:' + JSON.stringify(eurSetupDiagnostics)
+      ];
       const signalRow = {
         id: signalId,
         symbol,
@@ -334,8 +351,10 @@ export function registerEurUsdRoutes(app) {
         stop_loss: decision.stop_loss || null,
         take_profit: decision.take_profit || null,
         risk_reward: decision.risk_reward || null,
-        reason: decision.reason,
-        invalid_reasons: decision.invalid_reasons,
+        reason: setup.candidate === 'WAIT' && Array.isArray(setup.reasons) && setup.reasons.length
+          ? setup.reasons.join(', ')
+          : decision.reason,
+        invalid_reasons: [...new Set(eurInvalidReasons)],
         openai_response_id: fundamental?.responseId || null,
         model: fundamental?.model || null,
         created_at: nowIso()
