@@ -455,3 +455,31 @@ Resume rule:
 3. Inspect the consolidated `gold-v2-research-matrix-summary` artifact.
 4. Compare 5y, 3y IS, 2y OOS and conservative-cost metrics before touching production parameters.
 5. Do not enable real orders or change Gold V2 production thresholds from research results alone.
+
+
+## 2026-10-09 EURUSD V13 retry-window deadline bug
+
+Observed MT4 logs on 2026-10-09 showed repeated:
+`send skipped. retry window expired`
+with `bar_open=01:30` and `max_retry_until=01:42`, while the log timestamp was around 07:46 JST (broker/server clock offset is visible in the bar timestamps).
+
+Root cause:
+- `currentClosedBarOpen` is the OPEN timestamp of the last completed M15 candle.
+- The retry deadline had been calculated as `currentClosedBarOpen + MaxRetryMinutes * 60`.
+- Since a completed M15 candle is only available 15 minutes after its open, the 12-minute retry window expired before the EA could start sending the completed candle.
+
+Fix committed on main:
+- `mt4/EURUSDAIMonitorV13.mq4`: `currentClosedBarOpen + 900 + MaxRetryMinutes * 60`
+- Same correction applied to `mt4/EURUSDAIMonitorV12.mq4` and `mt4/EURUSDAIMonitor.mq4`
+- `scripts/validate-eurusd-mt4-monitor.mjs` requires the corrected formula to guard against regression.
+- Commits:
+  - `a4fa20d3cc91d030184989d3534dd639c8899993`
+  - `4066e67013c703a352cb16e56e7f2584caa41060`
+  - `bb82713b282ea5345923cf9e600e6bf64af911cf`
+  - `e73ca1d08068c1e6b05e34d0e1b719da6cd81cf9`
+
+Operational note:
+- This is an MT4 EA source change, not a Render server change; Render does not need a redeploy for the EA retry-window correction.
+- The locally attached `EURUSDAIMonitorV13` must be replaced with the updated main-branch source, compiled in MetaEditor, and reattached/reinitialized.
+- Then check for `EURUSD M15 signal processed` instead of `retry window expired`, and confirm the Forward Monitor's EURUSD diagnostic count increases after a new M15 bar.
+- Keep all real execution disabled; V13 remains monitor-only and contains no order execution calls.
