@@ -102,6 +102,21 @@ test('summarizeGoldRangeAtr reports observed range width against configured boun
 });
 
 
+test('summarizeEurUsdSetup excludes unavailable directional breakout distance from averages', () => {
+  const result = summarizeEurUsdSetup([
+    { invalid_reasons: [
+      'EURUSD_SETUP_DIAG:{"range_width_atr":2.2,"breakout_distance_atr":0.15,"breakout_body_atr":0.4,"breakout_close_location":0.75,"volume_ratio":1.2,"spread_pips":1.0,"spread_atr_pct":9}'
+    ] },
+    { invalid_reasons: [
+      'EURUSD_SETUP_DIAG:{"range_width_atr":1.8,"breakout_distance_atr":null,"breakout_body_atr":0.6,"breakout_close_location":0.6,"volume_ratio":0.8,"spread_pips":2.0,"spread_atr_pct":18}'
+    ] }
+  ]);
+  assert.equal(result.observations, 2);
+  assert.equal(result.averages.range_width_atr, 2);
+  assert.equal(result.averages.breakout_distance_atr, 0.15);
+  assert.equal(result.averages.spread_pips, 1.5);
+});
+
 test('summarizeEurUsdSetup exposes technical WAIT reasons and averages', () => {
   const result = summarizeEurUsdSetup([
     {
