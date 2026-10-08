@@ -94,22 +94,45 @@ export function buildGoldV2Setup(features = {}, config = {}) {
 
   const breakoutDistanceUp = signal.close - range.high;
   const breakoutDistanceDown = range.low - signal.close;
-  const buyBreakout = trendUp &&
-    breakoutDistanceUp >= cfg.breakoutAtr * m5.atr14 &&
-    closeLocation >= cfg.minCloseLocation &&
-    m5.rsi14 >= cfg.buyRsiMin && m5.rsi14 <= cfg.buyRsiMax &&
-    signal.close >= m5.ema20 &&
-    (signal.close - m5.ema20) / m5.atr14 <= cfg.maxExtensionAtr;
-  const sellBreakout = trendDown &&
-    breakoutDistanceDown >= cfg.breakoutAtr * m5.atr14 &&
-    closeLocation <= 1 - cfg.minCloseLocation &&
-    m5.rsi14 >= cfg.sellRsiMin && m5.rsi14 <= cfg.sellRsiMax &&
-    signal.close <= m5.ema20 &&
-    (m5.ema20 - signal.close) / m5.atr14 <= cfg.maxExtensionAtr;
 
-  if (!buyBreakout && !sellBreakout) {
-    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'breakout_trigger_filter' };
+  if (trendUp) {
+    if (breakoutDistanceUp < cfg.breakoutAtr * m5.atr14) {
+      return { candidate: 'WAIT', trend: 'UP', reason: 'breakout_trigger_filter' };
+    }
+    if (closeLocation < cfg.minCloseLocation) {
+      return { candidate: 'WAIT', trend: 'UP', reason: 'close_location_filter' };
+    }
+    if (m5.rsi14 < cfg.buyRsiMin || m5.rsi14 > cfg.buyRsiMax) {
+      return { candidate: 'WAIT', trend: 'UP', reason: 'm5_rsi_filter' };
+    }
+    if (signal.close < m5.ema20) {
+      return { candidate: 'WAIT', trend: 'UP', reason: 'm5_ema_alignment_filter' };
+    }
+    if ((signal.close - m5.ema20) / m5.atr14 > cfg.maxExtensionAtr) {
+      return { candidate: 'WAIT', trend: 'UP', reason: 'extension_filter' };
+    }
+  } else if (trendDown) {
+    if (breakoutDistanceDown < cfg.breakoutAtr * m5.atr14) {
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'breakout_trigger_filter' };
+    }
+    if (closeLocation > 1 - cfg.minCloseLocation) {
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'close_location_filter' };
+    }
+    if (m5.rsi14 < cfg.sellRsiMin || m5.rsi14 > cfg.sellRsiMax) {
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'm5_rsi_filter' };
+    }
+    if (signal.close > m5.ema20) {
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'm5_ema_alignment_filter' };
+    }
+    if ((m5.ema20 - signal.close) / m5.atr14 > cfg.maxExtensionAtr) {
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'extension_filter' };
+    }
+  } else {
+    return { candidate: 'WAIT', trend: 'RANGE', reason: 'breakout_trigger_filter' };
   }
+
+  const buyBreakout = trendUp;
+  const sellBreakout = trendDown;
 
   const side = buyBreakout ? 'BUY' : 'SELL';
   const referenceEntry = signal.close;
