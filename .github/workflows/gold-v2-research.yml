@@ -368,3 +368,117 @@ jobs:
           path: gold-backtest-output/
           retention-days: 30
           if-no-files-found: warn
+
+  aggregate-results:
+    needs: [research]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all variant reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gold-v2-*
+          path: gold-v2-research-artifacts
+          merge-multiple: false
+
+      - name: Build research matrix summary
+        run: |
+          python3 - <<'PY'
+          import csv
+          import json
+          from pathlib import Path
+
+          root = Path("gold-v2-research-artifacts")
+          rows = []
+          for report_path in sorted(root.glob("*/gold_v2_backtest_report.json")):
+              variant = report_path.parent.name.removeprefix("gold-v2-")
+              try:
+                  report = json.loads(report_path.read_text(encoding="utf-8"))
+                  base = report["results"]["baseline"]
+                  cons = report["results"]["conservative"]
+                  rows.append({
+                      "variant": variant,
+                      "five_year_trades": base["summary"]["trades"],
+                      "five_year_pf": base["summary"]["profit_factor"],
+                      "five_year_expectancy_R": base["summary"]["expectancy_R"],
+                      "five_year_maxDD_pct": base["summary"]["max_drawdown_pct"],
+                      "oos730_trades": base.get("oos730", {}).get("trades", 0),
+                      "oos730_pf": base.get("oos730", {}).get("profit_factor", 0),
+                      "oos730_expectancy_R": base.get("oos730", {}).get("expectancy_R", 0),
+                      "oos730_maxDD_pct": base.get("oos730", {}).get("max_drawdown_pct", 0),
+                      "is1095_trades": base.get("is1095", {}).get("trades", 0),
+                      "is1095_pf": base.get("is1095", {}).get("profit_factor", 0),
+                      "is1095_expectancy_R": base.get("is1095", {}).get("expectancy_R", 0),
+                      "conservative_trades": cons["summary"]["trades"],
+                      "conservative_pf": cons["summary"]["profit_factor"],
+                      "conservative_expectancy_R": cons["summary"]["expectancy_R"],
+                      "conservative_maxDD_pct": cons["summary"]["max_drawdown_pct"],
+                      "recent365_trades": base["recent365"]["trades"],
+                      "recent365_pf": base["recent365"]["profit_factor"],
+                      "recent365_expectancy_R": base["recent365"]["expectancy_R"],
+                      "quality_gate": bool(base["qualityGate"]["passed"]),
+                  })
+              except Exception as exc:
+                  rows.append({"variant": variant, "error": str(exc)})
+
+          rows.sort(key=lambda r: (r.get("oos730_expectancy_R", -999), r.get("oos730_pf", -999)), reverse=True)
+
+          out = Path("gold-v2-research-summary")
+          out.mkdir(parents=True, exist_ok=True)
+          (out / "gold_v2_research_matrix.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+
+          fields = [
+              "variant","five_year_trades","five_year_pf","five_year_expectancy_R","five_year_maxDD_pct",
+              "oos730_trades","oos730_pf","oos730_expectancy_R","oos730_maxDD_pct",
+              "is1095_trades","is1095_pf","is1095_expectancy_R",
+              "conservative_trades","conservative_pf","conservative_expectancy_R","conservative_maxDD_pct",
+              "recent365_trades","recent365_pf","recent365_expectancy_R","quality_gate"
+          ]
+          with (out / "gold_v2_research_matrix.csv").open("w", newline="", encoding="utf-8") as fh:
+              writer = csv.DictWriter(fh, fieldnames=fields)
+              writer.writeheader()
+              for row in rows:
+                  if "error" not in row:
+                      writer.writerow(row)
+
+          def fmt(v):
+              if isinstance(v, bool): return "PASS" if v else "FAIL"
+              if isinstance(v, float): return f"{v:.3f}"
+              return str(v)
+
+          md = [
+              "# Gold V2 research matrix",
+              "",
+              "本番設定は変更していません。Range ATR variant は研究専用です。",
+              "5y = 全期間、IS = 直近2年を除く前3年、OOS = 直近2年。",
+              "Conservative = spread >= 0.75 + slippage >= 0.10 のコストストレス。",
+              "",
+              "| Variant | 5y trades | 5y PF | 5y Exp(R) | 5y MaxDD% | OOS trades | OOS PF | OOS Exp(R) | OOS MaxDD% | Cons PF | Cons Exp(R) | Quality Gate |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+          ]
+          for r in rows:
+              if "error" in r:
+                  md.append(f"| {r['variant']} | ERROR | | | | | | | | | | |")
+              else:
+                  md.append(
+                      f"| {r['variant']} | {r['five_year_trades']} | {fmt(r['five_year_pf'])} | "
+                      f"{fmt(r['five_year_expectancy_R'])} | {fmt(r['five_year_maxDD_pct'])} | "
+                      f"{r['oos730_trades']} | {fmt(r['oos730_pf'])} | {fmt(r['oos730_expectancy_R'])} | "
+                      f"{fmt(r['oos730_maxDD_pct'])} | {fmt(r['conservative_pf'])} | "
+                      f"{fmt(r['conservative_expectancy_R'])} | {fmt(r['quality_gate'])} |"
+                  )
+          (out / "gold_v2_research_matrix.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+
+          print((out / "gold_v2_research_matrix.md").read_text(encoding="utf-8"))
+          PY
+
+      - name: Upload consolidated research summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-research-matrix-summary
+          path: gold-v2-research-summary/
+          retention-days: 90
+          if-no-files-found: error
