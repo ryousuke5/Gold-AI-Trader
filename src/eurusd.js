@@ -47,6 +47,12 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function nullableNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function emptyFundamental(reason = 'Fundamental search not run because the technical setup was WAIT.') {
   return {
     bias: 'INSUFFICIENT',
@@ -321,7 +327,7 @@ export function registerEurUsdRoutes(app) {
         : [];
       const eurSetupDiagnostics = {
         range_width_atr: Number(setup.range_width_atr),
-        breakout_distance_atr: Number(setup.breakout_distance_atr),
+        breakout_distance_atr: nullableNumber(setup.breakout_distance_atr),
         breakout_body_atr: Number(setup.breakout_body_atr),
         breakout_close_location: Number(setup.breakout_close_location),
         volume_ratio: Number(setup.volume_ratio),
