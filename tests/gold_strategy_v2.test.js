@@ -106,3 +106,20 @@ test('GOLD V2 pipeline rejects malformed or insufficient history safely', async 
   assert.equal(result.candidate, 'WAIT');
   assert.equal(result.reason, 'missing_or_invalid_features');
 });
+
+
+test('GOLD V2 identifies M5 RSI as a separate breakout rejection reason', () => {
+  const f = baseFeatures();
+  f.m5.rsi14 = 49;
+  const result = buildGoldV2Setup(f);
+  assert.equal(result.candidate, 'WAIT');
+  assert.equal(result.reason, 'm5_rsi_filter');
+});
+
+test('GOLD V2 identifies close location as a separate breakout rejection reason', () => {
+  const f = baseFeatures();
+  f.recentM5.at(-1).close = 2502.0;
+  const result = buildGoldV2Setup(f);
+  assert.equal(result.candidate, 'WAIT');
+  assert.equal(result.reason, 'close_location_filter');
+});
