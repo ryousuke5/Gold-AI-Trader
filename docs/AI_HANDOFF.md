@@ -334,3 +334,31 @@ Validation:
 Deployment note:
 - Code/config is committed to GitHub.
 - Render deployment/runtime verification is not yet confirmed because the connected Render MCP session has no selected workspace. Do not claim that the forward test is already running until Render health and the /api/eurusd/forward-status endpoint are checked.
+
+
+## 2026-10-08 EURUSD AI-free monitor V1
+
+MT4 monitoring implementation:
+- `mt4/EURUSDAIMonitorV13.mq4`
+- Uses completed M15 bars and H1 context.
+- Sends to `/api/eurusd/signal`.
+- No `OrderSend/OrderClose/OrderModify` execution code.
+- One completed M15 bar is processed once, with bounded retry behavior.
+- Includes startup `/health` probe and safety telemetry.
+- Static structure/order-execution validation passed after creation.
+
+Runtime architecture:
+- `EURUSD_AI_ENABLED=false` means `/api/eurusd/signal` uses `buildTechnicalOnlyDecision()` and does not call OpenAI for normal signal requests.
+- `EURUSD_EXECUTION_ENABLED=false` keeps real order execution disabled.
+
+Current user-side setup:
+- EURUSD M15 chart with `EURUSDAIMonitorV13`.
+- Keep real orders OFF.
+- Gold Render observation remains a separate track; do not mix its logs with the EURUSD deterministic validation.
+
+Next step:
+1. Confirm the local MT4 `EURUSDAIMonitorV13` matches repository V1.4.
+2. Compile with MT4 MetaEditor and attach to EURUSD M15.
+3. Confirm startup health + first completed-bar signal logs.
+4. Verify Render logs show `/api/eurusd/signal`, `openai.called=false`, and deterministic decision data.
+5. Continue deterministic EURUSD performance validation before any AI layer or live execution.
