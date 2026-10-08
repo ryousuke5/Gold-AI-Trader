@@ -1,6 +1,6 @@
 // Safety telemetry gate revision: validated server-side safety fields before execution is enabled.
 #property strict
-#property version   "1.2"
+#property version   "1.3"
 #property description "EURUSD M15 safety telemetry monitor. Sends completed-bar and gap/hold data to Render. No order execution."
 
 input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
@@ -673,23 +673,40 @@ bool PostJson(string path, string payload, string &response)
 }
 
 //---------------------------------------------------------
-// Main timer
+// Signal send core
 //---------------------------------------------------------
-void OnTimer()
+bool SendCurrentBar(bool bypassRetryWindow)
 {
    if(!EnableSignalRequests || !g_apiConfigReady)
-      return;
+   {
+      Print("EURUSDAIMonitor: send skipped. enable=",
+            (EnableSignalRequests ? "true" : "false"),
+            " config_ready=",
+            (g_apiConfigReady ? "true" : "false"));
+      return false;
+   }
 
    string sym = TradeSymbol();
+
    if(!IsEurUsdSymbol(sym))
-      return;
+   {
+      Print("EURUSDAIMonitor: send skipped. non-EURUSD symbol=", sym);
+      return false;
+   }
 
    if(!SymbolReady(sym))
-      return;
+   {
+      Print("EURUSDAIMonitor: send skipped. SymbolReady=false symbol=", sym);
+      return false;
+   }
 
    datetime currentClosedBarOpen = iTime(sym, PERIOD_M15, 1);
+
    if(currentClosedBarOpen <= 0)
-      return;
+   {
+      Print("EURUSDAIMonitor: send skipped. invalid current closed M15 bar.");
+      return false;
+   }
 
    if(currentClosedBarOpen != g_lastClosedM15Open)
    {
@@ -697,19 +714,35 @@ void OnTimer()
       g_lastAttemptAt = 0;
    }
 
-   if(g_lastAttemptAt > 0 && (TimeCurrent() - g_lastAttemptAt) < RetrySeconds)
-      return;
+   if(!bypassRetryWindow &&
+      g_lastAttemptAt > 0 &&
+      (TimeCurrent() - g_lastAttemptAt) < RetrySeconds)
+   {
+      return false;
+   }
 
-   datetime maxRetryUntil = currentClosedBarOpen + MaxRetryMinutes * 60;
-   if(TimeCurrent() > maxRetryUntil)
-      return;
+   datetime maxRetryUntil =
+      currentClosedBarOpen + MaxRetryMinutes * 60;
+
+   if(!bypassRetryWindow && TimeCurrent() > maxRetryUntil)
+   {
+      Print("EURUSDAIMonitor: send skipped. retry window expired.",
+            " bar_open=",
+            TimeToString(currentClosedBarOpen, TIME_DATE|TIME_MINUTES),
+            " max_retry_until=",
+            TimeToString(maxRetryUntil, TIME_DATE|TIME_MINUTES));
+      return false;
+   }
 
    string payload = "";
    datetime closedBarOpen = 0;
    datetime closedBarTime = 0;
 
    if(!BuildSignalPayload(payload, closedBarOpen, closedBarTime))
-      return;
+   {
+      Print("EURUSDAIMonitor: send skipped. BuildSignalPayload=false.");
+      return false;
+   }
 
    g_lastAttemptAt = TimeCurrent();
 
@@ -719,15 +752,26 @@ void OnTimer()
    if(ok)
    {
       Print("EURUSDAIMonitor: EURUSD M15 signal processed.",
-            " bar_open=", TimeToString(closedBarOpen, TIME_DATE|TIME_MINUTES),
-            " bar_close=", TimeToString(closedBarTime, TIME_DATE|TIME_MINUTES),
+            " bar_open=",
+            TimeToString(closedBarOpen, TIME_DATE|TIME_MINUTES),
+            " bar_close=",
+            TimeToString(closedBarTime, TIME_DATE|TIME_MINUTES),
             " response=", response);
+      return true;
    }
-   else
-   {
-      Print("EURUSDAIMonitor: EURUSD M15 signal request failed.",
-            " bar_open=", TimeToString(closedBarOpen, TIME_DATE|TIME_MINUTES));
-   }
+
+   Print("EURUSDAIMonitor: EURUSD M15 signal request failed.",
+         " bar_open=",
+         TimeToString(closedBarOpen, TIME_DATE|TIME_MINUTES));
+   return false;
+}
+
+//---------------------------------------------------------
+// Main timer
+//---------------------------------------------------------
+void OnTimer()
+{
+   SendCurrentBar(false);
 }
 
 //---------------------------------------------------------
@@ -737,7 +781,7 @@ int OnInit()
 {
    string sym = TradeSymbol();
 
-   Print("EURUSDAIMonitorV12 1.2: starting.",
+   Print("EURUSDAIMonitorV12 1.3: starting.",
          " symbol=", sym,
          " api=", NormalizeBaseUrl(),
          " timer=", TimerSeconds,
@@ -784,8 +828,8 @@ int OnInit()
    else
    {
       Print("EURUSDAIMonitor: startup connectivity test passed.");
-      Print("EURUSDAIMonitor: sending the current completed M15 bar immediately.");
-      OnTimer();
+      Print("EURUSDAIMonitor: sending the current completed M15 bar immediately (startup bypass).");
+      SendCurrentBar(true);
    }
 
    Print("EURUSDAIMonitor: attached. Monitor-only mode; no OrderSend/OrderClose logic.");
