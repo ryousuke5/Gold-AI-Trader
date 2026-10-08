@@ -102,19 +102,23 @@ test('summarizeGoldRangeAtr reports observed range width against configured boun
 });
 
 
-test('summarizeEurUsdSetup excludes unavailable directional breakout distance from averages', () => {
+test('summarizeEurUsdSetup excludes unavailable and legacy RANGE breakout distances from averages', () => {
   const result = summarizeEurUsdSetup([
     { invalid_reasons: [
-      'EURUSD_SETUP_DIAG:{"range_width_atr":2.2,"breakout_distance_atr":0.15,"breakout_body_atr":0.4,"breakout_close_location":0.75,"volume_ratio":1.2,"spread_pips":1.0,"spread_atr_pct":9}'
+      'EURUSD_SETUP_DIAG:{"trend":"UP","range_width_atr":2.2,"breakout_distance_atr":0.15,"breakout_body_atr":0.4,"breakout_close_location":0.75,"volume_ratio":1.2,"spread_pips":1.0,"spread_atr_pct":9}'
+    ] },
+    // Simulate a pre-fix row: a negative value stored for a RANGE regime must be ignored.
+    { invalid_reasons: [
+      'EURUSD_SETUP_DIAG:{"trend":"RANGE","range_width_atr":1.8,"breakout_distance_atr":-1.92,"breakout_body_atr":0.6,"breakout_close_location":0.6,"volume_ratio":0.8,"spread_pips":2.0,"spread_atr_pct":18}'
     ] },
     { invalid_reasons: [
-      'EURUSD_SETUP_DIAG:{"range_width_atr":1.8,"breakout_distance_atr":null,"breakout_body_atr":0.6,"breakout_close_location":0.6,"volume_ratio":0.8,"spread_pips":2.0,"spread_atr_pct":18}'
+      'EURUSD_SETUP_DIAG:{"trend":"DOWN","range_width_atr":1.6,"breakout_distance_atr":null,"breakout_body_atr":0.5,"breakout_close_location":0.25,"volume_ratio":1.1,"spread_pips":0.8,"spread_atr_pct":8}'
     ] }
   ]);
-  assert.equal(result.observations, 2);
-  assert.equal(result.averages.range_width_atr, 2);
+  assert.equal(result.observations, 3);
+  assert.equal(result.averages.range_width_atr, (2.2 + 1.8 + 1.6) / 3);
   assert.equal(result.averages.breakout_distance_atr, 0.15);
-  assert.equal(result.averages.spread_pips, 1.5);
+  assert.equal(result.averages.spread_pips, (1 + 2 + 0.8) / 3);
 });
 
 test('summarizeEurUsdSetup exposes technical WAIT reasons and averages', () => {
@@ -123,14 +127,14 @@ test('summarizeEurUsdSetup exposes technical WAIT reasons and averages', () => {
       invalid_reasons: [
         'technical_setup_wait',
         'range_width_outside_atr_band',
-        'EURUSD_SETUP_DIAG:{"range_width_atr":2.4,"breakout_distance_atr":0.05,"breakout_body_atr":0.25,"breakout_close_location":0.61,"volume_ratio":0.9,"spread_pips":1.0,"spread_atr_pct":10}'
+        'EURUSD_SETUP_DIAG:{"trend":"UP","range_width_atr":2.4,"breakout_distance_atr":0.05,"breakout_body_atr":0.25,"breakout_close_location":0.61,"volume_ratio":0.9,"spread_pips":1.0,"spread_atr_pct":10}'
       ]
     },
     {
       invalid_reasons: [
         'technical_setup_wait',
         'breakout_penetration_too_small',
-        'EURUSD_SETUP_DIAG:{"range_width_atr":1.6,"breakout_distance_atr":0.02,"breakout_body_atr":0.31,"breakout_close_location":0.68,"volume_ratio":1.1,"spread_pips":0.8,"spread_atr_pct":8}'
+        'EURUSD_SETUP_DIAG:{"trend":"DOWN","range_width_atr":1.6,"breakout_distance_atr":0.02,"breakout_body_atr":0.31,"breakout_close_location":0.68,"volume_ratio":1.1,"spread_pips":0.8,"spread_atr_pct":8}'
       ]
     }
   ]);
