@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { normalizeFeatures, validateFeatures, ruleCandidate } from './src/features.js';
 import { buildGoldV2Setup } from './src/gold_strategy_v2.js';
@@ -8,10 +10,17 @@ import { evaluateRisk, getRiskLimits, safeDecision } from './src/risk.js';
 import { dbEnabled, getRiskBySignal, getSignalByKey, getState, insertEvent, insertOrder, insertRisk, insertSignal, insertTradeResult, probeGoldDatabase, updateState } from './src/db.js';
 import { registerEurUsdRoutes } from './src/eurusd.js';
 import { startEurUsdNewsFeedMonitor } from './src/eurusd_news_feed.js';
+import { buildForwardMonitorSnapshot } from './src/forward_monitor.js';
 
 const app=express();
+const __filename=fileURLToPath(import.meta.url);
+const __dirname=path.dirname(__filename);
 app.disable('x-powered-by');
 app.use(express.json({limit:'96kb'}));
+app.use(express.static(path.join(__dirname,'public'),{index:false}));
+app.get('/forward-monitor',(req,res)=>{
+  res.sendFile(path.join(__dirname,'public','forward-monitor.html'));
+});
 const port=Number(process.env.PORT||3100);
 const defaultSymbol=process.env.DEFAULT_SYMBOL||'XAUUSD';
 const strategyVersion=process.env.STRATEGY_VERSION||'gold-m5-h1-v2';
@@ -48,6 +57,17 @@ function applyDeterministicGoldSetup(decision, setup, candidate){
   return {...decision,candidate,entry,stop_loss:sl,take_profit:tp,risk_reward:rr};
 }
 function waitDecision(){return{decision:'WAIT',confidence:0,market_regime:'UNCLEAR',entry:0,stop_loss:0,take_profit:0,risk_reward:0,reason:'Rule filter found no eligible setup.',invalid_reasons:['rule_candidate_wait'],fundamental:{bias:'INSUFFICIENT',confidence:0,freshness:'INSUFFICIENT',summary:'Fundamental search skipped because the deterministic rule candidate was WAIT.',drivers:[],risks:[]}};}function preserveFundamental(safe,raw){const f=raw?.fundamental||{};const c=Number(f.confidence);return{...safe,fundamental:{bias:String(f.bias||'INSUFFICIENT').toUpperCase(),confidence:Number.isFinite(c)?c:0,freshness:String(f.freshness||'INSUFFICIENT').toUpperCase(),summary:String(f.summary||''),drivers:Array.isArray(f.drivers)?f.drivers.map(String):[],risks:Array.isArray(f.risks)?f.risks.map(String):[]}};}
+app.get('/api/forward-monitor',auth,async(req,res)=>{
+  try {
+    const snapshot=await buildForwardMonitorSnapshot(Date.now());
+    res.set('Cache-Control','no-store');
+    res.json(snapshot);
+  } catch(error) {
+    console.error('[forward-monitor]',error);
+    res.status(500).json({ok:false,error:error.message||'forward monitor failed'});
+  }
+});
+
 app.get('/health',async(req,res)=>{const exists=k=>Object.prototype.hasOwnProperty.call(process.env,k);const nonempty=k=>Boolean(String(process.env[k]||'').trim());const keys=['SUPABASE_URL','SUPABASE_SECRET_KEY','SUPABASE_SERVICE_ROLE_KEY','OPENAI_API_KEY','GOLD_API_KEY'];const env={supabase_url:nonempty('SUPABASE_URL'),supabase_key:nonempty('SUPABASE_SECRET_KEY')||nonempty('SUPABASE_SERVICE_ROLE_KEY'),openai:nonempty('OPENAI_API_KEY'),gold_api:nonempty('GOLD_API_KEY'),env_probe:nonempty('GOLD_CONFIG_PROBE')&&process.env.GOLD_CONFIG_PROBE==='1'};const env_presence=Object.fromEntries(keys.map(k=>[k,{present:exists(k),nonempty:nonempty(k)}]));const missing_env=[];if(!env.supabase_url)missing_env.push('SUPABASE_URL');if(!env.supabase_key)missing_env.push('SUPABASE_SECRET_KEY');if(!env.openai)missing_env.push('OPENAI_API_KEY');if(!env.gold_api)missing_env.push('GOLD_API_KEY');const db_probe=await probeGoldDatabase();res.json({ok:true,service:'gold-ai-trader-v1',config:env,env_presence,missing_env,db:dbEnabled(),db_probe,mode:currentState().mode,strategy_version:strategyVersion});});
 app.post('/api/gold/ai-test',auth,async(req,res)=>{const requestId=String(req.headers['x-request-id']||crypto.randomUUID());try{const body=req.body||{};const symbol=String(body.symbol||defaultSymbol);const timeframe=String(body.timeframe||'M5');if(timeframe!=='M5')return res.status(400).json({ok:false,error:'V1 supports M5 only',request_id:requestId});const features=normalizeFeatures(body.features||body);const featureErrors=validateFeatures(features);if(featureErrors.length)return res.status(400).json({ok:false,error:'invalid_features',reasons:featureErrors,request_id:requestId});const setup = strategyVersion === 'gold-m5-h1-v2' ? buildGoldV2Setup(features, getGoldV2Config()) : ruleCandidate(features);
 const candidate = typeof setup === 'string' ? setup : String(setup?.candidate || 'WAIT');const ai=await analyzeWithOpenAI({features,candidate,symbol});const decision=applyDeterministicGoldSetup(preserveFundamental(safeDecision(ai.decision),ai.decision),setup,candidate);const risk=evaluateRisk({decision:{...decision,candidate},features,account:{equity:100000,open_positions:0,daily_pnl_pct:0,drawdown_pct:0,risk_data_ready:true,trade_allowed:1,tick_size:0.01,tick_value:1,min_lot:0.01,max_lot:100,lot_step:0.01},signalCreatedAt:Date.now(),now:Date.now()});res.json({ok:true,request_id:requestId,symbol,timeframe,strategy_version:strategyVersion,setup,candidate,decision,risk,fundamental_sources:ai.sources,openai:{called:true,response_id:ai.responseId,model:ai.model,web_search_used:ai.webSearchUsed===true},fundamental_source_selection_method:ai.sourceSelectionMethod||null,searched_sources_count:Array.isArray(ai.searchedSources)?ai.searchedSources.length:0,persisted:false,orders_executed:false,execution_test_only:true});}catch(error){console.error('[gold/ai-test]',requestId,error);res.status(500).json({ok:false,error:error.message||'AI test failed',request_id:requestId});}});
