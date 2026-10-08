@@ -13,6 +13,7 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm test
+      - run: npm run test:mt4
       - run: npm run test:mt4:live
       - run: node --check scripts/backtest-gold-v4.mjs
       - run: node --check scripts/backtest-gold-v4-walkforward.mjs
