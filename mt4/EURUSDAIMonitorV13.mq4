@@ -82,37 +82,37 @@ bool IsValidApiConfiguration()
 
    if(!urlOk)
    {
-      Print("EURUSDAIMonitorV13V13: ApiBaseUrl must start with https://");
+      Print("EURUSDAIMonitorV13: ApiBaseUrl must start with https://");
       return false;
    }
 
    if(!keyOk)
    {
-      Print("EURUSDAIMonitorV13V13: ApiKey is not configured or is too short.");
+      Print("EURUSDAIMonitorV13: ApiKey is not configured or is too short.");
       return false;
    }
 
    if(RequestTimeoutMs < 1000)
    {
-      Print("EURUSDAIMonitorV13V13: RequestTimeoutMs must be >= 1000.");
+      Print("EURUSDAIMonitorV13: RequestTimeoutMs must be >= 1000.");
       return false;
    }
 
    if(TimerSeconds < 1)
    {
-      Print("EURUSDAIMonitorV13V13: TimerSeconds must be >= 1.");
+      Print("EURUSDAIMonitorV13: TimerSeconds must be >= 1.");
       return false;
    }
 
    if(RetrySeconds < 5)
    {
-      Print("EURUSDAIMonitorV13V13: RetrySeconds must be >= 5.");
+      Print("EURUSDAIMonitorV13: RetrySeconds must be >= 5.");
       return false;
    }
 
    if(MaxRetryMinutes < 1)
    {
-      Print("EURUSDAIMonitorV13V13: MaxRetryMinutes must be >= 1.");
+      Print("EURUSDAIMonitorV13: MaxRetryMinutes must be >= 1.");
       return false;
    }
 
@@ -126,7 +126,7 @@ bool SymbolReady(string sym)
 {
    if(!SymbolSelect(sym, true))
    {
-      Print("EURUSDAIMonitorV13V13: SymbolSelect failed for ", sym,
+      Print("EURUSDAIMonitorV13: SymbolSelect failed for ", sym,
             " error=", GetLastError());
       return false;
    }
@@ -136,7 +136,7 @@ bool SymbolReady(string sym)
 
    if(m15Bars < 300 || h1Bars < 300)
    {
-      Print("EURUSDAIMonitorV13V13: insufficient history. M15=", m15Bars,
+      Print("EURUSDAIMonitorV13: insufficient history. M15=", m15Bars,
             " H1=", h1Bars);
       return false;
    }
@@ -146,7 +146,7 @@ bool SymbolReady(string sym)
 
    if(m15Open <= 0 || h1Open <= 0)
    {
-      Print("EURUSDAIMonitorV13V13: price history is not ready.");
+      Print("EURUSDAIMonitorV13: price history is not ready.");
       return false;
    }
 
@@ -207,7 +207,7 @@ double DailyRealizedPnl(string sym)
 
 double PeakEquity(string sym)
 {
-   string key = "EURUSDAIMonitorV13V13:PeakEquity:" +
+   string key = "EURUSDAIMonitorV13:PeakEquity:" +
                 IntegerToString(AccountNumber()) + ":" + sym;
    double equity = AccountEquity();
 
@@ -438,7 +438,7 @@ bool BuildSignalPayload(string &payload, datetime &closedBarOpen, datetime &clos
 
    if(!(digits >= 3 && digits <= 6) || !(point > 0.0) || !(bid > 0.0) || !(ask > 0.0) || ask < bid)
    {
-      Print("EURUSDAIMonitorV13V13: invalid market snapshot.");
+      Print("EURUSDAIMonitorV13: invalid market snapshot.");
       return false;
    }
 
@@ -466,7 +466,7 @@ bool BuildSignalPayload(string &payload, datetime &closedBarOpen, datetime &clos
         m15Rsi14 >= 0.0 && m15Rsi14 <= 100.0 &&
         h1Rsi14 >= 0.0 && h1Rsi14 <= 100.0))
    {
-      Print("EURUSDAIMonitorV13V13: indicator snapshot is invalid.");
+      Print("EURUSDAIMonitorV13: indicator snapshot is invalid.");
       return false;
    }
 
@@ -598,7 +598,7 @@ bool ProbeHealth()
    int errorCode = GetLastError();
    string response = CharArrayToString(result, 0, -1, CP_UTF8);
 
-   Print("EURUSDAIMonitorV13V13: health probe HTTP=",
+   Print("EURUSDAIMonitorV13: health probe HTTP=",
          httpCode,
          " error=",
          errorCode,
@@ -607,7 +607,7 @@ bool ProbeHealth()
 
    if(httpCode < 200 || httpCode >= 300)
    {
-      Print("EURUSDAIMonitorV13V13: health probe failed. ",
+      Print("EURUSDAIMonitorV13: health probe failed. ",
             "Check MT4 WebRequest allow-list: ",
             NormalizeBaseUrl());
       return false;
@@ -652,13 +652,13 @@ bool PostJson(string path, string payload, string &response)
 
    if(httpCode == 409 && StringFind(response, "\"error\":\"duplicate_bar\"") >= 0)
    {
-      Print("EURUSDAIMonitorV13V13: duplicate_bar accepted. path=", path);
+      Print("EURUSDAIMonitorV13: duplicate_bar accepted. path=", path);
       return true;
    }
 
    if(httpCode < 200 || httpCode >= 300)
    {
-      Print("EURUSDAIMonitorV13V13: WebRequest failed HTTP=",
+      Print("EURUSDAIMonitorV13: WebRequest failed HTTP=",
             httpCode,
             " error=",
             errorCode,
@@ -679,7 +679,7 @@ bool SendCurrentBar(bool bypassRetryWindow)
 {
    if(!EnableSignalRequests || !g_apiConfigReady)
    {
-      Print("EURUSDAIMonitorV13V13: send skipped. enable=",
+      Print("EURUSDAIMonitorV13: send skipped. enable=",
             (EnableSignalRequests ? "true" : "false"),
             " config_ready=",
             (g_apiConfigReady ? "true" : "false"));
@@ -690,13 +690,13 @@ bool SendCurrentBar(bool bypassRetryWindow)
 
    if(!IsEurUsdSymbol(sym))
    {
-      Print("EURUSDAIMonitorV13V13: send skipped. non-EURUSD symbol=", sym);
+      Print("EURUSDAIMonitorV13: send skipped. non-EURUSD symbol=", sym);
       return false;
    }
 
    if(!SymbolReady(sym))
    {
-      Print("EURUSDAIMonitorV13V13: send skipped. SymbolReady=false symbol=", sym);
+      Print("EURUSDAIMonitorV13: send skipped. SymbolReady=false symbol=", sym);
       return false;
    }
 
@@ -704,7 +704,7 @@ bool SendCurrentBar(bool bypassRetryWindow)
 
    if(currentClosedBarOpen <= 0)
    {
-      Print("EURUSDAIMonitorV13V13: send skipped. invalid current closed M15 bar.");
+      Print("EURUSDAIMonitorV13: send skipped. invalid current closed M15 bar.");
       return false;
    }
 
@@ -726,7 +726,7 @@ bool SendCurrentBar(bool bypassRetryWindow)
 
    if(!bypassRetryWindow && TimeCurrent() > maxRetryUntil)
    {
-      Print("EURUSDAIMonitorV13V13: send skipped. retry window expired.",
+      Print("EURUSDAIMonitorV13: send skipped. retry window expired.",
             " bar_open=",
             TimeToString(currentClosedBarOpen, TIME_DATE|TIME_MINUTES),
             " max_retry_until=",
@@ -740,7 +740,7 @@ bool SendCurrentBar(bool bypassRetryWindow)
 
    if(!BuildSignalPayload(payload, closedBarOpen, closedBarTime))
    {
-      Print("EURUSDAIMonitorV13V13: send skipped. BuildSignalPayload=false.");
+      Print("EURUSDAIMonitorV13: send skipped. BuildSignalPayload=false.");
       return false;
    }
 
@@ -751,7 +751,7 @@ bool SendCurrentBar(bool bypassRetryWindow)
 
    if(ok)
    {
-      Print("EURUSDAIMonitorV13V13: EURUSD M15 signal processed.",
+      Print("EURUSDAIMonitorV13: EURUSD M15 signal processed.",
             " bar_open=",
             TimeToString(closedBarOpen, TIME_DATE|TIME_MINUTES),
             " bar_close=",
@@ -760,7 +760,7 @@ bool SendCurrentBar(bool bypassRetryWindow)
       return true;
    }
 
-   Print("EURUSDAIMonitorV13V13: EURUSD M15 signal request failed.",
+   Print("EURUSDAIMonitorV13: EURUSD M15 signal request failed.",
          " bar_open=",
          TimeToString(closedBarOpen, TIME_DATE|TIME_MINUTES));
    return false;
@@ -781,7 +781,7 @@ int OnInit()
 {
    string sym = TradeSymbol();
 
-   Print("EURUSDAIMonitorV13V13 AI-FREE 1.4: starting.",
+   Print("EURUSDAIMonitorV13 AI-FREE 1.4: starting.",
          " symbol=", sym,
          " api=", NormalizeBaseUrl(),
          " timer=", TimerSeconds,
@@ -793,7 +793,7 @@ int OnInit()
 
    if(!IsEurUsdSymbol(sym))
    {
-      Print("EURUSDAIMonitorV13V13: symbol must contain EURUSD. current=", sym);
+      Print("EURUSDAIMonitorV13: symbol must contain EURUSD. current=", sym);
       return INIT_FAILED;
    }
 
@@ -801,38 +801,38 @@ int OnInit()
 
    if(!g_apiConfigReady)
    {
-      Print("EURUSDAIMonitorV13V13: API configuration incomplete. Signal requests paused.");
+      Print("EURUSDAIMonitorV13: API configuration incomplete. Signal requests paused.");
    }
 
    if(!SymbolSelect(sym, true))
    {
-      Print("EURUSDAIMonitorV13V13: SymbolSelect failed. error=", GetLastError(),
+      Print("EURUSDAIMonitorV13: SymbolSelect failed. error=", GetLastError(),
             " symbol=", sym);
       return INIT_FAILED;
    }
 
    if(!EventSetTimer(TimerSeconds))
    {
-      Print("EURUSDAIMonitorV13V13: EventSetTimer failed. error=", GetLastError());
+      Print("EURUSDAIMonitorV13: EventSetTimer failed. error=", GetLastError());
       return INIT_FAILED;
    }
 
-   Print("EURUSDAIMonitorV13V13: timer started. interval_seconds=", TimerSeconds);
+   Print("EURUSDAIMonitorV13: timer started. interval_seconds=", TimerSeconds);
 
    bool healthOk = ProbeHealth();
    if(!healthOk)
    {
-      Print("EURUSDAIMonitorV13V13: startup connectivity test failed. ",
+      Print("EURUSDAIMonitorV13: startup connectivity test failed. ",
             "No signal request will be attempted until WebRequest is allowed.");
    }
    else
    {
-      Print("EURUSDAIMonitorV13V13: startup connectivity test passed.");
-      Print("EURUSDAIMonitorV13V13: sending the current completed M15 bar immediately (startup bypass).");
+      Print("EURUSDAIMonitorV13: startup connectivity test passed.");
+      Print("EURUSDAIMonitorV13: sending the current completed M15 bar immediately (startup bypass).");
       SendCurrentBar(true);
    }
 
-   Print("EURUSDAIMonitorV13V13: attached. Monitor-only mode; no OrderSend/OrderClose logic.");
+   Print("EURUSDAIMonitorV13: attached. Monitor-only mode; no OrderSend/OrderClose logic.");
    return INIT_SUCCEEDED;
 }
 
