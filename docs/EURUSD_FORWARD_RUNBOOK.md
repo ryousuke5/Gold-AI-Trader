@@ -104,7 +104,7 @@ No real order should be executed in this stage.
 Active Render service:
 - URL: https://gold-ai-trader-1.onrender.com
 
-For the AI-free forward stage, attach the uniquely named EURUSDAIMonitorV12.mq4 to an EURUSD M15 chart. This avoids accidentally loading an older compiled EURUSDAIMonitor.ex4.
+For the AI-free forward stage, attach the uniquely named EURUSDAIMonitorV12.mq4 (v1.3) to an EURUSD M15 chart. This avoids accidentally loading an older compiled EURUSDAIMonitor.ex4.
 
 Required MT4 inputs:
 - ApiBaseUrl = https://gold-ai-trader-1.onrender.com
