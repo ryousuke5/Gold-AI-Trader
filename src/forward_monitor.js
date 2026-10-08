@@ -134,7 +134,10 @@ export function summarizeEurUsdSetup(rows = []) {
   }
   const observations = list.map(extractEurUsdDiagnostics).filter(Boolean);
   const avg = key => {
-    const values = observations.map(row => Number(row?.[key])).filter(Number.isFinite);
+    const values = observations
+      .map(row => row?.[key])
+      .filter(value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)))
+      .map(Number);
     return values.length ? values.reduce((sum,v)=>sum+v,0)/values.length : null;
   };
   return {
