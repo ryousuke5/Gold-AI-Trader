@@ -2,7 +2,7 @@
 #property version   "1.8"
 #property description "XAUUSD AI Trader V1.7 - XM MT4 analysis bridge. Auto trading is intentionally disabled."
 
-input string ApiBaseUrl = "https://gold-ai-trader-2uny.onrender.com";
+input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
 input string ApiKey = "CHANGE_ME";
 input string SymbolName = "";
 input bool   RequireGoldSymbol = true;
