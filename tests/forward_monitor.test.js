@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summarizeSignalRows, summarizeTradeResultRows, summarizeGoldFilterFunnel } from '../src/forward_monitor.js';
+import { summarizeSignalRows, summarizeTradeResultRows, summarizeGoldFilterFunnel, summarizeGoldRangeAtr } from '../src/forward_monitor.js';
 
 test('summarizeSignalRows counts candidate and decision distribution', () => {
   const result = summarizeSignalRows([
