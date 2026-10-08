@@ -97,6 +97,66 @@ export function summarizeGoldFilterFunnel(rows = []) {
   };
 }
 
+function extractGoldV2Diagnostics(row) {
+  const reasons = Array.isArray(row?.invalid_reasons) ? row.invalid_reasons : [];
+  const raw = reasons.find(value => String(value || '').startsWith('GOLD_V2_DIAG:'));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(String(raw).slice('GOLD_V2_DIAG:'.length));
+    const rangeAtr = Number(parsed?.range_atr);
+    const minRangeAtr = Number(parsed?.min_range_atr);
+    const maxRangeAtr = Number(parsed?.max_range_atr);
+    if (![rangeAtr, minRangeAtr, maxRangeAtr].every(Number.isFinite)) return null;
+    return { ...parsed, range_atr: rangeAtr, min_range_atr: minRangeAtr, max_range_atr: maxRangeAtr };
+  } catch {
+    return null;
+  }
+}
+
+export function summarizeGoldRangeAtr(rows = []) {
+  const observations = (Array.isArray(rows) ? rows : [])
+    .map(extractGoldV2Diagnostics)
+    .filter(Boolean)
+    .map(d => Number(d.range_atr))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  const count = observations.length;
+  if (!count) return {
+    observations: 0,
+    min: null,
+    p25: null,
+    median: null,
+    p75: null,
+    max: null,
+    mean: null,
+    below_min: 0,
+    in_range: 0,
+    above_max: 0,
+    configured_min: 0.8,
+    configured_max: 2.8
+  };
+  const percentile = p => observations[Math.min(count - 1, Math.max(0, Math.floor((count - 1) * p)))];
+  const configuredMin = Number((Array.isArray(rows) ? rows : []).map(extractGoldV2Diagnostics).find(Boolean)?.min_range_atr);
+  const configuredMax = Number((Array.isArray(rows) ? rows : []).map(extractGoldV2Diagnostics).find(Boolean)?.max_range_atr);
+  const minBound = Number.isFinite(configuredMin) ? configuredMin : 0.8;
+  const maxBound = Number.isFinite(configuredMax) ? configuredMax : 2.8;
+  const mean = observations.reduce((sum, value) => sum + value, 0) / count;
+  return {
+    observations: count,
+    min: observations[0],
+    p25: percentile(0.25),
+    median: percentile(0.5),
+    p75: percentile(0.75),
+    max: observations[count - 1],
+    mean,
+    below_min: observations.filter(value => value < minBound).length,
+    in_range: observations.filter(value => value >= minBound && value <= maxBound).length,
+    above_max: observations.filter(value => value > maxBound).length,
+    configured_min: minBound,
+    configured_max: maxBound
+  };
+}
+
 export function summarizeTradeResultRows(rows = []) {
   const list = Array.isArray(rows) ? rows : [];
   const wins = list.filter(row => finiteNumber(row?.r_multiple) > 0);
@@ -141,6 +201,9 @@ async function summarizeSignalSource({
     candidate_counts_all_time: { BUY: buy, SELL: sell, WAIT: wait },
     recent: sampled,
     filter_funnel: filterFunnel,
+    range_atr: symbols?.length && values.some(value => GOLD_SYMBOLS.includes(value))
+      ? summarizeGoldRangeAtr(latestSignals)
+      : null,
     latest_signals: latestSignals
   };
 }
