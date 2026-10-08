@@ -111,6 +111,18 @@ function reasonSummary(signals){
   if(!entries.length) return '<div class="kv"><span>直近判定理由</span><b>まだデータなし</b></div>';
   return entries.map(([reason,count])=>'<span>'+esc(waitReasonLabel(reason))+'</span><b>'+fmt(count)+'</b>').join('');
 }
+function rangeAtrSummary(stats){
+  if(!stats||!stats.observations) return '<div class="kv"><span>Range ATR</span><b>新しい診断データ待ち</b></div>';
+  return '<div class="kv">'+
+    '<span>観測件数</span><b>'+fmt(stats.observations)+'</b>'+
+    '<span>設定範囲</span><b>'+Number(stats.configured_min).toFixed(2)+' ～ '+Number(stats.configured_max).toFixed(2)+'</b>'+
+    '<span>最小 / 中央 / 最大</span><b>'+Number(stats.min).toFixed(2)+' / '+Number(stats.median).toFixed(2)+' / '+Number(stats.max).toFixed(2)+'</b>'+
+    '<span>平均</span><b>'+Number(stats.mean).toFixed(2)+'</b>'+
+    '<span>下限未満</span><b>'+fmt(stats.below_min)+'</b>'+
+    '<span>範囲内</span><b>'+fmt(stats.in_range)+'</b>'+
+    '<span>上限超過</span><b>'+fmt(stats.above_max)+'</b>'+
+    '</div>';
+}
 function filterFunnelTable(funnel){
   if(!funnel||!Array.isArray(funnel.stages)||funnel.stages.length===0){
     return '<div class="kv"><span>分析対象</span><b>データ不足</b></div>';
@@ -148,7 +160,8 @@ function cardMarket(title,meta,signals,extra,engine,liveGate){
   engineStatus(engine,liveGate)+'<div class="metrics"><div class="metric"><div class="k">総シグナル</div><div class="v num">'+fmt(signals.total_signals)+'</div></div><div class="metric"><div class="k">最新候補</div><div class="v">'+esc(latest?.candidate||'—')+'</div></div><div class="metric"><div class="k">最新判定</div><div class="v">'+esc(latest?.decision||'—')+'</div></div><div class="metric"><div class="k">最終シグナル</div><div class="v" style="font-size:13px">'+fmtTime(signals.latest_signal_at)+'</div></div></div>'+
   '<div class="section"><h3>Candidate 全期間</h3><div class="bars"><div class="bar"><div class="k">BUY</div><div class="v buy">'+fmt(c.BUY)+'</div></div><div class="bar"><div class="k">SELL</div><div class="v sell">'+fmt(c.SELL)+'</div></div><div class="bar"><div class="k">WAIT</div><div class="v wait">'+fmt(c.WAIT)+'</div></div></div></div>'+
   '<div class="section"><h3>判定理由</h3><div class="kv"><span>最新理由</span><b>'+esc(waitReasonLabel(signals.recent?.latest_reason||signals.recent?.latest_wait_reason||''))+'</b></div><div class="kv" style="margin-top:6px">'+reasonSummary(signals)+'</div></div>'+
-  (signals.filter_funnel ? '<div class="section"><h3>Gold V2 フィルター通過率</h3>'+filterFunnelTable(signals.filter_funnel)+'</div>' : '')+extra+'</div>';
+  (signals.filter_funnel ? '<div class="section"><h3>Gold V2 フィルター通過率</h3>'+filterFunnelTable(signals.filter_funnel)+'</div>' : '')+
+  (signals.range_atr ? '<div class="section"><h3>Range ATR 実測分布</h3>'+rangeAtrSummary(signals.range_atr)+'</div>' : '')+extra+'</div>';
 }
 function render(data){
   const e=data.eurusd,g=data.gold;
