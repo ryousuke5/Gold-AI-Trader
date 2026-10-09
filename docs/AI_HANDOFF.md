@@ -556,3 +556,30 @@ Resume / decision gate:
 3. Download the `eurusd-spread-sensitivity-summary` artifact and compare OOS trades/PF/expectancy/drawdown, plus H1 rejection counts.
 4. If the currently observed real spread remains near 2.0 pips, assess whether any strategy variant maintains positive OOS expectancy under the 2.0+ pip cost case. Do not lower required evidence standards to increase frequency.
 5. Keep EURUSD execution and Gold auto-orders OFF. These are research-only code/workflow changes; no Render deploy is required unless runtime application files change.
+
+
+## 2026-10-09 EURUSD history provider transient-empty hardening
+
+Failure observed in EURUSD Spread Sensitivity Research run 37890585828:
+- The syntax check, synthetic replay smoke test, and full `npm test` suite all passed.
+- Dataset preparation then failed after about six minutes because `dukascopy-node` returned zero M15 rows without throwing.
+- The same 10-year preparation command had succeeded on 2026-10-07 and returned 248,164 valid M15 rows. This points to a transient upstream empty-response/download issue rather than a deterministic invalid request.
+
+Fix on branch `fix/eurusd-history-download-retry`:
+- Use restrained download batches (size 5, 1500ms pause by default).
+- Enable provider-level retries for failed and empty artifacts.
+- If the overall returned dataset is still insufficient, retry the full request once after a pause.
+- Log each attempt's row count, duration, retry configuration, and error so a future failure can be diagnosed instead of only reporting zero bars.
+- Keep the minimum data coverage guard and validate OHLC rows, completed-bar cutoff, chronological order, and duplicate timestamps before writing the dataset.
+- The research workflow path filters now include the data-preparation script so its changes trigger validation.
+
+Safety/behavior:
+- Research data-preparation only; no entry/exit rules, spread thresholds, production Render code, or real-order settings changed.
+- The historical dataset is bid OHLCV only, not historical XM bid/ask spread data.
+- Keep EURUSD execution and Gold auto-orders OFF.
+
+Resume:
+1. Inspect the latest EURUSD Spread Sensitivity Research workflow for `validate` and `prepare` results.
+2. If data preparation succeeds, verify all nine scenario jobs and the aggregate report complete.
+3. Download `eurusd-spread-sensitivity-summary` and read OOS metrics before considering any parameter change.
+4. If data preparation fails again, inspect the per-attempt JSON logs before changing strategy logic.
