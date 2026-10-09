@@ -7,23 +7,19 @@ on:
     paths:
       - 'src/eurusd_strategy_a.js'
       - 'src/eurusd_strategy_c.js'
-      - 'scripts/backtest-eurusd*.mjs'
-      - 'scripts/backtest-eurusd*.js'
+      - 'scripts/backtest-eurusd.mjs'
       - 'mt4/EURUSDAIMonitor.mq4'
       - 'mt4/EURUSDTrendPullbackMonitor.mq4'
       - 'tests/eurusd_*.test.js'
-      - '.github/workflows/eurusd-backtest.yml'
   pull_request:
     branches: [main]
     paths:
       - 'src/eurusd_strategy_a.js'
       - 'src/eurusd_strategy_c.js'
-      - 'scripts/backtest-eurusd*.mjs'
-      - 'scripts/backtest-eurusd*.js'
+      - 'scripts/backtest-eurusd.mjs'
       - 'mt4/EURUSDAIMonitor.mq4'
       - 'mt4/EURUSDTrendPullbackMonitor.mq4'
       - 'tests/eurusd_*.test.js'
-      - '.github/workflows/eurusd-backtest.yml'
 
 jobs:
   backtest:
