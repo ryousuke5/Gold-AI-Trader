@@ -73,7 +73,20 @@ try {
   assert.equal(report.data.provenance.sha256_gzip, createHash('sha256').update(compressed).digest('hex'));
   assert.equal(report.execution.spread_pips, 2);
   assert.equal(report.parameters.maxSpreadPips, 1.2);
+  assert.equal(report.parameters.maxSpreadAtrPct, 15);
   assert.ok(report.diagnostics.evaluated > 0, 'synthetic replay should evaluate at least one bar');
+  const spreadGates = report.diagnostics.spread_gate_breakdown;
+  assert.ok(spreadGates.bars_checked > 0, 'spread gate diagnostics should count evaluated bars');
+  assert.ok(spreadGates.pips_gate_failed_bars > 0, '2.0 pip spread should fail the 1.2 pip gate');
+  assert.ok(spreadGates.atr_gate_failed_bars > 0, 'synthetic ATR should expose spread-to-ATR failures');
+  assert.equal(
+    spreadGates.both_gates_failed_bars + spreadGates.pips_only_failed_bars +
+    spreadGates.atr_only_failed_bars + spreadGates.passed_both_gates_bars,
+    spreadGates.bars_checked,
+    'exclusive spread-gate buckets must cover every evaluated bar'
+  );
+  assert.ok(Number.isFinite(spreadGates.spread_atr_pct_distribution.p90),
+    'spread/ATR distribution should include P90');
   assert.ok(report.diagnostics.h1_trend_breakdown, 'H1 trend breakdown should be present');
   for (const key of [
     'bullish_ema_stack',
@@ -107,8 +120,12 @@ try {
   assert.equal(aggregate.scenario_count, 1);
   assert.equal(aggregate.dataset_provenance.source_type, 'synthetic-smoke');
   assert.equal(aggregate.dataset_provenance.sha256_gzip, report.data.provenance.sha256_gzip);
+  assert.equal(aggregate.scenarios[0].spreadGate.max_spread_atr_pct, 15);
+  assert.ok(Number.isFinite(aggregate.scenarios[0].spreadGate.spread_atr_pct_distribution.p90));
   const markdown = await fs.readFile(path.join(aggregateOutput, 'eurusd_spread_sensitivity.md'), 'utf8');
   assert.match(markdown, /Dataset provenance/);
+  assert.match(markdown, /Spread gate decomposition/);
+  assert.match(markdown, /ATR-only fail/);
   console.log('EURUSD SPREAD SENSITIVITY + AGGREGATION SYNTHETIC SMOKE PASS');
 } finally {
   await fs.rm(root, { recursive: true, force: true });
