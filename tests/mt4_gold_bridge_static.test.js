@@ -7,9 +7,9 @@ const source = fs.readFileSync(new URL('../mt4/GoldAITraderV18.mq4', import.meta
 test('MT4 GOLD bridge uses completed M5 close time consistently', () => {
   assert.match(source, /datetime\s+closedBarTime\s*=\s*closedBarOpen\s*\+\s*300;/);
   assert.match(source, /bar_time.*closedBarTimeUtc/);
-  assert.match(source, /bool GetServerUtcOffsetSeconds\\(int &offsetSeconds\\)/);
-  assert.match(source, /barOpenM5\\s*\\+\\s*300\\s*-\\s*serverUtcOffsetSeconds/);
-  assert.match(source, /barOpenH1\\s*\\+\\s*3600\\s*-\\s*serverUtcOffsetSeconds/);
+  assert.ok(source.includes('bool GetServerUtcOffsetSeconds(int &offsetSeconds)'));
+  assert.ok(source.includes('barOpenM5 + 300 - serverUtcOffsetSeconds'));
+  assert.ok(source.includes('barOpenH1 + 3600 - serverUtcOffsetSeconds'));
   assert.match(source, /barOpenM5\s*\+\s*300/);
   assert.doesNotMatch(source, /closedBarTime + 300/);
 });
