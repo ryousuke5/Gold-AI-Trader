@@ -97,6 +97,10 @@ const shiftUtcYears = (unixSeconds, years) => {
 };
 const fiveYearStart = lastBarTime ? shiftUtcYears(lastBarTime, -5) : 0;
 const twoYearOosStart = lastBarTime ? shiftUtcYears(lastBarTime, -2) : 0;
+const datasetManifestPath = String(process.env.LEGACY_CORE_DATASET_MANIFEST || '').trim();
+const datasetManifest = datasetManifestPath
+  ? JSON.parse(await fs.readFile(datasetManifestPath, 'utf8'))
+  : null;
 const lastFiveYears = trades.filter(t => Date.parse(t.signal_time) / 1000 >= fiveYearStart);
 const inSample = lastFiveYears.filter(t => Date.parse(t.signal_time) / 1000 < twoYearOosStart);
 const outOfSample = lastFiveYears.filter(t => Date.parse(t.signal_time) / 1000 >= twoYearOosStart);
@@ -108,7 +112,8 @@ const report={
     bars:m.length,
     source:C.data,
     spread_history_available:false,
-    spread_model:'constant assumed spread; historical OHLCV dataset does not contain per-bar bid/ask spread'
+    spread_model:'constant assumed spread; historical OHLCV dataset does not contain per-bar bid/ask spread',
+    provenance:datasetManifest
   },
   parameters:{
     rangeLookback:C.rangeLookback,
