@@ -11,7 +11,7 @@ try {
   const bars = [];
   const count = 10000;
   let previousClose = 1.1000;
-  const firstTime = Math.floor(Date.now() / 1000) - count * 900;
+  const firstTime = Math.floor(Math.floor(Date.now() / 1000) / 900) * 900 - count * 900;
   for (let i = 0; i < count; i++) {
     const open = previousClose;
     const drift = Math.sin(i / 47) * 0.000045 + Math.sin(i / 311) * 0.000015;
