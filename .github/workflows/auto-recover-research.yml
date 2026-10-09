@@ -1,0 +1,150 @@
+name: Auto Recover Research Runs
+
+on:
+  workflow_run:
+    workflows:
+      - EURUSD Spread Sensitivity Research
+      - EURUSD Legacy Range Breakout Core Research
+      - GOLD V2 Five-Year Research
+    types: [completed]
+
+# Privileged workflow: never check out or execute code from the triggering run.
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: auto-recover-research-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  retry-once:
+    name: Retry eligible failed research run once
+    if: >-
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.event == 'push' ||
+       github.event.workflow_run.event == 'workflow_dispatch') &&
+      github.event.workflow_run.run_attempt == 1 &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'timed_out' ||
+       github.event.workflow_run.conclusion == 'startup_failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify current run state before retry
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          EVENT_NAME: ${{ github.event.workflow_run.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            "EURUSD Spread Sensitivity Research"|"EURUSD Legacy Range Breakout Core Research"|"GOLD V2 Five-Year Research") ;;
+            *) echo "eligible=false" >> "$GITHUB_OUTPUT"; echo "Not an allowlisted workflow; skipping."; exit 0 ;;
+          esac
+
+          response_file="$(mktemp)"
+          status_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$API_URL/repos/$REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          if [[ "$status_code" != "200" ]]; then
+            echo "Could not inspect source run (HTTP $status_code)." >&2
+            cat "$response_file" >&2
+            exit 1
+          fi
+
+          node - "$response_file" "$EVENT_ATTEMPT" "$REPOSITORY" <<'NODE'
+          const fs = require('node:fs');
+          const run = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const eventAttempt = Number(process.argv[3]);
+          const repo = process.argv[4];
+          const retryable = ['failure', 'timed_out', 'startup_failure'];
+          const allowedNames = [
+            'EURUSD Spread Sensitivity Research',
+            'EURUSD Legacy Range Breakout Core Research',
+            'GOLD V2 Five-Year Research'
+          ];
+          const eligible = run.status === 'completed' &&
+            allowedNames.includes(run.name) &&
+            run.repository?.full_name === repo &&
+            run.head_repository?.full_name === repo &&
+            run.head_branch === 'main' &&
+            ['push', 'workflow_dispatch'].includes(run.event) &&
+            run.run_attempt === eventAttempt &&
+            run.run_attempt === 1 &&
+            retryable.includes(run.conclusion);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'eligible=' + eligible + '\n');
+          console.log(JSON.stringify({
+            run_id: run.id, name: run.name, event: run.event,
+            status: run.status, conclusion: run.conclusion,
+            run_attempt: run.run_attempt, head_branch: run.head_branch,
+            repository: run.repository?.full_name,
+            head_repository: run.head_repository?.full_name, eligible
+          }, null, 2));
+          NODE
+
+      - name: Automatically rerun failed jobs (one retry maximum)
+        if: steps.check.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          SOURCE_WORKFLOW: ${{ github.event.workflow_run.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            -X POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$API_URL/repos/$REPOSITORY/actions/runs/$SOURCE_RUN_ID/rerun-failed-jobs")"
+
+          if [[ "$status_code" != "201" ]]; then
+            {
+              echo '## Automatic recovery could not start'
+              echo
+              echo "- Workflow: $SOURCE_WORKFLOW"
+              echo "- Failed run: $SOURCE_RUN_URL"
+              echo "- HTTP status: $status_code"
+              echo '- No production settings or order-execution settings were changed.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            cat "$response_file" >&2
+            exit 1
+          fi
+
+          {
+            echo '## Automatic retry requested'
+            echo
+            echo "- Workflow: $SOURCE_WORKFLOW"
+            echo "- Original run: $SOURCE_RUN_URL"
+            echo '- GitHub accepted a retry request for failed jobs and dependent jobs.'
+            echo '- This automation retries only original attempt 1; no retry loop is possible.'
+            echo '- Inspect the original run for the final conclusion.'
+            echo '- No production settings, Render deployment, or order-execution settings were changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$response_file"
+
+      - name: Explain why an automatic retry was skipped
+        if: steps.check.outputs.eligible != 'true'
+        env:
+          SOURCE_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          {
+            echo '## Automatic retry skipped'
+            echo
+            echo "Source run: $SOURCE_RUN_URL"
+            echo 'Only allowlisted first-attempt failures from this repository main branch, caused by push/workflow_dispatch, can be retried.'
+            echo 'Pull-request runs, cancellations, successful runs, and second attempts are excluded.'
+          } >> "$GITHUB_STEP_SUMMARY"
