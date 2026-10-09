@@ -612,3 +612,8 @@ Resume / final validation:
 4. Confirm all nine scenario jobs complete and the aggregate report records a shared SHA-256 and the snapshot's final candle time.
 5. Review OOS outcomes at assumed costs near 2.0 and 2.2 pips before considering any parameter change.
 6. Keep EURUSD execution and Gold auto-orders OFF. These changes are research-only; do not deploy to Render.
+
+
+Workflow isolation:
+- The general `EURUSD Backtest` workflow now auto-triggers for `scripts/backtest-eurusd.mjs` and its own strategy/source/test triggers, not every `scripts/backtest-eurusd*.mjs` file. Research-only backtest scripts have their own workflows, so a legacy-core research change should not fan out into five extra downloads while the nine-scenario sensitivity workflow fetches the shared dataset.
+- Use `workflow_dispatch` for an intentional standalone general EURUSD matrix run.
