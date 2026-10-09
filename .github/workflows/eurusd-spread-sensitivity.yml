@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/backtest-eurusd-legacy-core.mjs'
+      - 'scripts/prepare-eurusd-core-v4-data.mjs'
       - 'tests/gold_strategy_v2.test.js'
       - 'scripts/aggregate-eurusd-spread-sensitivity.mjs'
       - 'scripts/validate-eurusd-spread-sensitivity.mjs'
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/backtest-eurusd-legacy-core.mjs'
+      - 'scripts/prepare-eurusd-core-v4-data.mjs'
       - 'tests/gold_strategy_v2.test.js'
       - 'scripts/aggregate-eurusd-spread-sensitivity.mjs'
       - '.github/workflows/eurusd-spread-sensitivity.yml'
@@ -20,10 +22,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: eurusd-spread-sensitivity
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -35,6 +38,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - run: node --check scripts/prepare-eurusd-core-v4-data.mjs
       - run: node --check scripts/backtest-eurusd-legacy-core.mjs
       - run: node --check scripts/aggregate-eurusd-spread-sensitivity.mjs
       - run: node --check scripts/validate-eurusd-spread-sensitivity.mjs
@@ -51,15 +55,96 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
-      - name: Prepare shared 10-year EURUSD M15 bid OHLCV dataset
+      - name: Prepare fresh shared 10-year EURUSD M15 bid OHLCV dataset
+        id: fresh_dataset
+        continue-on-error: true
         env:
           CORE_V4_LOOKBACK_DAYS: '3650'
           CORE_V4_PREPARED_DATA: 'eurusd-spread-sensitivity-data/eurusd-m15.json.gz'
         run: node scripts/prepare-eurusd-core-v4-data.mjs
+      - name: Reuse last successful dataset if upstream fetch fails
+        if: steps.fresh_dataset.outcome == 'failure'
+        uses: actions/download-artifact@v4
+        with:
+          name: eurusd-legacy-core-data-3650d
+          path: eurusd-spread-sensitivity-data
+          run-id: 37625030497
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate dataset quality and write provenance manifest
+        env:
+          FRESH_FETCH_OUTCOME: ${{ steps.fresh_dataset.outcome }}
+          CORE_V4_LOOKBACK_DAYS: '3650'
+          DATASET_FILE: 'eurusd-spread-sensitivity-data/eurusd-m15.json.gz'
+          DATASET_MANIFEST: 'eurusd-spread-sensitivity-data/dataset-manifest.json'
+          FALLBACK_RUN_ID: '37625030497'
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs/promises');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const { gunzipSync } = require('node:zlib');
+          (async () => {
+            const days = Math.max(365, Number(process.env.CORE_V4_LOOKBACK_DAYS || 3650));
+            const now = new Date();
+            const start = new Date(now.getTime() - days * 86400000);
+            const dataPath = path.resolve(process.env.DATASET_FILE);
+            const bytes = await fs.readFile(dataPath);
+            const rows = JSON.parse(gunzipSync(bytes).toString('utf8'));
+            if (!Array.isArray(rows)) throw new Error('EURUSD dataset is not an array');
+            let weekdays = 0;
+            const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
+            const lastDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+            while (cursor.getTime() <= lastDay) {
+              const day = cursor.getUTCDay();
+              if (day !== 0 && day !== 6) weekdays += 1;
+              cursor.setUTCDate(cursor.getUTCDate() + 1);
+            }
+            const estimatedBars = weekdays * 96;
+            const minimumBars = Math.ceil(estimatedBars * 0.95);
+            if (rows.length < minimumBars) {
+              throw new Error('Insufficient dataset rows: ' + rows.length + '; minimum=' + minimumBars + '; estimated=' + estimatedBars);
+            }
+            let previous = -1;
+            for (let i = 0; i < rows.length; i++) {
+              const b = rows[i];
+              if (!Number.isSafeInteger(b?.time) || b.time <= previous || b.time % 900 !== 0) {
+                throw new Error('Invalid or non-increasing M15 timestamp at row ' + i);
+              }
+              if (![b.open,b.high,b.low,b.close].every(Number.isFinite) ||
+                  !(b.open > 0) || !(b.high >= b.low && b.high >= b.open && b.high >= b.close && b.low <= b.open && b.low <= b.close)) {
+                throw new Error('Invalid OHLC values at row ' + i);
+              }
+              previous = b.time;
+            }
+            const firstGapDays = (rows[0].time * 1000 - start.getTime()) / 86400000;
+            const lastBarAgeDays = (now.getTime() - (rows.at(-1).time + 900) * 1000) / 86400000;
+            if (firstGapDays > 14) throw new Error('Dataset starts too late: ' + firstGapDays.toFixed(2) + ' days');
+            if (lastBarAgeDays > 7) throw new Error('Dataset is stale: ' + lastBarAgeDays.toFixed(2) + ' days');
+            const isFallback = process.env.FRESH_FETCH_OUTCOME !== 'success';
+            const manifest = {
+              schema_version: 1,
+              source_type: isFallback ? 'previous_successful_github_actions_artifact' : 'dukascopy_node_fresh_fetch',
+              source_run_id: isFallback ? Number(process.env.FALLBACK_RUN_ID) : null,
+              validated_at_utc: now.toISOString(),
+              requested_lookback_days: days,
+              bars: rows.length,
+              estimated_weekday_bars: estimatedBars,
+              coverage_pct: Number((rows.length / estimatedBars * 100).toFixed(3)),
+              first_bar_open_utc: new Date(rows[0].time * 1000).toISOString(),
+              last_bar_close_utc: new Date((rows.at(-1).time + 900) * 1000).toISOString(),
+              first_gap_days: Number(firstGapDays.toFixed(3)),
+              last_bar_age_days: Number(lastBarAgeDays.toFixed(3)),
+              sha256_gzip: crypto.createHash('sha256').update(bytes).digest('hex'),
+              limit_note: 'Bid OHLCV only; no historical broker Ask/spread data. A prior-artifact fallback is a validated historical snapshot, not a fresh download.'
+            };
+            await fs.writeFile(path.resolve(process.env.DATASET_MANIFEST), JSON.stringify(manifest, null, 2) + '\n');
+            console.log(JSON.stringify({ event: 'eurusd_dataset_validated', ...manifest }, null, 2));
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          NODE
       - uses: actions/upload-artifact@v4
         with:
           name: eurusd-spread-sensitivity-data
-          path: eurusd-spread-sensitivity-data/eurusd-m15.json.gz
+          path: eurusd-spread-sensitivity-data/
           retention-days: 7
 
   research:
@@ -74,38 +159,62 @@ jobs:
             type: execution-cost
             spread: '0.8'
             gate: '2.5'
+            atr_gate: '15'
           - name: cost-1.2
             type: execution-cost
             spread: '1.2'
             gate: '2.5'
+            atr_gate: '15'
           - name: cost-1.5
             type: execution-cost
             spread: '1.5'
             gate: '2.5'
+            atr_gate: '15'
           - name: cost-2.0
             type: execution-cost
             spread: '2.0'
             gate: '2.5'
+            atr_gate: '15'
           - name: cost-2.2
             type: execution-cost
             spread: '2.2'
             gate: '2.5'
+            atr_gate: '15'
+          - name: atr-25
+            type: spread-atr-gate
+            spread: '2.0'
+            gate: '2.5'
+            atr_gate: '25'
+          - name: atr-35
+            type: spread-atr-gate
+            spread: '2.0'
+            gate: '2.5'
+            atr_gate: '35'
+          - name: atr-50
+            type: spread-atr-gate
+            spread: '2.0'
+            gate: '2.5'
+            atr_gate: '50'
           - name: gate-1.2
             type: spread-gate
             spread: '2.0'
             gate: '1.2'
+            atr_gate: '15'
           - name: gate-1.5
             type: spread-gate
             spread: '2.0'
             gate: '1.5'
+            atr_gate: '15'
           - name: gate-2.0
             type: spread-gate
             spread: '2.0'
             gate: '2.0'
+            atr_gate: '15'
           - name: gate-2.2
             type: spread-gate
             spread: '2.0'
             gate: '2.2'
+            atr_gate: '15'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -119,6 +228,7 @@ jobs:
       - name: Run deterministic EURUSD spread scenario
         env:
           LEGACY_CORE_DATA_FILE: 'eurusd-spread-sensitivity-data/eurusd-m15.json.gz'
+          LEGACY_CORE_DATASET_MANIFEST: 'eurusd-spread-sensitivity-data/dataset-manifest.json'
           LEGACY_CORE_OUTPUT_DIR: 'eurusd-spread-scenario-output'
           LEGACY_CORE_SCENARIO_NAME: '${{ matrix.name }}'
           LEGACY_CORE_SCENARIO_TYPE: '${{ matrix.type }}'
@@ -141,6 +251,7 @@ jobs:
           LEGACY_CORE_MAX_STOP_ATR: '1.50'
           LEGACY_CORE_TP_R: '2.00'
           LEGACY_CORE_MAX_SPREAD_PIPS: '${{ matrix.gate }}'
+          LEGACY_CORE_MAX_SPREAD_ATR_PCT: '${{ matrix.atr_gate }}'
           LEGACY_CORE_MAX_SPREAD_TO_TP_PCT: '12'
         run: node scripts/backtest-eurusd-legacy-core.mjs
       - uses: actions/upload-artifact@v4

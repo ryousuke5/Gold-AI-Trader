@@ -537,11 +537,12 @@ Goal:
 
 New research assets:
 - `scripts/backtest-eurusd-legacy-core.mjs` now persists the scenario name/type, spread data limitations, configured max spread, fixed latest-5-year validation split (3-year IS / 2-year OOS), and H1 EMA-stack/close-position rejection counters.
-- `scripts/aggregate-eurusd-spread-sensitivity.mjs` aggregates scenario artifacts into JSON, CSV, and Markdown comparison reports.
+- `scripts/aggregate-eurusd-spread-sensitivity.mjs` aggregates scenario artifacts into JSON, CSV, and Markdown comparison reports, including an explicit decomposition of the pips gate vs spread/ATR gate, their joint/individual failures, and spread/ATR percentiles.
 - `scripts/validate-eurusd-spread-sensitivity.mjs` runs a synthetic smoke replay to verify spread-gate and H1-diagnostic output.
-- `.github/workflows/eurusd-spread-sensitivity.yml` evaluates nine scenarios:
-  - Cost sensitivity: assumed constant spread 0.8 / 1.2 / 1.5 / 2.0 / 2.2 pips, with the pips gate set to 2.5 to keep that gate from dominating.
-  - Gate sensitivity: assumed constant spread 2.0 pips with gate thresholds 1.2 / 1.5 / 2.0 / 2.2 pips.
+- `.github/workflows/eurusd-spread-sensitivity.yml` evaluates twelve scenarios:
+  - Execution-cost sensitivity: assumed constant spread 0.8 / 1.2 / 1.5 / 2.0 / 2.2 pips, with the pips gate set to 2.5 and spread/ATR gate held at 15%.
+  - Pips-gate sensitivity: assumed constant spread 2.0 pips with gate thresholds 1.2 / 1.5 / 2.0 / 2.2 pips, keeping spread/ATR at 15%.
+  - Spread/ATR-gate sensitivity: assumed spread 2.0 pips, pips gate 2.5, and spread/ATR limits 25% / 35% / 50% (the 15% baseline is the cost-2.0 case).
 
 Data limitation:
 - The historical replay dataset has bid OHLCV, not timestamped bid/ask or historical broker spread. Therefore these are constant-spread sensitivity scenarios, not actual historical XM spread reconstruction.
@@ -556,3 +557,81 @@ Resume / decision gate:
 3. Download the `eurusd-spread-sensitivity-summary` artifact and compare OOS trades/PF/expectancy/drawdown, plus H1 rejection counts.
 4. If the currently observed real spread remains near 2.0 pips, assess whether any strategy variant maintains positive OOS expectancy under the 2.0+ pip cost case. Do not lower required evidence standards to increase frequency.
 5. Keep EURUSD execution and Gold auto-orders OFF. These are research-only code/workflow changes; no Render deploy is required unless runtime application files change.
+
+
+## 2026-10-09 EURUSD history provider transient-empty hardening
+
+Failure observed in EURUSD Spread Sensitivity Research run 37890585828:
+- The syntax check, synthetic replay smoke test, and full `npm test` suite all passed.
+- Dataset preparation then failed after about six minutes because `dukascopy-node` returned zero M15 rows without throwing.
+- The same 10-year preparation command had succeeded on 2026-10-07 and returned 248,164 valid M15 rows. This points to a transient upstream empty-response/download issue rather than a deterministic invalid request.
+
+Fix on branch `fix/eurusd-history-download-retry`:
+- Use restrained download batches (size 5, 1500ms pause by default).
+- Enable provider-level retries for failed and empty artifacts.
+- If the overall returned dataset is still insufficient, retry the full request once after a pause.
+- Log each attempt's row count, duration, retry configuration, and error so a future failure can be diagnosed instead of only reporting zero bars.
+- Keep the minimum data coverage guard and validate OHLC rows, completed-bar cutoff, chronological order, and duplicate timestamps before writing the dataset.
+- The EURUSD Spread Sensitivity workflow path filters include the data-preparation script so changes trigger validation.
+- The older Legacy Core workflow now auto-triggers only when `src/eurusd_features.js` changes (or on manual dispatch). Research-pipeline-only edits to the shared backtest/data-prep scripts run through the newer nine-scenario sensitivity matrix, avoiding duplicate simultaneous 10-year downloads.
+
+Safety/behavior:
+- Research data-preparation only; no entry/exit rules, spread thresholds, production Render code, or real-order settings changed.
+- The historical dataset is bid OHLCV only, not historical XM bid/ask spread data.
+- Keep EURUSD execution and Gold auto-orders OFF.
+
+Resume:
+1. Inspect the latest EURUSD Spread Sensitivity Research workflow for `validate` and `prepare` results.
+2. If data preparation succeeds, verify all nine scenario jobs and the aggregate report complete.
+3. Download `eurusd-spread-sensitivity-summary` and read OOS metrics before considering any parameter change.
+4. If data preparation fails again, inspect the per-attempt JSON logs before changing strategy logic.
+
+
+### Dataset fallback and provenance — 2026-10-09
+
+Subsequent CI run 37893745578 confirmed:
+- All code syntax checks, the synthetic backtest smoke test, and full `npm test` passed.
+- Dukascopy download attempts failed fast with HTTP 202 on the 10-year request; the previous run had succeeded with 248,164 M15 bars.
+
+The research workflow now:
+- Tries a fresh Dukascopy dataset first.
+- If that fails, downloads the last known-good 10-year artifact from run 37625030497 (artifact `eurusd-legacy-core-data-3650d`), if it remains available.
+- Revalidates expected coverage, chronological/15-minute timestamp format, OHLC integrity, earliest-date gap, and latest-bar freshness before permitting scenarios to start.
+- Creates a dataset manifest containing source type/run, range, bar count, coverage, timestamps, and SHA-256.
+- Includes the identical manifest in all nine scenario reports and requires the aggregator to see one consistent dataset hash before producing a report.
+- Shows provenance in the final Markdown/JSON report.
+
+Important limitation:
+- The fallback artifact is scheduled to expire on 2026-10-14. It is a temporary recovery path, not an indefinitely available data source. If the fresh provider remains unavailable after that, stop and repair/replace the data source rather than silently using old data.
+- A fallback snapshot ending a few days before the current date is acceptable only while its measured last-bar age remains within the explicit 7-day limit. The report must label it as a historical snapshot, not a fresh download.
+- Historical data remains bid OHLCV only; this does not reconstruct historical XM spreads.
+
+Resume / final validation:
+1. Check the latest run of EURUSD Spread Sensitivity Research (current PR #34).
+2. Confirm the fresh provider attempt and, if needed, fallback step are clearly logged.
+3. Confirm the dataset manifest validation succeeds.
+4. Confirm all nine scenario jobs complete and the aggregate report records a shared SHA-256 and the snapshot's final candle time.
+5. Review OOS outcomes at assumed costs near 2.0 and 2.2 pips before considering any parameter change.
+6. Keep EURUSD execution and Gold auto-orders OFF. These changes are research-only; do not deploy to Render.
+
+
+Workflow isolation:
+- The general `EURUSD Backtest` workflow now auto-triggers for `scripts/backtest-eurusd.mjs` and its own strategy/source/test triggers, not every `scripts/backtest-eurusd*.mjs` file. Research-only backtest scripts have their own workflows, so a legacy-core research change should not fan out into five extra downloads while the nine-scenario sensitivity workflow fetches the shared dataset.
+- Use `workflow_dispatch` for an intentional standalone general EURUSD matrix run.
+
+
+### 2026-10-09 spread-gate decomposition follow-up
+
+The completed 9-scenario matrix (run 37894384706) showed:
+- 0.8-pip assumed spread: 22 trades overall, PF 2.36, but only 2 OOS trades and both lost (OOS expectancy -1.013 R).
+- 1.2-pip assumed spread: only 2 trades, both in IS and none in OOS.
+- 1.5 pips: 1 trade, no OOS trade.
+- 2.0/2.2 pips: no trades across the tested setup/cost combination, including pips-gate scenarios with a 2.2-pip ceiling.
+This is not sufficient to validate profitability and does not reproduce historical XM spread; source data is bid OHLCV and a constant assumed spread is used.
+
+Follow-up engineering:
+- Explicitly count pips-gate failures, spread/ATR failures, both/individual failure buckets and pass-both rate for each replay scenario.
+- Report median/P90/P95 spread-to-ATR ratio.
+- Add research-only spread/ATR limit scenarios at 25%, 35% and 50%, with assumed spread 2.0 pips and pips gate 2.5. The existing cost-2.0 scenario supplies the 15% baseline.
+- Extend synthetic smoke checks to assert that exclusive pips/ATR gate buckets account for all evaluated bars and that aggregation includes the new diagnostics.
+- Do not promote 25%/35%/50% into production based on trade count alone. Review fixed 3y IS / 2y OOS expectancy, PF, sample size, drawdown and cost stress first.
