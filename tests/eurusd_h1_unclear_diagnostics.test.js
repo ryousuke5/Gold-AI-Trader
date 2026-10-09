@@ -42,7 +42,7 @@ function baseFeatures() {
 
 const config = {
   rangeLookback: 5,
-  minRangeAtr: 0.5,
+  minRangeAtr: 0.4,
   maxRangeAtr: 2.5,
   breakoutAtr: 0.05,
   minBodyAtr: 0.25,
