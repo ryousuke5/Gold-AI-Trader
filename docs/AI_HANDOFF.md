@@ -501,3 +501,25 @@ Code correction:
 - Regression tests cover RANGE diagnostics and null-average handling.
 
 Resume from this checkpoint: verify the GitHub test workflow, promote the tested diagnostic-only change to main, deploy the server change manually because Render auto-deploy is disabled, then collect several fresh M15 signals and confirm Breakout ATR is only averaged when H1 has a clear UP/DOWN direction.
+
+
+## 2026-10-09 EURUSD spread-distribution diagnostics
+
+Purpose:
+- Measure whether the 1.20-pip EURUSD spread gate is failing across all observed conditions or primarily during specific UTC hours.
+- Do not relax execution filters based on the small current forward sample.
+
+Implementation on branch `diagnostics/eurusd-spread-distribution`:
+- New signal diagnostics persist the configured pips and spread/ATR limits plus the separate pass/fail flags.
+- Forward Monitor reports spread count, min, P25, median, P75, P90, max, mean, pips-limit exceedance count/rate, ATR gate failures and combined spread-filter failures.
+- UTC-hour buckets use signal `created_at` (Render receipt time), not the MT4 bar timestamp, to avoid mislabeling broker server time.
+- Each observation uses its persisted spread threshold when available; older rows fall back to the currently configured limit.
+- Real execution settings and entry/exit logic are unchanged. EURUSD execution remains OFF; Gold auto-orders remain OFF.
+
+Validation / resume:
+1. Run `npm test` and inspect the new `summarizeEurUsdSetup reports spread percentiles, captured gate failures, and UTC-hour buckets` test.
+2. Inspect the full CI result, separating any known unrelated GOLD V2 fixture failure from EURUSD diagnostics failures.
+3. Review the PR before merging.
+4. Only after merge, trigger the manual Render deploy because `autoDeploy=no`.
+5. Verify latest deploy is live, error logs are clean, and the Forward Monitor exposes the new spread distribution.
+6. Collect at least 30-100 new EURUSD observations before judging time-of-day patterns. Do not adjust `EURUSD_MAX_SPREAD_PIPS` solely to increase trade frequency.
