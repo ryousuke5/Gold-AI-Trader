@@ -9,7 +9,7 @@ const batchPauseMs = Math.max(0, Number(process.env.CORE_V4_BATCH_PAUSE_MS || 15
 const retryCount = Math.max(0, Math.floor(Number(process.env.CORE_V4_RETRY_COUNT || 2)));
 const retryPauseMs = Math.max(100, Number(process.env.CORE_V4_RETRY_PAUSE_MS || 2000));
 const fetchAttempts = Math.max(1, Math.floor(Number(process.env.CORE_V4_FETCH_ATTEMPTS || 2)));
-const minimumBars = Math.max(100000, Math.floor(Number(process.env.CORE_V4_MINIMUM_BARS || 100000)));
+const minimumCoverageRatio = Math.min(1, Math.max(0.5, Number(process.env.CORE_V4_MINIMUM_COVERAGE_RATIO || 0.95)));
 
 const mod = await import('dukascopy-node');
 const get = mod.getHistoricalRates || mod.default?.getHistoricalRates;
@@ -17,6 +17,22 @@ if (typeof get !== 'function') throw new Error('dukascopy-node getHistoricalRate
 
 const end = new Date();
 const start = new Date(end.getTime() - days * 86400000);
+function estimateWeekdayBars(from, to) {
+  let weekdays = 0;
+  const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+  const last = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
+  while (cursor.getTime() <= last) {
+    const weekday = cursor.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) weekdays += 1;
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return weekdays * 96;
+}
+const expectedBars = estimateWeekdayBars(start, end);
+const configuredMinimum = Number(process.env.CORE_V4_MINIMUM_BARS);
+const minimumBars = Number.isFinite(configuredMinimum) && configuredMinimum > 0
+  ? Math.floor(configuredMinimum)
+  : Math.ceil(expectedBars * minimumCoverageRatio);
 const requestConfig = {
   instrument: 'eurusd',
   dates: { from: start, to: end },
@@ -71,7 +87,8 @@ for (let attempt = 1; attempt <= fetchAttempts; attempt++) {
 
 if (!Array.isArray(rows) || rows.length < minimumBars) {
   throw new Error('Insufficient EURUSD M15 coverage after ' + attemptDiagnostics.length +
-    ' fetch attempt(s): ' + (rows?.length || 0) + ' bars. Diagnostics=' + JSON.stringify(attemptDiagnostics));
+    ' fetch attempt(s): ' + (rows?.length || 0) + ' raw bars; require at least ' + minimumBars +
+    ' of estimated ' + expectedBars + '. Diagnostics=' + JSON.stringify(attemptDiagnostics));
 }
 
 const now = Date.now();
@@ -100,7 +117,16 @@ for (const bar of normalized) {
 
 if (unique.length < minimumBars) {
   throw new Error('Insufficient normalized EURUSD M15 coverage: ' + unique.length +
-    ' bars from ' + normalized.length + ' raw rows.');
+    ' bars from ' + normalized.length + ' raw rows; require ' + minimumBars +
+    ' (estimated bars=' + expectedBars + ', coverage threshold=' + (minimumCoverageRatio * 100).toFixed(1) + '%).');
+}
+const firstGapDays = (unique[0].time * 1000 - start.getTime()) / 86400000;
+const lastCompletedBarAgeDays = (end.getTime() - (unique.at(-1).time + 900) * 1000) / 86400000;
+if (firstGapDays > 14) {
+  throw new Error('EURUSD M15 history starts too late: first gap=' + firstGapDays.toFixed(2) + ' days.');
+}
+if (lastCompletedBarAgeDays > 7) {
+  throw new Error('EURUSD M15 history is stale: last completed bar age=' + lastCompletedBarAgeDays.toFixed(2) + ' days.');
 }
 
 await fs.mkdir(path.dirname(out), { recursive: true });
@@ -114,6 +140,11 @@ console.log(JSON.stringify({
   first_utc: new Date(unique[0].time * 1000).toISOString(),
   last_utc: new Date(unique.at(-1).time * 1000).toISOString(),
   lookback_days: days,
+  estimated_weekday_bars: expectedBars,
+  minimum_required_bars: minimumBars,
+  coverage_pct: unique.length / expectedBars * 100,
+  first_gap_days: Number(firstGapDays.toFixed(2)),
+  latest_completed_bar_age_days: Number(lastCompletedBarAgeDays.toFixed(2)),
   fetch_attempts: attemptDiagnostics,
   config: { batch_size: batchSize, batch_pause_ms: batchPauseMs, retry_count: retryCount, retry_pause_ms: retryPauseMs }
 }, null, 2));
