@@ -5,6 +5,7 @@ import { buildGoldSignalDiagnosticLog } from '../src/gold_signal_diagnostics.js'
 test('Gold signal diagnostic log preserves H1 gate components without raw prices', () => {
   const payload = buildGoldSignalDiagnosticLog({
     requestId: 'request-123',
+    serverUtcOffsetSeconds: 10800,
     signal: {
       id: 'signal-456',
       symbol: 'XAUUSD',
@@ -49,6 +50,7 @@ test('Gold signal diagnostic log preserves H1 gate components without raw prices
   assert.equal(payload.event, 'gold_signal_evaluated');
   assert.equal(payload.request_id, 'request-123');
   assert.equal(payload.reason, 'h1_trend_filter');
+  assert.equal(payload.server_utc_offset_seconds, 10800);
   assert.equal(payload.risk_approved, false);
   assert.equal(payload.h1.diagnostics_version, 1);
   assert.equal(payload.h1.close_vs_ema20_atr, -0.2);
@@ -81,6 +83,7 @@ test('Gold signal diagnostic log handles missing H1 diagnostics and malformed va
   assert.equal(payload.range_min_atr, null);
   assert.equal(payload.range_max_atr, null);
   assert.equal(payload.reason, 'session_filter');
+  assert.equal(payload.server_utc_offset_seconds, null);
   assert.equal(payload.runtime_mode, 'ANALYSIS');
   assert.equal(payload.auto_trading_enabled, false);
 });
