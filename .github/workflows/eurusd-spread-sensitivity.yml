@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/backtest-eurusd-legacy-core.mjs'
+      - 'scripts/prepare-eurusd-core-v4-data.mjs'
       - 'tests/gold_strategy_v2.test.js'
       - 'scripts/aggregate-eurusd-spread-sensitivity.mjs'
       - 'scripts/validate-eurusd-spread-sensitivity.mjs'
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/backtest-eurusd-legacy-core.mjs'
+      - 'scripts/prepare-eurusd-core-v4-data.mjs'
       - 'tests/gold_strategy_v2.test.js'
       - 'scripts/aggregate-eurusd-spread-sensitivity.mjs'
       - '.github/workflows/eurusd-spread-sensitivity.yml'
