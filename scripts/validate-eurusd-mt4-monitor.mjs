@@ -54,7 +54,7 @@ for (const { file, source } of sources) {
 if (!source.includes('StringReplace(value, "\\\"", "\\\\\\"");')) {
   throw new Error(file + ': JsonEscape quote escaping line is missing or malformed');
 }
-if (!source.includes('bool ProbeHealth()') || !source.includes('startup connectivity test passed.') || !/sending the current completed M15 bar immediately(?: \\(startup bypass\\))?\\./.test(source)) {
+if (!source.includes('bool ProbeHealth()') || !source.includes('startup connectivity test passed.') || !/sending the current completed M15 bar immediately(?: \(startup bypass\))?\./.test(source)) {
   throw new Error(file + ': startup health probe/immediate send is missing');
 }
 }
