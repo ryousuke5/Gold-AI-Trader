@@ -571,7 +571,8 @@ Fix on branch `fix/eurusd-history-download-retry`:
 - If the overall returned dataset is still insufficient, retry the full request once after a pause.
 - Log each attempt's row count, duration, retry configuration, and error so a future failure can be diagnosed instead of only reporting zero bars.
 - Keep the minimum data coverage guard and validate OHLC rows, completed-bar cutoff, chronological order, and duplicate timestamps before writing the dataset.
-- The research workflow path filters now include the data-preparation script so its changes trigger validation.
+- The EURUSD Spread Sensitivity workflow path filters include the data-preparation script so changes trigger validation.
+- The older Legacy Core workflow no longer independently triggers on this helper-only change, avoiding two simultaneous 10-year downloads against the same upstream provider. Its normal strategy/source triggers and manual dispatch remain intact.
 
 Safety/behavior:
 - Research data-preparation only; no entry/exit rules, spread thresholds, production Render code, or real-order settings changed.
