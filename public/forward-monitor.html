@@ -123,6 +123,30 @@ function rangeAtrSummary(stats){
     '<span>上限超過</span><b>'+fmt(stats.above_max)+'</b>'+
     '</div>';
 }
+function spreadDistributionSummary(stats){
+  if(!stats||!stats.count){
+    return '<div class="section"><h3>Spread実測分布</h3><div class="kv"><span>観測件数</span><b>新しい診断データ待ち</b></div></div>';
+  }
+  const val=x=>x==null?'—':Number(x).toFixed(2);
+  const pctSafe=x=>x==null?'—':Number(x).toFixed(1)+'%';
+  const hourRows=(stats.by_utc_hour||[]).map(hour=>{
+    const from=String(hour.hour).padStart(2,'0')+':00';
+    const to=String((Number(hour.hour)+1)%24).padStart(2,'0')+':00';
+    return '<tr><td>'+from+'–'+to+'</td><td class="num">'+fmt(hour.count)+'</td><td class="num">'+val(hour.mean)+'</td><td class="num">'+val(hour.median)+'</td><td class="num">'+val(hour.p90)+'</td><td class="num">'+fmt(hour.over_limit_count)+' ('+pctSafe(hour.over_limit_pct)+')</td></tr>';
+  }).join('');
+  return '<div class="section"><h3>Spread実測分布（シグナル受付時刻・UTC）</h3>'+
+    '<div class="kv"><span>観測件数</span><b>'+fmt(stats.count)+'</b>'+
+    '<span>現在のPips上限</span><b>'+val(stats.limit_pips)+' pips</b>'+
+    '<span>平均 / 中央値 / P90</span><b>'+val(stats.mean)+' / '+val(stats.median)+' / '+val(stats.p90)+' pips</b>'+
+    '<span>最小 / 最大</span><b>'+val(stats.min)+' / '+val(stats.max)+' pips</b>'+
+    '<span>Pips上限超過</span><b>'+fmt(stats.over_limit_count)+' ('+pctSafe(stats.over_limit_pct)+')</b>'+
+    '<span>Pips条件NG</span><b>'+fmt(stats.pips_gate_failed_count)+'</b>'+
+    '<span>Spread/ATR条件NG</span><b>'+fmt(stats.atr_gate_failed_count)+'</b>'+
+    '<span>Spreadフィルター総合NG</span><b>'+fmt(stats.combined_filter_failed_count)+'</b></div>'+
+    '<div class="meta" style="margin-top:8px">時間帯別はRenderが受け付けた時刻のUTC時間で集計。各シグナルに保存された上限値があれば、その値を使って超過を判定。</div>'+
+    '<div class="tablewrap" style="margin-top:8px"><table class="table" style="min-width:620px"><thead><tr><th>時間帯 UTC</th><th>件数</th><th>平均 pips</th><th>中央値</th><th>P90</th><th>上限超過</th></tr></thead><tbody>'+
+    (hourRows||'<tr><td colspan="6">受付時刻データなし</td></tr>')+'</tbody></table></div></div>';
+}
 function eurusdSetupSummary(stats){
   if(!stats) return '';
   const labels={
@@ -154,6 +178,7 @@ function eurusdSetupSummary(stats){
     '<span>平均 Breakout ATR</span><b>'+val(av.breakout_distance_atr)+'</b>'+
     '<span>平均 Body ATR</span><b>'+val(av.breakout_body_atr)+'</b>'+
     '<span>平均 Spread</span><b>'+val(av.spread_pips)+' pips</b></div>'+
+    spreadDistributionSummary(stats.spread_distribution)+
     '<div class="kv" style="margin-top:6px">'+reasonHtml+'</div></div>';
 }
 function filterFunnelTable(funnel){
