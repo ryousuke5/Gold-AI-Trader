@@ -263,6 +263,12 @@ bool BuildSignalPayload(string &payload)
 
    datetime closedBarTime = closedBarOpen + 300;
    datetime closedBarTimeUtc = closedBarTime - serverUtcOffsetSeconds;
+   // Log enough information to verify UTC conversion in MT4's Experts log before API deployment.
+   Print("[GOLD UTC DIAG] server_utc_offset_seconds=", serverUtcOffsetSeconds,
+         " server_time=", TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+         " terminal_gmt=", TimeToString(TimeGMT(), TIME_DATE|TIME_SECONDS),
+         " bar_time_utc=", TimeToString(closedBarTimeUtc, TIME_DATE|TIME_SECONDS),
+         " bar_time_epoch=", IntegerToString((int)closedBarTimeUtc));
 
    double m5Ema20 = iMA(sym, PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m5Ema50 = iMA(sym, PERIOD_M5, 50, 0, MODE_EMA, PRICE_CLOSE, 1);
