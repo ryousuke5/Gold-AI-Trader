@@ -537,11 +537,12 @@ Goal:
 
 New research assets:
 - `scripts/backtest-eurusd-legacy-core.mjs` now persists the scenario name/type, spread data limitations, configured max spread, fixed latest-5-year validation split (3-year IS / 2-year OOS), and H1 EMA-stack/close-position rejection counters.
-- `scripts/aggregate-eurusd-spread-sensitivity.mjs` aggregates scenario artifacts into JSON, CSV, and Markdown comparison reports.
+- `scripts/aggregate-eurusd-spread-sensitivity.mjs` aggregates scenario artifacts into JSON, CSV, and Markdown comparison reports, including an explicit decomposition of the pips gate vs spread/ATR gate, their joint/individual failures, and spread/ATR percentiles.
 - `scripts/validate-eurusd-spread-sensitivity.mjs` runs a synthetic smoke replay to verify spread-gate and H1-diagnostic output.
-- `.github/workflows/eurusd-spread-sensitivity.yml` evaluates nine scenarios:
-  - Cost sensitivity: assumed constant spread 0.8 / 1.2 / 1.5 / 2.0 / 2.2 pips, with the pips gate set to 2.5 to keep that gate from dominating.
-  - Gate sensitivity: assumed constant spread 2.0 pips with gate thresholds 1.2 / 1.5 / 2.0 / 2.2 pips.
+- `.github/workflows/eurusd-spread-sensitivity.yml` evaluates twelve scenarios:
+  - Execution-cost sensitivity: assumed constant spread 0.8 / 1.2 / 1.5 / 2.0 / 2.2 pips, with the pips gate set to 2.5 and spread/ATR gate held at 15%.
+  - Pips-gate sensitivity: assumed constant spread 2.0 pips with gate thresholds 1.2 / 1.5 / 2.0 / 2.2 pips, keeping spread/ATR at 15%.
+  - Spread/ATR-gate sensitivity: assumed spread 2.0 pips, pips gate 2.5, and spread/ATR limits 25% / 35% / 50% (the 15% baseline is the cost-2.0 case).
 
 Data limitation:
 - The historical replay dataset has bid OHLCV, not timestamped bid/ask or historical broker spread. Therefore these are constant-spread sensitivity scenarios, not actual historical XM spread reconstruction.
@@ -617,3 +618,20 @@ Resume / final validation:
 Workflow isolation:
 - The general `EURUSD Backtest` workflow now auto-triggers for `scripts/backtest-eurusd.mjs` and its own strategy/source/test triggers, not every `scripts/backtest-eurusd*.mjs` file. Research-only backtest scripts have their own workflows, so a legacy-core research change should not fan out into five extra downloads while the nine-scenario sensitivity workflow fetches the shared dataset.
 - Use `workflow_dispatch` for an intentional standalone general EURUSD matrix run.
+
+
+### 2026-10-09 spread-gate decomposition follow-up
+
+The completed 9-scenario matrix (run 37894384706) showed:
+- 0.8-pip assumed spread: 22 trades overall, PF 2.36, but only 2 OOS trades and both lost (OOS expectancy -1.013 R).
+- 1.2-pip assumed spread: only 2 trades, both in IS and none in OOS.
+- 1.5 pips: 1 trade, no OOS trade.
+- 2.0/2.2 pips: no trades across the tested setup/cost combination, including pips-gate scenarios with a 2.2-pip ceiling.
+This is not sufficient to validate profitability and does not reproduce historical XM spread; source data is bid OHLCV and a constant assumed spread is used.
+
+Follow-up engineering:
+- Explicitly count pips-gate failures, spread/ATR failures, both/individual failure buckets and pass-both rate for each replay scenario.
+- Report median/P90/P95 spread-to-ATR ratio.
+- Add research-only spread/ATR limit scenarios at 25%, 35% and 50%, with assumed spread 2.0 pips and pips gate 2.5. The existing cost-2.0 scenario supplies the 15% baseline.
+- Extend synthetic smoke checks to assert that exclusive pips/ATR gate buckets account for all evaluated bars and that aggregation includes the new diagnostics.
+- Do not promote 25%/35%/50% into production based on trade count alone. Review fixed 3y IS / 2y OOS expectancy, PF, sample size, drawdown and cost stress first.
