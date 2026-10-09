@@ -118,8 +118,18 @@ test('GOLD V2 identifies M5 RSI as a separate breakout rejection reason', () => 
 
 test('GOLD V2 identifies close location as a separate breakout rejection reason', () => {
   const f = baseFeatures();
-  f.recentM5.at(-1).close = 2502.5;
-  f.recentM5.at(-1).low = 2500.0;
+  // Keep all earlier filters valid so this test reaches the close-location gate.
+  for (const [index, bar] of f.recentM5.slice(0, -1).entries()) {
+    bar.open = 2501.2 + (index % 2) * 0.2;
+    bar.close = 2501.3 + (index % 3) * 0.1;
+    bar.high = 2502.2;
+    bar.low = 2499.5;
+  }
+  const signal = f.recentM5.at(-1);
+  signal.open = 2501.4;
+  signal.high = 2504.5;
+  signal.low = 2500.0;
+  signal.close = 2502.5;
   const result = buildGoldV2Setup(f);
   assert.equal(result.candidate, 'WAIT');
   assert.equal(result.reason, 'close_location_filter');
