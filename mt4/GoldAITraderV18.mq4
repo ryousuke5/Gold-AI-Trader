@@ -206,6 +206,26 @@ double PeakEquity()
 }
 
 //---------------------------------------------------------
+// Convert broker-server candle timestamps to UTC before sending to the API.
+// TimeGMT follows the terminal computer's clock settings, so the PC clock must be synchronized.
+bool GetServerUtcOffsetSeconds(int &offsetSeconds)
+{
+   datetime serverNow = TimeCurrent();
+   datetime utcNow = TimeGMT();
+   if(serverNow <= 0 || utcNow <= 0)
+      return false;
+
+   int rawOffset = (int)(serverNow - utcNow);
+   int roundedOffset = (int)(MathRound((double)rawOffset / 900.0) * 900.0);
+
+   // Accept quarter-hour offsets only; fail closed if the machine clock or broker offset looks wrong.
+   if(MathAbs(rawOffset - roundedOffset) > 120 || MathAbs(roundedOffset) > 14 * 3600)
+      return false;
+
+   offsetSeconds = roundedOffset;
+   return true;
+}
+
 // Build API payload
 //---------------------------------------------------------
 bool BuildSignalPayload(string &payload)
@@ -216,6 +236,13 @@ bool BuildSignalPayload(string &payload)
       return false;
 
    RefreshRates();
+
+   int serverUtcOffsetSeconds = 0;
+   if(!GetServerUtcOffsetSeconds(serverUtcOffsetSeconds))
+   {
+      Print("GoldAITrader: UTC offset validation failed; skipping signal request.");
+      return false;
+   }
 
    int digits = (int)MarketInfo(sym, MODE_DIGITS);
    double point = MarketInfo(sym, MODE_POINT);
@@ -235,6 +262,13 @@ bool BuildSignalPayload(string &payload)
       return false;
 
    datetime closedBarTime = closedBarOpen + 300;
+   datetime closedBarTimeUtc = closedBarTime - serverUtcOffsetSeconds;
+   // Log enough information to verify UTC conversion in MT4's Experts log before API deployment.
+   Print("[GOLD UTC DIAG] server_utc_offset_seconds=", serverUtcOffsetSeconds,
+         " server_time=", TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+         " terminal_gmt=", TimeToString(TimeGMT(), TIME_DATE|TIME_SECONDS),
+         " bar_time_utc=", TimeToString(closedBarTimeUtc, TIME_DATE|TIME_SECONDS),
+         " bar_time_epoch=", IntegerToString((int)closedBarTimeUtc));
 
    double m5Ema20 = iMA(sym, PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m5Ema50 = iMA(sym, PERIOD_M5, 50, 0, MODE_EMA, PRICE_CLOSE, 1);
@@ -304,8 +338,9 @@ bool BuildSignalPayload(string &payload)
    json += "\"point\":" + JsonNumber(point, digits) + ",";
    json += "\"spread\":" + JsonNumber(spread, digits) + ",";
    json += "\"spread_points\":" + JsonNumber(spreadPoints, 2) + ",";
-   // bar_time is the completed M5 close time, matching recent_m5 and GOLD V2 backtest convention.
-   json += "\"bar_time\":" + IntegerToString((int)closedBarTime) + ",";
+   json += "\"server_utc_offset_seconds\":" + IntegerToString(serverUtcOffsetSeconds) + ",";
+   // Send the completed M5 close time as UTC epoch seconds.
+   json += "\"bar_time\":" + IntegerToString((int)closedBarTimeUtc) + ",";
    json += "\"m5\":{";
    json += "\"ema20\":" + JsonNumber(m5Ema20, digits) + ",";
    json += "\"ema50\":" + JsonNumber(m5Ema50, digits) + ",";
@@ -336,7 +371,7 @@ bool BuildSignalPayload(string &payload)
       if(!firstM5)
          json += ",";
 
-      json += "{\"time\":" + IntegerToString((int)(barOpenM5 + 300));
+      json += "{\"time\":" + IntegerToString((int)(barOpenM5 + 300 - serverUtcOffsetSeconds));
       json += ",\"open\":" + JsonNumber(iOpen(sym, PERIOD_M5, shiftM5), digits);
       json += ",\"high\":" + JsonNumber(iHigh(sym, PERIOD_M5, shiftM5), digits);
       json += ",\"low\":" + JsonNumber(iLow(sym, PERIOD_M5, shiftM5), digits);
@@ -358,7 +393,7 @@ bool BuildSignalPayload(string &payload)
       if(!firstH1)
          json += ",";
 
-      json += "{\"time\":" + IntegerToString((int)(barOpenH1 + 3600));
+      json += "{\"time\":" + IntegerToString((int)(barOpenH1 + 3600 - serverUtcOffsetSeconds));
       json += ",\"open\":" + JsonNumber(iOpen(sym, PERIOD_H1, shiftH1), digits);
       json += ",\"high\":" + JsonNumber(iHigh(sym, PERIOD_H1, shiftH1), digits);
       json += ",\"low\":" + JsonNumber(iLow(sym, PERIOD_H1, shiftH1), digits);

@@ -23,7 +23,8 @@ export function buildGoldSignalDiagnosticLog({
   signal = {},
   setup = {},
   risk = {},
-  state = {}
+  state = {},
+  serverUtcOffsetSeconds = null
 } = {}) {
   const diagnostics = setup && typeof setup === 'object' && setup.diagnostics && typeof setup.diagnostics === 'object'
     ? setup.diagnostics
@@ -62,6 +63,7 @@ export function buildGoldSignalDiagnosticLog({
     symbol: boundedString(signal.symbol, 24),
     timeframe: boundedString(signal.timeframe, 12),
     bar_time: boundedString(signal.bar_time, 40),
+    server_utc_offset_seconds: numberOrNull(serverUtcOffsetSeconds),
     strategy_version: boundedString(signal.strategy_version, 60),
     candidate: boundedString(signal.candidate, 8),
     decision: boundedString(signal.decision, 8),
