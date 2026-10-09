@@ -523,3 +523,36 @@ Validation / resume:
 4. Only after merge, trigger the manual Render deploy because `autoDeploy=no`.
 5. Verify latest deploy is live, error logs are clean, and the Forward Monitor exposes the new spread distribution.
 6. Collect at least 30-100 new EURUSD observations before judging time-of-day patterns. Do not adjust `EURUSD_MAX_SPREAD_PIPS` solely to increase trade frequency.
+
+
+## 2026-10-09 EURUSD spread-cost and H1 trend research
+
+Branch: `research/eurusd-spread-h1-diagnostics`
+
+Goal:
+- Reproduce the runtime observation that every one of 28 recent diagnostics exceeded the configured 1.20-pip max-spread gate.
+- Separate the effect of assumed execution costs from the max-spread filter.
+- Identify which clauses of the H1 UP/DOWN rule cause H1 trend to remain RANGE/unclear.
+- Do not change production entry criteria, spread gates, or execution settings as part of this research.
+
+New research assets:
+- `scripts/backtest-eurusd-legacy-core.mjs` now persists the scenario name/type, spread data limitations, configured max spread, fixed latest-5-year validation split (3-year IS / 2-year OOS), and H1 EMA-stack/close-position rejection counters.
+- `scripts/aggregate-eurusd-spread-sensitivity.mjs` aggregates scenario artifacts into JSON, CSV, and Markdown comparison reports.
+- `scripts/validate-eurusd-spread-sensitivity.mjs` runs a synthetic smoke replay to verify spread-gate and H1-diagnostic output.
+- `.github/workflows/eurusd-spread-sensitivity.yml` evaluates nine scenarios:
+  - Cost sensitivity: assumed constant spread 0.8 / 1.2 / 1.5 / 2.0 / 2.2 pips, with the pips gate set to 2.5 to keep that gate from dominating.
+  - Gate sensitivity: assumed constant spread 2.0 pips with gate thresholds 1.2 / 1.5 / 2.0 / 2.2 pips.
+
+Data limitation:
+- The historical replay dataset has bid OHLCV, not timestamped bid/ask or historical broker spread. Therefore these are constant-spread sensitivity scenarios, not actual historical XM spread reconstruction.
+- Gate values below the assumed 2.0-pip spread are expected to reject candidates by design. These scenarios validate gate behavior; they are not profitability evidence.
+- A 2.5-pip gate in cost sensitivity only isolates the pips upper-bound gate; the spread-to-target economic filter still applies.
+- Use fixed 3-year IS / 2-year OOS over the latest five years as the primary robustness check. Do not select a scenario only because its full-history result looks best.
+- Any H1 counters describe bars reached by the replay engine after its one-position/cooldown logic, not every candle in the raw file.
+
+Resume / decision gate:
+1. Inspect the GitHub Actions run for EURUSD Spread Sensitivity Research.
+2. Require validation, synthetic smoke, and repository tests to pass before using the report.
+3. Download the `eurusd-spread-sensitivity-summary` artifact and compare OOS trades/PF/expectancy/drawdown, plus H1 rejection counts.
+4. If the currently observed real spread remains near 2.0 pips, assess whether any strategy variant maintains positive OOS expectancy under the 2.0+ pip cost case. Do not lower required evidence standards to increase frequency.
+5. Keep EURUSD execution and Gold auto-orders OFF. These are research-only code/workflow changes; no Render deploy is required unless runtime application files change.
