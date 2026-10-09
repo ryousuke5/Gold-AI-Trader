@@ -26,7 +26,7 @@ permissions:
 
 concurrency:
   group: eurusd-spread-sensitivity
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   validate:
