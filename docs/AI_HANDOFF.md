@@ -635,3 +635,41 @@ Follow-up engineering:
 - Add research-only spread/ATR limit scenarios at 25%, 35% and 50%, with assumed spread 2.0 pips and pips gate 2.5. The existing cost-2.0 scenario supplies the 15% baseline.
 - Extend synthetic smoke checks to assert that exclusive pips/ATR gate buckets account for all evaluated bars and that aggregation includes the new diagnostics.
 - Do not promote 25%/35%/50% into production based on trade count alone. Review fixed 3y IS / 2y OOS expectancy, PF, sample size, drawdown and cost stress first.
+
+
+## 2026-10-09 EURUSD spread-gate sensitivity results — completed
+
+Research workflow:
+- Run #27: `37895240858`
+- Summary artifact: `eurusd-spread-sensitivity-summary` (artifact ID `11600052035`)
+- Merge commit: `b88f29219d55baee8468eaf9cdddc433ae2289e8`
+- All 12 matrix jobs, dataset preparation/validation, synthetic end-to-end smoke test, full `npm test`, and the aggregate report job completed successfully.
+
+Dataset provenance:
+- The fresh Dukascopy endpoint returned HTTP 202 twice.
+- Fallback snapshot from successful run `37625030497` was used and validated.
+- 248,164 bid M15 OHLCV bars, coverage 99.082%, first bar open 2016-10-09T21:00:00Z, last bar close 2026-10-07T00:00:00Z.
+- SHA-256: `29d0b820ffe43220b66147d707c2c30e245d35eac8d7ec05b27c5df292af08a9`.
+- This data has no historical Ask or broker-spread series. All cost scenarios are constant-spread sensitivities, not actual XM spread reconstruction.
+
+Results:
+- Cost 0.8 pips: 22 trades overall, PF 2.36, but only 2 OOS trades and both lost (OOS expectancy -1.013 R). This is far too small to validate profitability.
+- Cost 1.2 pips: 2 trades overall, none OOS.
+- Cost 1.5 pips: 1 trade overall, none OOS.
+- Cost 2.0 / 2.2 pips with the 15% spread/ATR limit: 0 trades.
+- Assuming 2.0 pips, pips-gate ceiling 2.2 and spread/ATR ceiling 15%: the pips gate passed, but the spread/ATR gate failed on 96.16% of evaluated bars; no trades.
+- At a research-only spread/ATR limit of 25%: 2 trades overall, none OOS.
+- At 35% or 50%: 12 trades overall, 8 in IS and 0 in OOS. These variants are not promotable because OOS produced no observations.
+- Under the 2.0-pip assumption and 15% ATR limit, spread/ATR was median 32.80%, P90 57.61%, P95 66.66%; 96.16% of evaluated bars exceeded the 15% limit.
+
+Interpretation:
+- Both spread controls matter, but pips ceiling alone is not the main blocker at a 2.0-pip assumed spread: raising the pips gate to 2.2 did not create trades because spread/ATR still rejected nearly all bars.
+- Relaxing the ATR limit increased IS trade count, but did not produce any OOS trades. Do not change production gates based on the IS frequency/PF.
+- There is currently no credible evidence of positive OOS performance under the observed live spread regime.
+- Investigate candidate-generation/market-regime frequency and obtain a fresh, independent OOS/forward sample; do not tune until the outcome is positive.
+
+Next step:
+1. Continue with research-only diagnostics to identify whether H1 regime + breakout geometry leaves enough candidates after realistic costs.
+2. If a different core is explored, compare it on the same fixed IS/OOS split and transaction-cost cases; require a material OOS sample before judging PF/expectancy.
+3. Re-run the data-preparation step when the fallback expires or before using newer data; never label the fallback snapshot as a fresh download.
+4. Keep EURUSD execution and Gold auto-orders OFF. No Render redeploy is required from this research-only merge.
