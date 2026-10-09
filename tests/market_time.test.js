@@ -20,11 +20,11 @@ test('rejects a broker-time bar accidentally sent three hours ahead as UTC', () 
 });
 
 test('rejects timestamps farther in the future than the configured tolerance', () => {
-  const futureBar = completedBar + 31;
+  const futureBar = completedBar + 36;
   const result = validateUtcBarTimestamp(futureBar, { nowMs: now });
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'bar_time_in_future');
-  assert.equal(result.future_seconds, 26);
+  assert.equal(result.future_seconds, 31);
 });
 
 test('accepts a bar within the configured future tolerance', () => {
