@@ -584,3 +584,31 @@ Resume:
 2. If data preparation succeeds, verify all nine scenario jobs and the aggregate report complete.
 3. Download `eurusd-spread-sensitivity-summary` and read OOS metrics before considering any parameter change.
 4. If data preparation fails again, inspect the per-attempt JSON logs before changing strategy logic.
+
+
+### Dataset fallback and provenance — 2026-10-09
+
+Subsequent CI run 37893745578 confirmed:
+- All code syntax checks, the synthetic backtest smoke test, and full `npm test` passed.
+- Dukascopy download attempts failed fast with HTTP 202 on the 10-year request; the previous run had succeeded with 248,164 M15 bars.
+
+The research workflow now:
+- Tries a fresh Dukascopy dataset first.
+- If that fails, downloads the last known-good 10-year artifact from run 37625030497 (artifact `eurusd-legacy-core-data-3650d`), if it remains available.
+- Revalidates expected coverage, chronological/15-minute timestamp format, OHLC integrity, earliest-date gap, and latest-bar freshness before permitting scenarios to start.
+- Creates a dataset manifest containing source type/run, range, bar count, coverage, timestamps, and SHA-256.
+- Includes the identical manifest in all nine scenario reports and requires the aggregator to see one consistent dataset hash before producing a report.
+- Shows provenance in the final Markdown/JSON report.
+
+Important limitation:
+- The fallback artifact is scheduled to expire on 2026-10-14. It is a temporary recovery path, not an indefinitely available data source. If the fresh provider remains unavailable after that, stop and repair/replace the data source rather than silently using old data.
+- A fallback snapshot ending a few days before the current date is acceptable only while its measured last-bar age remains within the explicit 7-day limit. The report must label it as a historical snapshot, not a fresh download.
+- Historical data remains bid OHLCV only; this does not reconstruct historical XM spreads.
+
+Resume / final validation:
+1. Check the latest run of EURUSD Spread Sensitivity Research (current PR #34).
+2. Confirm the fresh provider attempt and, if needed, fallback step are clearly logged.
+3. Confirm the dataset manifest validation succeeds.
+4. Confirm all nine scenario jobs complete and the aggregate report records a shared SHA-256 and the snapshot's final candle time.
+5. Review OOS outcomes at assumed costs near 2.0 and 2.2 pips before considering any parameter change.
+6. Keep EURUSD execution and Gold auto-orders OFF. These changes are research-only; do not deploy to Render.
