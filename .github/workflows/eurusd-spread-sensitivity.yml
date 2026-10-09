@@ -159,38 +159,62 @@ jobs:
             type: execution-cost
             spread: '0.8'
             gate: '2.5'
+            atr_gate: '15'
           - name: cost-1.2
             type: execution-cost
             spread: '1.2'
             gate: '2.5'
+            atr_gate: '15'
           - name: cost-1.5
             type: execution-cost
             spread: '1.5'
             gate: '2.5'
+            atr_gate: '15'
           - name: cost-2.0
             type: execution-cost
             spread: '2.0'
             gate: '2.5'
+            atr_gate: '15'
           - name: cost-2.2
             type: execution-cost
             spread: '2.2'
             gate: '2.5'
+            atr_gate: '15'
+          - name: atr-25
+            type: spread-atr-gate
+            spread: '2.0'
+            gate: '2.5'
+            atr_gate: '25'
+          - name: atr-35
+            type: spread-atr-gate
+            spread: '2.0'
+            gate: '2.5'
+            atr_gate: '35'
+          - name: atr-50
+            type: spread-atr-gate
+            spread: '2.0'
+            gate: '2.5'
+            atr_gate: '50'
           - name: gate-1.2
             type: spread-gate
             spread: '2.0'
             gate: '1.2'
+            atr_gate: '15'
           - name: gate-1.5
             type: spread-gate
             spread: '2.0'
             gate: '1.5'
+            atr_gate: '15'
           - name: gate-2.0
             type: spread-gate
             spread: '2.0'
             gate: '2.0'
+            atr_gate: '15'
           - name: gate-2.2
             type: spread-gate
             spread: '2.0'
             gate: '2.2'
+            atr_gate: '15'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -227,6 +251,7 @@ jobs:
           LEGACY_CORE_MAX_STOP_ATR: '1.50'
           LEGACY_CORE_TP_R: '2.00'
           LEGACY_CORE_MAX_SPREAD_PIPS: '${{ matrix.gate }}'
+          LEGACY_CORE_MAX_SPREAD_ATR_PCT: '${{ matrix.atr_gate }}'
           LEGACY_CORE_MAX_SPREAD_TO_TP_PCT: '12'
         run: node scripts/backtest-eurusd-legacy-core.mjs
       - uses: actions/upload-artifact@v4
