@@ -146,3 +146,45 @@ test('summarizeEurUsdSetup exposes technical WAIT reasons and averages', () => {
   assert.equal(result.averages.breakout_distance_atr, 0.035);
   assert.equal(result.averages.spread_pips, 0.9);
 });
+
+
+test('summarizeEurUsdSetup reports spread percentiles, captured gate failures, and UTC-hour buckets', () => {
+  const result = summarizeEurUsdSetup([
+    {
+      created_at: '2026-10-09T01:15:00Z',
+      invalid_reasons: [
+        'EURUSD_SETUP_DIAG:{"trend":"UP","spread_pips":2.1,"spread_limit_pips":1.2,"spread_atr_gate_passed":true,"setup_reasons":["spread_filter_failed"]}'
+      ]
+    },
+    {
+      created_at: '2026-10-09T01:45:00Z',
+      invalid_reasons: [
+        'EURUSD_SETUP_DIAG:{"trend":"UP","spread_pips":0.8,"spread_limit_pips":1.2,"spread_atr_gate_passed":true,"setup_reasons":[]}'
+      ]
+    },
+    {
+      created_at: '2026-10-09T02:15:00Z',
+      invalid_reasons: [
+        'EURUSD_SETUP_DIAG:{"trend":"DOWN","spread_pips":1.5,"spread_limit_pips":1.0,"spread_atr_gate_passed":false,"setup_reasons":["spread_filter_failed"]}'
+      ]
+    }
+  ], { spreadLimitPips: 1.2 });
+
+  const spread = result.spread_distribution;
+  assert.equal(spread.count, 3);
+  assert.equal(spread.limit_pips, 1.2);
+  assert.equal(spread.min, 0.8);
+  assert.equal(spread.median, 1.5);
+  assert.ok(Math.abs(spread.p90 - 1.98) < 1e-12);
+  assert.equal(spread.max, 2.1);
+  assert.equal(spread.over_limit_count, 2);
+  assert.ok(Math.abs(spread.over_limit_pct - (2 / 3 * 100)) < 1e-12);
+  assert.equal(spread.pips_gate_failed_count, 2);
+  assert.equal(spread.atr_gate_failed_count, 1);
+  assert.equal(spread.combined_filter_failed_count, 2);
+  assert.equal(spread.time_basis, 'signal_created_at_utc');
+  assert.deepEqual(spread.by_utc_hour.map(hour => hour.hour), [1, 2]);
+  assert.deepEqual(spread.by_utc_hour.map(hour => hour.count), [2, 1]);
+  assert.equal(spread.by_utc_hour[0].over_limit_count, 1);
+  assert.equal(spread.by_utc_hour[1].over_limit_count, 1);
+});
