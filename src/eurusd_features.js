@@ -345,13 +345,18 @@ export function buildEurUsdSetup(f, options = {}) {
   if (trend === 'UP' || trend === 'DOWN') score += 25;
   else reasons.push('h1_trend_not_clear');
 
-  if ((trend === 'UP' && m15Up) || (trend === 'DOWN' && m15Down)) score += 15;
+  const hasDirectionalTrend = trend === 'UP' || trend === 'DOWN';
+  const m15EmaAligned =
+    (trend === 'UP' && m15Up) || (trend === 'DOWN' && m15Down);
+  if (!hasDirectionalTrend) reasons.push('m15_ema_not_evaluated_h1_unclear');
+  else if (m15EmaAligned) score += 15;
   else reasons.push('m15_ema_not_aligned');
 
   const rsiOkay =
     (trend === 'UP' && rsiInBuyContinuationZone(f.m15.rsi14, buyRsiMin, buyRsiMax)) ||
     (trend === 'DOWN' && rsiInSellContinuationZone(f.m15.rsi14, sellRsiMin, sellRsiMax));
-  if (rsiOkay) score += 10;
+  if (!hasDirectionalTrend) reasons.push('m15_rsi_not_evaluated_h1_unclear');
+  else if (rsiOkay) score += 10;
   else reasons.push('m15_rsi_out_of_breakout_zone');
 
   if (rangeCompressed) score += 15;
@@ -363,7 +368,8 @@ export function buildEurUsdSetup(f, options = {}) {
   const penetrationOkay =
     (trend === 'UP' && latest.close > rangeHigh + breakoutBuffer) ||
     (trend === 'DOWN' && latest.close < rangeLow - breakoutBuffer);
-  if (penetrationOkay) score += 10;
+  if (!hasDirectionalTrend) reasons.push('breakout_penetration_not_evaluated_h1_unclear');
+  else if (penetrationOkay) score += 10;
   else reasons.push('breakout_penetration_too_small');
 
   if (bodyAtr >= minBodyAtr) score += 10;
@@ -372,7 +378,8 @@ export function buildEurUsdSetup(f, options = {}) {
   const closeLocationOkay =
     (trend === 'UP' && closeLocation + 1e-9 >= minCloseLocation) ||
     (trend === 'DOWN' && closeLocation - 1e-9 <= 1 - minCloseLocation);
-  if (closeLocationOkay) score += 5;
+  if (!hasDirectionalTrend) reasons.push('breakout_close_location_not_evaluated_h1_unclear');
+  else if (closeLocationOkay) score += 5;
   else reasons.push('breakout_close_location_weak');
 
   if (volumeDataAvailable && volumeConfirmation) score += 5;
