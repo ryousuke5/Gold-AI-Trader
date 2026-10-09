@@ -175,7 +175,7 @@ test('summarizeEurUsdSetup reports spread percentiles, captured gate failures, a
   assert.equal(spread.limit_pips, 1.2);
   assert.equal(spread.min, 0.8);
   assert.equal(spread.median, 1.5);
-  assert.ok(Math.abs(spread.p90 - 2.04) < 1e-12);
+  assert.ok(Math.abs(spread.p90 - 1.98) < 1e-12);
   assert.equal(spread.max, 2.1);
   assert.equal(spread.over_limit_count, 2);
   assert.ok(Math.abs(spread.over_limit_pct - (2 / 3 * 100)) < 1e-12);
