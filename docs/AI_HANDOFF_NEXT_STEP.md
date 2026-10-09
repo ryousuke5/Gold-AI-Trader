@@ -1,6 +1,15 @@
 # AI Handoff — next step
 
-Read docs/AI_HANDOFF.md, docs/CONNECTION_RECOVERY.md, docs/AUTO_RECOVERY.md, and docs/GOLD_V2_LIVE_DIAGNOSTIC_2026-10-09.md from the current main branch first.
+Read docs/AI_HANDOFF.md, docs/CONNECTION_RECOVERY.md, docs/AUTO_RECOVERY.md, docs/GOLD_V2_LIVE_DIAGNOSTIC_2026-10-09.md, and docs/GOLD_V2_H1_TREND_DIAGNOSTIC_2026-10-09.md from the current main branch first.
+
+
+## Latest GOLD V2 forward state — 2026-10-09 21:10 JST
+
+The latest supplied snapshot supersedes the earlier 16:25 snapshot for current monitoring: 309 signals, all WAIT (BUY 0 / SELL 0); runtime ANALYSIS, DB ok, auto-trading OFF. Of the latest 200 rows, 101 were outside session and all remaining 99 failed the combined H1 trend gate. No observations reached M5 range/compression/breakout, so the blank Range ATR panel is expected, not proof of missing ATR data upstream.
+
+### Next GOLD task
+
+A diagnostics-only implementation is in branch `feat/gold-h1-trend-diagnostics` with a dedicated `GOLD V2 Diagnostic Tests` workflow. It stores the H1 component checks separately (price vs EMA20, EMA20 vs EMA50, EMA50 vs EMA200, RSI band) for both UP and DOWN paths, then adds overlapping blocker counts to the Forward Monitor. It must not change candidate selection or production thresholds. Review PR and require all tests to pass before merge. Render auto-deploy is disabled; do not deploy without a separate decision. Once deployed, collect new in-session diagnostic rows before deciding if any H1 filter deserves research.
 
 ## Latest GOLD V2 forward state — 2026-10-09 16:25 JST
 

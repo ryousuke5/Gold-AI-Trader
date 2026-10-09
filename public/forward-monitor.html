@@ -123,6 +123,22 @@ function rangeAtrSummary(stats){
     '<span>上限超過</span><b>'+fmt(stats.above_max)+'</b>'+
     '</div>';
 }
+function h1TrendSummary(stats){
+  if(!stats||!stats.observations) return '<div class="kv"><span>H1診断件数</span><b>新しい診断データ待ち</b></div>';
+  const pctSafe=x=>x==null?'—':Number(x).toFixed(1)+'%';
+  const rows=[];
+  for(const [direction,items] of [['UP方向',stats.up_blockers||[]],['DOWN方向',stats.down_blockers||[]]]){
+    for(const item of items){
+      rows.push('<tr><td>'+esc(direction)+'</td><td>'+esc(item.label)+'</td><td class="num">'+fmt(item.failed_count)+'</td><td class="num">'+pctSafe(item.failed_pct)+'</td></tr>');
+    }
+  }
+  return '<div class="kv">'+
+    '<span>H1診断件数</span><b>'+fmt(stats.observations)+'</b>'+
+    '<span>H1トレンド条件脱落</span><b>'+fmt(stats.trend_filter_rejected_count)+' / '+fmt(stats.observations)+' ('+pctSafe(stats.trend_filter_rejected_pct)+')</b>'+
+    '<span>H1条件通過後の残件数</span><b>'+fmt(stats.trend_filter_passed_count)+'</b></div>'+
+    '<div class="meta" style="margin-top:8px">H1で方向が決まらなかったシグナルについて、UP/DOWNの各構成条件を個別集計しています。1件が複数条件に該当するため、件数を合算して脱落総数とは比較しないでください。</div>'+
+    '<div class="tablewrap" style="margin-top:8px"><table class="table" style="min-width:520px"><thead><tr><th>方向</th><th>条件</th><th>該当件数</th><th>H1脱落内の割合</th></tr></thead><tbody>'+rows.join('')+'</tbody></table></div>';
+}
 function spreadDistributionSummary(stats){
   if(!stats||!stats.count){
     return '<div class="section"><h3>Spread実測分布</h3><div class="kv"><span>観測件数</span><b>新しい診断データ待ち</b></div></div>';
@@ -223,6 +239,7 @@ function cardMarket(title,meta,signals,extra,engine,liveGate){
   '<div class="section"><h3>Candidate 全期間</h3><div class="bars"><div class="bar"><div class="k">BUY</div><div class="v buy">'+fmt(c.BUY)+'</div></div><div class="bar"><div class="k">SELL</div><div class="v sell">'+fmt(c.SELL)+'</div></div><div class="bar"><div class="k">WAIT</div><div class="v wait">'+fmt(c.WAIT)+'</div></div></div></div>'+
   '<div class="section"><h3>判定理由</h3><div class="kv"><span>最新理由</span><b>'+esc(waitReasonLabel(signals.recent?.latest_reason||signals.recent?.latest_wait_reason||''))+'</b></div><div class="kv" style="margin-top:6px">'+reasonSummary(signals)+'</div></div>'+
   (signals.filter_funnel ? '<div class="section"><h3>Gold V2 フィルター通過率</h3>'+filterFunnelTable(signals.filter_funnel)+'</div>' : '')+
+  (signals.h1_trend ? '<div class="section"><h3>H1トレンド条件 内訳</h3>'+h1TrendSummary(signals.h1_trend)+'</div>' : '')+
   (signals.range_atr ? '<div class="section"><h3>Range ATR 実測分布</h3>'+rangeAtrSummary(signals.range_atr)+'</div>' : '')+extra+'</div>';
 }
 function render(data){

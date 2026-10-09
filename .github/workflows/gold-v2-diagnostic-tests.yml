@@ -1,0 +1,42 @@
+name: GOLD V2 Diagnostic Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server.js'
+      - 'src/gold_h1_trend_diagnostics.js'
+      - 'src/forward_monitor.js'
+      - 'public/forward-monitor.html'
+      - 'tests/gold_h1_trend_diagnostics.test.js'
+      - '.github/workflows/gold-v2-diagnostic-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server.js'
+      - 'src/gold_h1_trend_diagnostics.js'
+      - 'src/forward_monitor.js'
+      - 'public/forward-monitor.html'
+      - 'tests/gold_h1_trend_diagnostics.test.js'
+      - '.github/workflows/gold-v2-diagnostic-tests.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gold-v2-diagnostic-tests
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run complete test suite
+        run: npm test

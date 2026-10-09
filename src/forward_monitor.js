@@ -236,6 +236,18 @@ export function summarizeEurUsdSetup(rows = [], options = {}) {
   };
 }
 
+function extractGoldV2DiagnosticPayload(row) {
+  const reasons = normalizeInvalidReasons(row?.invalid_reasons);
+  const raw = reasons.find(value => String(value || '').startsWith('GOLD_V2_DIAG:'));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(String(raw).slice('GOLD_V2_DIAG:'.length));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function extractGoldV2Diagnostics(row) {
   const reasons = normalizeInvalidReasons(row?.invalid_reasons);
   const rangeToken = reasons.find(value => String(value || '').startsWith('GOLD_V2_RANGE_ATR:'));
@@ -269,6 +281,56 @@ function extractGoldV2Diagnostics(row) {
   } catch {
     return null;
   }
+}
+
+export function summarizeGoldH1Trend(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const observations = list
+    .map(row => ({ row, diagnostic: extractGoldV2DiagnosticPayload(row) }))
+    .filter(item => Number(item.diagnostic?.h1_diagnostics_version) === 1);
+  const rejected = observations.filter(({ row }) =>
+    String(row?.reason || '').trim() === 'h1_trend_filter' ||
+    normalizeInvalidReasons(row?.invalid_reasons).includes('h1_trend_filter')
+  );
+
+  const componentSpecs = {
+    up: [
+      ['close_not_above_ema20', 'H1終値 > EMA20'],
+      ['ema20_not_above_ema50', 'EMA20 > EMA50'],
+      ['ema50_not_above_ema200', 'EMA50 > EMA200'],
+      ['rsi_outside_buy_band', 'H1 RSIのBUY帯']
+    ],
+    down: [
+      ['close_not_below_ema20', 'H1終値 < EMA20'],
+      ['ema20_not_below_ema50', 'EMA20 < EMA50'],
+      ['ema50_not_below_ema200', 'EMA50 < EMA200'],
+      ['rsi_outside_sell_band', 'H1 RSIのSELL帯']
+    ]
+  };
+
+  const summarizeBlockers = (side, specs) => specs.map(([key, label]) => {
+    const listKey = side === 'up' ? 'h1_up_failure_components' : 'h1_down_failure_components';
+    const failed = rejected.filter(({ diagnostic }) =>
+      Array.isArray(diagnostic[listKey]) && diagnostic[listKey].includes(key)
+    ).length;
+    return {
+      key,
+      label,
+      failed_count: failed,
+      failed_pct: rejected.length ? failed / rejected.length * 100 : null,
+      denominator: rejected.length
+    };
+  });
+
+  return {
+    observations: observations.length,
+    trend_filter_rejected_count: rejected.length,
+    trend_filter_passed_count: Math.max(0, observations.length - rejected.length),
+    trend_filter_rejected_pct: observations.length ? rejected.length / observations.length * 100 : null,
+    up_blockers: summarizeBlockers('up', componentSpecs.up),
+    down_blockers: summarizeBlockers('down', componentSpecs.down),
+    interpretation: 'blocker counts overlap; do not add them together as a sequential funnel'
+  };
 }
 
 export function summarizeGoldRangeAtr(rows = []) {
@@ -360,6 +422,9 @@ async function summarizeSignalSource({
     recent: sampled,
     eurusd_setup: symbols?.length === 0 || values.includes('EURUSD') ? summarizeEurUsdSetup(latestSignals) : null,
     filter_funnel: filterFunnel,
+    h1_trend: symbols?.length && values.some(value => GOLD_SYMBOLS.includes(value))
+      ? summarizeGoldH1Trend(latestSignals)
+      : null,
     range_atr: symbols?.length && values.some(value => GOLD_SYMBOLS.includes(value))
       ? summarizeGoldRangeAtr(latestSignals)
       : null,
