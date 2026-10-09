@@ -105,7 +105,7 @@ const md = [
   '',
   '## Scenario comparison',
   '',
-  '| Scenario | Type | Assumed spread | Pips gate | Trades (5y) | PF (5y) | Expectancy (5y) | IS trades | IS PF | IS expectancy | OOS trades | OOS PF | OOS expectancy | OOS max DD |',
+  '| Scenario | Type | Assumed spread | Pips gate | Trades (all) | PF (all) | Expectancy (all) | IS trades | IS PF | IS expectancy | OOS trades | OOS PF | OOS expectancy | OOS max DD |',
   '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
   ...scenarios.map(s => '| ' + s.scenario + ' | ' + s.type + ' | ' + fmt(s.assumedSpread,2) + ' | ' + fmt(s.gateLimit,2) + ' | ' + s.overall.trades + ' | ' + fmt(s.overall.profit_factor,2) + ' | ' + fmt(s.overall.expectancy_r,3) + ' R | ' + s.is.trades + ' | ' + fmt(s.is.profit_factor,2) + ' | ' + fmt(s.is.expectancy_r,3) + ' R | ' + s.oos.trades + ' | ' + fmt(s.oos.profit_factor,2) + ' | ' + fmt(s.oos.expectancy_r,3) + ' R | ' + fmt(s.oos.max_drawdown_r,2) + ' R |'),
   '',
