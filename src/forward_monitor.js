@@ -123,7 +123,7 @@ function extractEurUsdDiagnostics(row) {
   }
 }
 
-export function summarizeEurUsdSetup(rows = []) {
+export function summarizeEurUsdSetup(rows = [], options = {}) {
   const list = Array.isArray(rows) ? rows : [];
   const reasons = {};
   for (const row of list) {
@@ -132,13 +132,89 @@ export function summarizeEurUsdSetup(rows = []) {
       reasons[reason] = (reasons[reason] || 0) + 1;
     }
   }
-  const observations = list.map(extractEurUsdDiagnostics).filter(Boolean);
+  const observations = list
+    .map(row => ({ row, diagnostic: extractEurUsdDiagnostics(row) }))
+    .filter(item => item.diagnostic);
+
+  const requestedLimit = Number(options.spreadLimitPips ?? process.env.EURUSD_MAX_SPREAD_PIPS ?? 1.20);
+  const activeSpreadLimitPips = Number.isFinite(requestedLimit) ? Math.max(0.1, requestedLimit) : 1.20;
+  const numericOrNull = value => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  const quantile = (sorted, q) => {
+    if (!sorted.length) return null;
+    const position = (sorted.length - 1) * q;
+    const low = Math.floor(position);
+    const high = Math.ceil(position);
+    return sorted[low] + ((sorted[high] - sorted[low]) * (position - low));
+  };
+
+  const spreadSamples = observations
+    .map(({ row, diagnostic }) => {
+      const spread = numericOrNull(diagnostic.spread_pips);
+      if (spread === null || spread < 0) return null;
+      const savedLimit = numericOrNull(diagnostic.spread_limit_pips);
+      const limit = savedLimit !== null && savedLimit > 0 ? savedLimit : activeSpreadLimitPips;
+      const setupReasons = Array.isArray(diagnostic.setup_reasons) ? diagnostic.setup_reasons.map(String) : [];
+      const createdAt = Date.parse(row?.created_at || '');
+      return {
+        spread,
+        limit,
+        utcHour: Number.isFinite(createdAt) ? new Date(createdAt).getUTCHours() : null,
+        pipsGateFailed: spread > limit,
+        atrGateFailed: diagnostic.spread_atr_gate_passed === false,
+        combinedSpreadGateFailed: setupReasons.includes('spread_filter_failed')
+      };
+    })
+    .filter(Boolean);
+
+  const summarizeSpreadSamples = samples => {
+    const values = samples.map(sample => sample.spread).sort((a, b) => a - b);
+    const count = values.length;
+    const exceeded = samples.filter(sample => sample.pipsGateFailed).length;
+    return {
+      count,
+      min: count ? values[0] : null,
+      p25: quantile(values, 0.25),
+      median: quantile(values, 0.50),
+      p75: quantile(values, 0.75),
+      p90: quantile(values, 0.90),
+      max: count ? values[count - 1] : null,
+      mean: count ? values.reduce((sum, value) => sum + value, 0) / count : null,
+      over_limit_count: exceeded,
+      over_limit_pct: count ? exceeded / count * 100 : null
+    };
+  };
+
+  const byHour = new Map();
+  for (const sample of spreadSamples) {
+    if (sample.utcHour === null) continue;
+    if (!byHour.has(sample.utcHour)) byHour.set(sample.utcHour, []);
+    byHour.get(sample.utcHour).push(sample);
+  }
+  const spreadDistribution = {
+    ...summarizeSpreadSamples(spreadSamples),
+    limit_pips: activeSpreadLimitPips,
+    pips_gate_failed_count: spreadSamples.filter(sample => sample.pipsGateFailed).length,
+    atr_gate_failed_count: spreadSamples.filter(sample => sample.atrGateFailed).length,
+    combined_filter_failed_count: spreadSamples.filter(sample => sample.combinedSpreadGateFailed).length,
+    time_basis: 'signal_created_at_utc',
+    by_utc_hour: [...byHour.entries()]
+      .sort(([hourA], [hourB]) => hourA - hourB)
+      .map(([hour, samples]) => ({
+        hour,
+        ...summarizeSpreadSamples(samples)
+      }))
+  };
+
   const avg = key => {
     const eligible = key === 'breakout_distance_atr'
-      ? observations.filter(row => ['UP', 'DOWN'].includes(String(row?.trend || '').toUpperCase()))
+      ? observations.filter(item => ['UP', 'DOWN'].includes(String(item.diagnostic?.trend || '').toUpperCase()))
       : observations;
     const values = eligible
-      .map(row => row?.[key])
+      .map(item => item.diagnostic?.[key])
       .filter(value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)))
       .map(Number);
     return values.length ? values.reduce((sum,v)=>sum+v,0)/values.length : null;
@@ -155,7 +231,8 @@ export function summarizeEurUsdSetup(rows = []) {
       volume_ratio: avg('volume_ratio'),
       spread_pips: avg('spread_pips'),
       spread_atr_pct: avg('spread_atr_pct')
-    }
+    },
+    spread_distribution: spreadDistribution
   };
 }
 
