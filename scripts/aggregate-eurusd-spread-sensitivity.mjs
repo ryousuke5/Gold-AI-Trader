@@ -45,6 +45,8 @@ for (const file of summaryFiles) {
     type: report.scenario?.type || 'unspecified',
     assumedSpread: Number(report.execution?.spread_pips),
     gateLimit: Number(report.parameters?.maxSpreadPips),
+    atrGateLimit: Number(report.parameters?.maxSpreadAtrPct),
+    spreadGate: report.diagnostics?.spread_gate_breakdown || {},
     bars: Number(report.data?.bars) || 0,
     provenance: report.data?.provenance || null,
     overall: report.overall,
@@ -80,21 +82,24 @@ await fs.mkdir(outputRoot, { recursive: true });
 await fs.writeFile(path.join(outputRoot, 'eurusd_spread_sensitivity.json'), JSON.stringify(jsonOut, null, 2) + '\n');
 
 const headers = [
-  'scenario','type','assumed_spread_pips','max_spread_gate_pips','bars',
+  'scenario','type','assumed_spread_pips','max_spread_gate_pips','max_spread_atr_gate_pct','bars',
   'overall_trades','overall_pf','overall_expectancy_r','overall_net_r','overall_max_dd_r',
   'is_trades','is_pf','is_expectancy_r','is_net_r','is_max_dd_r',
   'oos_trades','oos_pf','oos_expectancy_r','oos_net_r','oos_max_dd_r',
-  'recent365_trades','h1_up_bars','h1_down_bars','h1_range_bars',
+  'recent365_trades','pips_gate_failed_bars','pips_gate_failed_pct','atr_gate_failed_bars','atr_gate_failed_pct','both_spread_gates_failed_bars','pips_only_failed_bars','atr_only_failed_bars','passed_both_spread_gates_bars','spread_atr_pct_median','spread_atr_pct_p90','spread_atr_pct_p95',
+  'h1_up_bars','h1_down_bars','h1_range_bars',
   'bullish_ema_stack_bars','bearish_ema_stack_bars','mixed_ema_stack_bars',
   'bullish_stack_rejected_by_close','bearish_stack_rejected_by_close','h1_trend_not_clear_waits',
   'spread_filter_failed_waits'
 ];
 const rows = scenarios.map(s => [
-  s.scenario,s.type,s.assumedSpread,s.gateLimit,s.bars,
+  s.scenario,s.type,s.assumedSpread,s.gateLimit,s.atrGateLimit,s.bars,
   s.overall.trades,s.overall.profit_factor,s.overall.expectancy_r,s.overall.net_r,s.overall.max_drawdown_r,
   s.is.trades,s.is.profit_factor,s.is.expectancy_r,s.is.net_r,s.is.max_drawdown_r,
   s.oos.trades,s.oos.profit_factor,s.oos.expectancy_r,s.oos.net_r,s.oos.max_drawdown_r,
-  s.recent365.trades,s.h1Up,s.h1Down,s.h1Range,
+  s.recent365.trades,
+  s.spreadGate.pips_gate_failed_bars,s.spreadGate.pips_gate_failed_pct,s.spreadGate.atr_gate_failed_bars,s.spreadGate.atr_gate_failed_pct,s.spreadGate.both_gates_failed_bars,s.spreadGate.pips_only_failed_bars,s.spreadGate.atr_only_failed_bars,s.spreadGate.passed_both_gates_bars,s.spreadGate.spread_atr_pct_distribution?.median,s.spreadGate.spread_atr_pct_distribution?.p90,s.spreadGate.spread_atr_pct_distribution?.p95,
+  s.h1Up,s.h1Down,s.h1Range,
   s.h1.bullish_ema_stack,s.h1.bearish_ema_stack,s.h1.mixed_ema_stack,
   s.h1.bullish_stack_rejected_by_close,s.h1.bearish_stack_rejected_by_close,
   s.waitReasons.h1_trend_not_clear || 0,s.waitReasons.spread_filter_failed || 0
@@ -126,6 +131,14 @@ const md = [
   '| Scenario | Type | Assumed spread | Pips gate | Trades (all) | PF (all) | Expectancy (all) | IS trades | IS PF | IS expectancy | OOS trades | OOS PF | OOS expectancy | OOS max DD |',
   '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
   ...scenarios.map(s => '| ' + s.scenario + ' | ' + s.type + ' | ' + fmt(s.assumedSpread,2) + ' | ' + fmt(s.gateLimit,2) + ' | ' + s.overall.trades + ' | ' + fmt(s.overall.profit_factor,2) + ' | ' + fmt(s.overall.expectancy_r,3) + ' R | ' + s.is.trades + ' | ' + fmt(s.is.profit_factor,2) + ' | ' + fmt(s.is.expectancy_r,3) + ' R | ' + s.oos.trades + ' | ' + fmt(s.oos.profit_factor,2) + ' | ' + fmt(s.oos.expectancy_r,3) + ' R | ' + fmt(s.oos.max_drawdown_r,2) + ' R |'),
+  '',
+  '## Spread gate decomposition',
+  '',
+  '| Scenario | Pips limit | ATR limit | Pips fail | ATR fail | Both fail | Pips-only fail | ATR-only fail | Pass both | ATR% median | ATR% P90 | ATR% P95 |',
+  '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+  ...scenarios.map(s => '| ' + s.scenario + ' | ' + fmt(s.spreadGate.pips_limit_pips,2) + ' | ' + fmt(s.spreadGate.atr_limit_pct,1) + '% | ' + (s.spreadGate.pips_gate_failed_bars ?? '—') + ' (' + fmt(s.spreadGate.pips_gate_failed_pct,1) + '%) | ' + (s.spreadGate.atr_gate_failed_bars ?? '—') + ' (' + fmt(s.spreadGate.atr_gate_failed_pct,1) + '%) | ' + (s.spreadGate.both_gates_failed_bars ?? '—') + ' | ' + (s.spreadGate.pips_only_failed_bars ?? '—') + ' | ' + (s.spreadGate.atr_only_failed_bars ?? '—') + ' | ' + (s.spreadGate.passed_both_gates_bars ?? '—') + ' (' + fmt(s.spreadGate.passed_both_gates_pct,1) + '%) | ' + fmt(s.spreadGate.spread_atr_pct_distribution?.median,1) + '% | ' + fmt(s.spreadGate.spread_atr_pct_distribution?.p90,1) + '% | ' + fmt(s.spreadGate.spread_atr_pct_distribution?.p95,1) + '% |'),
+  '',
+  'Interpretation: the pips gate and spread/ATR gate are independent. Relaxing the pips ceiling cannot admit a bar where spread/ATR still exceeds its limit. Compare these counts under the 2.0-pip assumptions before changing any production settings.',
   '',
   '## H1 trend diagnosis',
   '',
