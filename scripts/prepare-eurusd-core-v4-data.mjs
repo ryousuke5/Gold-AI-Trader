@@ -2,14 +2,19 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-const days = Math.max(365, Number(process.env.CORE_V4_LOOKBACK_DAYS || 1825));
+function envNumber(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+const days = Math.max(365, envNumber('CORE_V4_LOOKBACK_DAYS', 1825));
 const out = path.resolve(process.env.CORE_V4_PREPARED_DATA || 'eurusd-core-v4-data/eurusd-m15.json.gz');
-const batchSize = Math.max(1, Math.floor(Number(process.env.CORE_V4_BATCH_SIZE || 5)));
-const batchPauseMs = Math.max(0, Number(process.env.CORE_V4_BATCH_PAUSE_MS || 1500));
-const retryCount = Math.max(0, Math.floor(Number(process.env.CORE_V4_RETRY_COUNT || 2)));
-const retryPauseMs = Math.max(100, Number(process.env.CORE_V4_RETRY_PAUSE_MS || 2000));
-const fetchAttempts = Math.max(1, Math.floor(Number(process.env.CORE_V4_FETCH_ATTEMPTS || 2)));
-const minimumCoverageRatio = Math.min(1, Math.max(0.5, Number(process.env.CORE_V4_MINIMUM_COVERAGE_RATIO || 0.95)));
+const batchSize = Math.max(1, Math.floor(envNumber('CORE_V4_BATCH_SIZE', 5)));
+const batchPauseMs = Math.max(0, envNumber('CORE_V4_BATCH_PAUSE_MS', 1500));
+const retryCount = Math.max(0, Math.floor(envNumber('CORE_V4_RETRY_COUNT', 2)));
+const retryPauseMs = Math.max(100, envNumber('CORE_V4_RETRY_PAUSE_MS', 2000));
+const fetchAttempts = Math.max(1, Math.floor(envNumber('CORE_V4_FETCH_ATTEMPTS', 2)));
+const minimumCoverageRatio = Math.min(1, Math.max(0.5, envNumber('CORE_V4_MINIMUM_COVERAGE_RATIO', 0.95)));
 
 const mod = await import('dukascopy-node');
 const get = mod.getHistoricalRates || mod.default?.getHistoricalRates;
@@ -29,7 +34,7 @@ function estimateWeekdayBars(from, to) {
   return weekdays * 96;
 }
 const expectedBars = estimateWeekdayBars(start, end);
-const configuredMinimum = Number(process.env.CORE_V4_MINIMUM_BARS);
+const configuredMinimum = envNumber('CORE_V4_MINIMUM_BARS', 0);
 const minimumBars = Number.isFinite(configuredMinimum) && configuredMinimum > 0
   ? Math.floor(configuredMinimum)
   : Math.ceil(expectedBars * minimumCoverageRatio);
