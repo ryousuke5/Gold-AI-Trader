@@ -48,12 +48,77 @@ function latestH1(h,t){let lo=0,hi=h.length-1,b=-1;while(lo<=hi){const m=(lo+hi)
 function stats(ts){const rs=ts.map(t=>t.r),w=rs.filter(x=>x>0),l=rs.filter(x=>x<0);let eq=0,peak=0,dd=0;for(const x of rs){eq+=x;peak=Math.max(peak,eq);dd=Math.max(dd,peak-eq);}return {trades:rs.length,wins:w.length,losses:l.length,win_rate_pct:rs.length?w.length/rs.length*100:0,net_r:rs.reduce((a,b)=>a+b,0),expectancy_r:rs.length?rs.reduce((a,b)=>a+b,0)/rs.length:0,profit_factor:l.length?w.reduce((a,b)=>a+b,0)/(-l.reduce((a,b)=>a+b,0)):null,max_drawdown_r:dd};}
 function simulate(m,i,s){const sp=C.spread*1e-4,sl=C.slip*1e-4,side=s.candidate,entry=side==='BUY'?m[i+1].open+sp/2+sl:m[i+1].open-sp/2-sl,stopDist=Math.abs(entry-s.stop_loss);if(!(stopDist>0))return null;const stop=side==='BUY'?entry-stopDist:entry+stopDist,target=side==='BUY'?entry+stopDist*C.tpR:entry-stopDist*C.tpR;const end=Math.min(m.length-1,i+C.hold);let r=0,reason='TIME',ei=end;for(let j=i+1;j<=end;j++){const b=m[j],sh=side==='BUY'?b.low-sp/2<=stop:b.high+sp/2>=stop,th=side==='BUY'?b.high-sp/2>=target:b.low+sp/2<=target;if(sh&&th||sh){r=side==='BUY'?(stop-sl-entry)/stopDist:(entry-(stop+sl))/stopDist;reason=sh&&th?'STOP_AND_TARGET_SAME_BAR':'STOP';ei=j;break;}if(th){r=side==='BUY'?(target-sl-entry)/stopDist:(entry-(target+sl))/stopDist;reason='TARGET';ei=j;break;}}if(reason==='TIME'){const px=side==='BUY'?m[end].close:m[end].close+sp/2;r=side==='BUY'?(px-sl-entry)/stopDist:(entry-(px+sl))/stopDist;}return {signal_time:new Date((m[i].time+900)*1000).toISOString(),direction:side,r,exit_reason:reason,exit_time:new Date((m[ei].time+900)*1000).toISOString()};}
 
-const m=indicators(await load()),h=indicators(h1agg(m));const trades=[];let next=0;const diagnostics={evaluated:0,candidates:0,h1_up:0,h1_down:0,h1_range:0,waits:0,wait_reasons:{}};
+const m=indicators(await load()),h=indicators(h1agg(m));const trades=[];let next=0;const diagnostics={
+  evaluated:0,
+  candidates:0,
+  h1_up:0,
+  h1_down:0,
+  h1_range:0,
+  waits:0,
+  wait_reasons:{},
+  h1_trend_breakdown:{
+    bullish_ema_stack:0,
+    bearish_ema_stack:0,
+    close_at_or_above_ema20:0,
+    close_at_or_below_ema20:0,
+    bullish_stack_rejected_by_close:0,
+    bearish_stack_rejected_by_close:0,
+    mixed_ema_stack:0,
+    confirmed_up:0,
+    confirmed_down:0
+  }
+};
 for(let i=250;i<m.length-2;i++){if(i<next)continue;const hi=latestH1(h,m[i].time+900);if(hi<200)continue;diagnostics.evaluated++;const b=m[i];const hb=h[hi];const f={bid:b.close-C.spread*1e-4/2,ask:b.close+C.spread*1e-4/2,point:1e-5,spread:C.spread*1e-4,barTime:b.time+900,m15:{ema20:b.ema20,ema50:b.ema50,rsi14:b.rsi14,atr14:b.atr14},h1:{close:hb.close,ema20:hb.ema20,ema50:hb.ema50,ema200:hb.ema200,rsi14:hb.rsi14,atr14:hb.atr14},recentM15:m.slice(Math.max(0,i-79),i+1).map(x=>({...x,time:x.time+900})),recentH1:h.slice(Math.max(0,hi-79),hi+1).map(x=>({...x,time:x.time+3600}))};
 const s=buildEurUsdSetup(f,{rangeLookback:C.rangeLookback,minRangeAtr:C.minRangeAtr,maxRangeAtr:C.maxRangeAtr,breakoutAtr:C.breakoutAtr,minBodyAtr:C.minBodyAtr,minCloseLocation:C.minCloseLocation,minVolumeRatio:C.minVolumeRatio,maxSpreadPips:C.maxSpreadPips,maxSpreadAtrPct:15,minStopAtr:C.minStopAtr,maxStopAtr:C.maxStopAtr,takeProfitR:C.tpR,maxSpreadToTpPct:C.maxSpreadToTpPct,buyRsiMin:C.buyRsiMin,buyRsiMax:C.buyRsiMax,sellRsiMin:C.sellRsiMin,sellRsiMax:C.sellRsiMax});
-if(s.trend==='UP')diagnostics.h1_up++;else if(s.trend==='DOWN')diagnostics.h1_down++;else diagnostics.h1_range++;
+const bullStack=hb.ema20>hb.ema50&&hb.ema50>hb.ema200;
+const bearStack=hb.ema20<hb.ema50&&hb.ema50<hb.ema200;
+const closeAtOrAbove=hb.close>=hb.ema20;
+const closeAtOrBelow=hb.close<=hb.ema20;
+if(bullStack)diagnostics.h1_trend_breakdown.bullish_ema_stack++;
+if(bearStack)diagnostics.h1_trend_breakdown.bearish_ema_stack++;
+if(closeAtOrAbove)diagnostics.h1_trend_breakdown.close_at_or_above_ema20++;
+if(closeAtOrBelow)diagnostics.h1_trend_breakdown.close_at_or_below_ema20++;
+if(bullStack&&!closeAtOrAbove)diagnostics.h1_trend_breakdown.bullish_stack_rejected_by_close++;
+if(bearStack&&!closeAtOrBelow)diagnostics.h1_trend_breakdown.bearish_stack_rejected_by_close++;
+if(!bullStack&&!bearStack)diagnostics.h1_trend_breakdown.mixed_ema_stack++;
+if(s.trend==='UP'){diagnostics.h1_up++;diagnostics.h1_trend_breakdown.confirmed_up++;}
+else if(s.trend==='DOWN'){diagnostics.h1_down++;diagnostics.h1_trend_breakdown.confirmed_down++;}
+else diagnostics.h1_range++;
 if(s.candidate==='WAIT'){diagnostics.waits++;for(const x of s.reasons||[])diagnostics.wait_reasons[x]=(diagnostics.wait_reasons[x]||0)+1;continue;}
 diagnostics.candidates++;const t=simulate(m,i,s);if(t){trades.push(t);next=i+Math.max(1,Math.ceil((Date.parse(t.exit_time)-Date.parse(t.signal_time))/900000))+C.cooldown;}}
 const cutoff=new Date(Date.now()-365*86400000),recent=trades.filter(t=>new Date(t.signal_time)>=cutoff),prior=trades.filter(t=>new Date(t.signal_time)<cutoff);
-const report={strategy:'EURUSD legacy range breakout + H1 trend',generated_at:new Date().toISOString(),data:{bars:m.length,source:C.data},parameters:{rangeLookback:C.rangeLookback,minRangeAtr:C.minRangeAtr,maxRangeAtr:C.maxRangeAtr,breakoutAtr:C.breakoutAtr,minBodyAtr:C.minBodyAtr,minCloseLocation:C.minCloseLocation,minVolumeRatio:C.minVolumeRatio,buyRsi:[C.buyRsiMin,C.buyRsiMax],sellRsi:[C.sellRsiMin,C.sellRsiMax],tpR:C.tpR},execution:{spread_pips:C.spread,slippage_pips:C.slip,max_hold_bars:C.hold,cooldown_bars:C.cooldown},overall:stats(trades),recent_365_days:stats(recent),prior_period:stats(prior),diagnostics};
+const report={
+  strategy:'EURUSD legacy range breakout + H1 trend',
+  generated_at:new Date().toISOString(),
+  data:{
+    bars:m.length,
+    source:C.data,
+    spread_history_available:false,
+    spread_model:'constant assumed spread; historical OHLCV dataset does not contain per-bar bid/ask spread'
+  },
+  parameters:{
+    rangeLookback:C.rangeLookback,
+    minRangeAtr:C.minRangeAtr,
+    maxRangeAtr:C.maxRangeAtr,
+    breakoutAtr:C.breakoutAtr,
+    minBodyAtr:C.minBodyAtr,
+    minCloseLocation:C.minCloseLocation,
+    minVolumeRatio:C.minVolumeRatio,
+    buyRsi:[C.buyRsiMin,C.buyRsiMax],
+    sellRsi:[C.sellRsiMin,C.sellRsiMax],
+    tpR:C.tpR,
+    maxSpreadPips:C.maxSpreadPips,
+    maxSpreadToTpPct:C.maxSpreadToTpPct
+  },
+  execution:{
+    spread_pips:C.spread,
+    slippage_pips:C.slip,
+    max_hold_bars:C.hold,
+    cooldown_bars:C.cooldown
+  },
+  overall:stats(trades),
+  recent_365_days:stats(recent),
+  prior_period:stats(prior),
+  diagnostics
+};
 await fs.mkdir(C.out,{recursive:true});await fs.writeFile(path.join(C.out,'summary.json'),JSON.stringify(report,null,2));await fs.writeFile(path.join(C.out,'trades.csv'),['signal_time,direction,r,exit_reason,exit_time',...trades.map(t=>[t.signal_time,t.direction,t.r,t.exit_reason,t.exit_time].join(','))].join('\n')+'\n');console.log(JSON.stringify(report,null,2));
