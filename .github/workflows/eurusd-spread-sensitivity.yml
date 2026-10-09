@@ -1,0 +1,172 @@
+name: EURUSD Spread Sensitivity Research
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/backtest-eurusd-legacy-core.mjs'
+      - 'scripts/aggregate-eurusd-spread-sensitivity.mjs'
+      - '.github/workflows/eurusd-spread-sensitivity.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/backtest-eurusd-legacy-core.mjs'
+      - 'scripts/aggregate-eurusd-spread-sensitivity.mjs'
+      - '.github/workflows/eurusd-spread-sensitivity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eurusd-spread-sensitivity
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: node --check scripts/backtest-eurusd-legacy-core.mjs
+      - run: node --check scripts/aggregate-eurusd-spread-sensitivity.mjs
+      - run: npm test
+
+  prepare:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Prepare shared 10-year EURUSD M15 bid OHLCV dataset
+        env:
+          CORE_V4_LOOKBACK_DAYS: '3650'
+          CORE_V4_PREPARED_DATA: 'eurusd-spread-sensitivity-data/eurusd-m15.json.gz'
+        run: node scripts/prepare-eurusd-core-v4-data.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-spread-sensitivity-data
+          path: eurusd-spread-sensitivity-data/eurusd-m15.json.gz
+          retention-days: 7
+
+  research:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: cost-0.8
+            type: execution-cost
+            spread: '0.8'
+            gate: '2.5'
+          - name: cost-1.2
+            type: execution-cost
+            spread: '1.2'
+            gate: '2.5'
+          - name: cost-1.5
+            type: execution-cost
+            spread: '1.5'
+            gate: '2.5'
+          - name: cost-2.0
+            type: execution-cost
+            spread: '2.0'
+            gate: '2.5'
+          - name: cost-2.2
+            type: execution-cost
+            spread: '2.2'
+            gate: '2.5'
+          - name: gate-1.2
+            type: spread-gate
+            spread: '2.0'
+            gate: '1.2'
+          - name: gate-1.5
+            type: spread-gate
+            spread: '2.0'
+            gate: '1.5'
+          - name: gate-2.0
+            type: spread-gate
+            spread: '2.0'
+            gate: '2.0'
+          - name: gate-2.2
+            type: spread-gate
+            spread: '2.0'
+            gate: '2.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: eurusd-spread-sensitivity-data
+          path: eurusd-spread-sensitivity-data
+      - name: Run deterministic EURUSD spread scenario
+        env:
+          LEGACY_CORE_DATA_FILE: 'eurusd-spread-sensitivity-data/eurusd-m15.json.gz'
+          LEGACY_CORE_OUTPUT_DIR: 'eurusd-spread-scenario-output'
+          LEGACY_CORE_SCENARIO_NAME: '${{ matrix.name }}'
+          LEGACY_CORE_SCENARIO_TYPE: '${{ matrix.type }}'
+          LEGACY_CORE_SPREAD_PIPS: '${{ matrix.spread }}'
+          LEGACY_CORE_SLIPPAGE_PIPS: '0.1'
+          LEGACY_CORE_MAX_HOLD_BARS: '96'
+          LEGACY_CORE_COOLDOWN_BARS: '2'
+          LEGACY_CORE_RANGE_LOOKBACK: '6'
+          LEGACY_CORE_MIN_RANGE_ATR: '0.75'
+          LEGACY_CORE_MAX_RANGE_ATR: '2.00'
+          LEGACY_CORE_BREAKOUT_ATR: '0.10'
+          LEGACY_CORE_MIN_BODY_ATR: '0.35'
+          LEGACY_CORE_BREAKOUT_CLOSE_LOCATION: '0.70'
+          LEGACY_CORE_MIN_VOLUME_RATIO: '1.10'
+          LEGACY_CORE_BUY_RSI_MIN: '50'
+          LEGACY_CORE_BUY_RSI_MAX: '68'
+          LEGACY_CORE_SELL_RSI_MIN: '32'
+          LEGACY_CORE_SELL_RSI_MAX: '50'
+          LEGACY_CORE_MIN_STOP_ATR: '0.50'
+          LEGACY_CORE_MAX_STOP_ATR: '1.50'
+          LEGACY_CORE_TP_R: '2.00'
+          LEGACY_CORE_MAX_SPREAD_PIPS: '${{ matrix.gate }}'
+          LEGACY_CORE_MAX_SPREAD_TO_TP_PCT: '12'
+        run: node scripts/backtest-eurusd-legacy-core.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eurusd-spread-${{ matrix.name }}
+          path: eurusd-spread-scenario-output/
+          retention-days: 30
+          if-no-files-found: error
+
+  aggregate:
+    needs: research
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: eurusd-spread-*
+          path: eurusd-spread-sensitivity-artifacts
+          merge-multiple: false
+      - name: Aggregate sensitivity matrix
+        env:
+          EURUSD_SPREAD_ARTIFACT_DIR: 'eurusd-spread-sensitivity-artifacts'
+          EURUSD_SPREAD_REPORT_DIR: 'eurusd-spread-sensitivity-report'
+        run: node scripts/aggregate-eurusd-spread-sensitivity.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eurusd-spread-sensitivity-summary
+          path: eurusd-spread-sensitivity-report/
+          retention-days: 30
