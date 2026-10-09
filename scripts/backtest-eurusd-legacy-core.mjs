@@ -28,6 +28,7 @@ const C = {
   maxStopAtr: Number(process.env.LEGACY_CORE_MAX_STOP_ATR || 1.50),
   tpR: Number(process.env.LEGACY_CORE_TP_R || 2.00),
   maxSpreadPips: Number(process.env.LEGACY_CORE_MAX_SPREAD_PIPS || 1.20),
+  maxSpreadAtrPct: Number(process.env.LEGACY_CORE_MAX_SPREAD_ATR_PCT || 15),
   maxSpreadToTpPct: Number(process.env.LEGACY_CORE_MAX_SPREAD_TO_TP_PCT || 12)
 };
 
@@ -58,6 +59,15 @@ const m=indicators(await load()),h=indicators(h1agg(m));const trades=[];let next
   h1_range:0,
   waits:0,
   wait_reasons:{},
+  spread_gate_breakdown:{
+    bars_checked:0,
+    pips_gate_failed_bars:0,
+    atr_gate_failed_bars:0,
+    both_gates_failed_bars:0,
+    pips_only_failed_bars:0,
+    atr_only_failed_bars:0,
+    passed_both_gates_bars:0
+  },
   h1_trend_breakdown:{
     bullish_ema_stack:0,
     bearish_ema_stack:0,
@@ -70,8 +80,22 @@ const m=indicators(await load()),h=indicators(h1agg(m));const trades=[];let next
     confirmed_down:0
   }
 };
-for(let i=250;i<m.length-2;i++){if(i<next)continue;const hi=latestH1(h,m[i].time+900);if(hi<200)continue;diagnostics.evaluated++;const b=m[i];const hb=h[hi];const f={bid:b.close-C.spread*1e-4/2,ask:b.close+C.spread*1e-4/2,point:1e-5,spread:C.spread*1e-4,barTime:b.time+900,m15:{ema20:b.ema20,ema50:b.ema50,rsi14:b.rsi14,atr14:b.atr14},h1:{close:hb.close,ema20:hb.ema20,ema50:hb.ema50,ema200:hb.ema200,rsi14:hb.rsi14,atr14:hb.atr14},recentM15:m.slice(Math.max(0,i-79),i+1).map(x=>({...x,time:x.time+900})),recentH1:h.slice(Math.max(0,hi-79),hi+1).map(x=>({...x,time:x.time+3600}))};
-const s=buildEurUsdSetup(f,{rangeLookback:C.rangeLookback,minRangeAtr:C.minRangeAtr,maxRangeAtr:C.maxRangeAtr,breakoutAtr:C.breakoutAtr,minBodyAtr:C.minBodyAtr,minCloseLocation:C.minCloseLocation,minVolumeRatio:C.minVolumeRatio,maxSpreadPips:C.maxSpreadPips,maxSpreadAtrPct:15,minStopAtr:C.minStopAtr,maxStopAtr:C.maxStopAtr,takeProfitR:C.tpR,maxSpreadToTpPct:C.maxSpreadToTpPct,buyRsiMin:C.buyRsiMin,buyRsiMax:C.buyRsiMax,sellRsiMin:C.sellRsiMin,sellRsiMax:C.sellRsiMax});
+const spreadAtrPctSamples=[];
+for(let i=250;i<m.length-2;i++){if(i<next)continue;const hi=latestH1(h,m[i].time+900);if(hi<200)continue;diagnostics.evaluated++;const b=m[i];const hb=h[hi];
+const spreadAtrPct = b.atr14 > 0 ? (C.spread * 1e-4 / b.atr14) * 100 : Infinity;
+const pipsGateFailed = C.spread > C.maxSpreadPips;
+const atrGateFailed = !Number.isFinite(spreadAtrPct) || spreadAtrPct > C.maxSpreadAtrPct;
+const spreadGate = diagnostics.spread_gate_breakdown;
+spreadGate.bars_checked++;
+if (pipsGateFailed) spreadGate.pips_gate_failed_bars++;
+if (atrGateFailed) spreadGate.atr_gate_failed_bars++;
+if (pipsGateFailed && atrGateFailed) spreadGate.both_gates_failed_bars++;
+else if (pipsGateFailed) spreadGate.pips_only_failed_bars++;
+else if (atrGateFailed) spreadGate.atr_only_failed_bars++;
+else spreadGate.passed_both_gates_bars++;
+if (Number.isFinite(spreadAtrPct)) spreadAtrPctSamples.push(spreadAtrPct);
+const f={bid:b.close-C.spread*1e-4/2,ask:b.close+C.spread*1e-4/2,point:1e-5,spread:C.spread*1e-4,barTime:b.time+900,m15:{ema20:b.ema20,ema50:b.ema50,rsi14:b.rsi14,atr14:b.atr14},h1:{close:hb.close,ema20:hb.ema20,ema50:hb.ema50,ema200:hb.ema200,rsi14:hb.rsi14,atr14:hb.atr14},recentM15:m.slice(Math.max(0,i-79),i+1).map(x=>({...x,time:x.time+900})),recentH1:h.slice(Math.max(0,hi-79),hi+1).map(x=>({...x,time:x.time+3600}))};
+const s=buildEurUsdSetup(f,{rangeLookback:C.rangeLookback,minRangeAtr:C.minRangeAtr,maxRangeAtr:C.maxRangeAtr,breakoutAtr:C.breakoutAtr,minBodyAtr:C.minBodyAtr,minCloseLocation:C.minCloseLocation,minVolumeRatio:C.minVolumeRatio,maxSpreadPips:C.maxSpreadPips,maxSpreadAtrPct:C.maxSpreadAtrPct,minStopAtr:C.minStopAtr,maxStopAtr:C.maxStopAtr,takeProfitR:C.tpR,maxSpreadToTpPct:C.maxSpreadToTpPct,buyRsiMin:C.buyRsiMin,buyRsiMax:C.buyRsiMax,sellRsiMin:C.sellRsiMin,sellRsiMax:C.sellRsiMax});
 const bullStack=hb.ema20>hb.ema50&&hb.ema50>hb.ema200;
 const bearStack=hb.ema20<hb.ema50&&hb.ema50<hb.ema200;
 const closeAtOrAbove=hb.close>=hb.ema20;
@@ -89,6 +113,33 @@ else diagnostics.h1_range++;
 if(s.candidate==='WAIT'){diagnostics.waits++;for(const x of s.reasons||[])diagnostics.wait_reasons[x]=(diagnostics.wait_reasons[x]||0)+1;continue;}
 diagnostics.candidates++;const t=simulate(m,i,s);if(t){trades.push(t);next=i+Math.max(1,Math.ceil((Date.parse(t.exit_time)-Date.parse(t.signal_time))/900000))+C.cooldown;}}
 const cutoff=new Date(Date.now()-365*86400000),recent=trades.filter(t=>new Date(t.signal_time)>=cutoff),prior=trades.filter(t=>new Date(t.signal_time)<cutoff);
+const spreadAtrSorted = [...spreadAtrPctSamples].sort((a,b)=>a-b);
+const quantile = (sorted,q) => {
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+};
+const sg = diagnostics.spread_gate_breakdown;
+const pct = n => sg.bars_checked ? n / sg.bars_checked * 100 : null;
+sg.pips_limit_pips = C.maxSpreadPips;
+sg.atr_limit_pct = C.maxSpreadAtrPct;
+sg.pips_gate_failed_pct = pct(sg.pips_gate_failed_bars);
+sg.atr_gate_failed_pct = pct(sg.atr_gate_failed_bars);
+sg.both_gates_failed_pct = pct(sg.both_gates_failed_bars);
+sg.pips_only_failed_pct = pct(sg.pips_only_failed_bars);
+sg.atr_only_failed_pct = pct(sg.atr_only_failed_bars);
+sg.passed_both_gates_pct = pct(sg.passed_both_gates_bars);
+sg.spread_atr_pct_distribution = {
+  count: spreadAtrSorted.length,
+  min: spreadAtrSorted.length ? spreadAtrSorted[0] : null,
+  median: quantile(spreadAtrSorted,0.50),
+  p75: quantile(spreadAtrSorted,0.75),
+  p90: quantile(spreadAtrSorted,0.90),
+  p95: quantile(spreadAtrSorted,0.95),
+  max: spreadAtrSorted.length ? spreadAtrSorted[spreadAtrSorted.length-1] : null,
+  mean: spreadAtrSorted.length ? spreadAtrSorted.reduce((sum,v)=>sum+v,0)/spreadAtrSorted.length : null
+};
 const lastBarTime = m.length ? m[m.length - 1].time + 900 : 0;
 const shiftUtcYears = (unixSeconds, years) => {
   const date = new Date(unixSeconds * 1000);
@@ -127,6 +178,7 @@ const report={
     sellRsi:[C.sellRsiMin,C.sellRsiMax],
     tpR:C.tpR,
     maxSpreadPips:C.maxSpreadPips,
+    maxSpreadAtrPct:C.maxSpreadAtrPct,
     maxSpreadToTpPct:C.maxSpreadToTpPct
   },
   execution:{
