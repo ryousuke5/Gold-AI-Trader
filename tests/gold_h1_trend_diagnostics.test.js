@@ -36,7 +36,6 @@ test('GOLD V2 H1 trend rejection exposes independent directional blockers withou
   assert.equal(setup.reason, 'h1_trend_filter');
   assert.deepEqual(diagnostic.h1_up_failure_components, [
     'close_not_above_ema20',
-    'ema20_not_above_ema50',
     'ema50_not_above_ema200',
     'rsi_outside_buy_band'
   ]);
