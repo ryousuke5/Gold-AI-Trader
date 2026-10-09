@@ -50,9 +50,9 @@ Those results do not support changing production thresholds. They reinforce the 
 
 ## Next research steps
 
-1. Update only the **diagnostic labels**, not the BUY/SELL/WAIT candidate logic, so direction-dependent checks become “not evaluated because H1 is unclear” when trend is RANGE.
-2. Add/update regression tests proving a RANGE trend remains WAIT and uses the new non-misleading diagnostic reasons; prove valid UP/DOWN behavior and spread diagnostics stay unchanged.
-3. Inspect H1 trend frequency and all candidate funnel stages in the fixed IS/OOS historical sample with realistic costs.
+1. Normalize only the Forward/API diagnostic reasons at the server boundary (`src/eurusd_diagnostics.js`, called from both EURUSD AI-test and signal endpoints) when trend is RANGE. Do not change the BUY/SELL/WAIT candidate conditions or spread thresholds.
+2. Use the focused `EURUSD Diagnostic Unit Tests` workflow and regression tests to verify RANGE is still WAIT, valid UP/BUY setup data is not altered, and true directional failures remain failures for UP/DOWN.
+3. Inspect H1 trend frequency and candidate geometry in the fixed historical IS/OOS sample under realistic costs; do not use overlapping RANGE downstream reasons as independent failure counts.
 4. Check current GitHub Actions runs before any dispatch; avoid a new full matrix if a compatible run is active.
 5. Keep EURUSD execution OFF, GOLD auto-orders OFF, AI environment disabled as configured, and do not deploy or modify production spread thresholds based on this snapshot.
 
