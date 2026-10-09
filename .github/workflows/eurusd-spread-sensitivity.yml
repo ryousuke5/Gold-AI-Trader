@@ -37,6 +37,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - run: node --check scripts/prepare-eurusd-core-v4-data.mjs
       - run: node --check scripts/backtest-eurusd-legacy-core.mjs
       - run: node --check scripts/aggregate-eurusd-spread-sensitivity.mjs
       - run: node --check scripts/validate-eurusd-spread-sensitivity.mjs
