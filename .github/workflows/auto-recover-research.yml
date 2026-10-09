@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: auto-recover-research-\${{ github.event.workflow_run.id }}
+  group: auto-recover-research-${{ github.event.workflow_run.id }}
   cancel-in-progress: false
 
 jobs:
@@ -35,12 +35,12 @@ jobs:
       - name: Verify current run state before retry
         id: check
         env:
-          GH_TOKEN: \${{ github.token }}
-          API_URL: \${{ github.api_url }}
-          REPOSITORY: \${{ github.repository }}
-          SOURCE_RUN_ID: \${{ github.event.workflow_run.id }}
-          EVENT_ATTEMPT: \${{ github.event.workflow_run.run_attempt }}
-          EVENT_NAME: \${{ github.event.workflow_run.name }}
+          GH_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          EVENT_NAME: ${{ github.event.workflow_run.name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -94,12 +94,12 @@ jobs:
       - name: Automatically rerun failed jobs (one retry maximum)
         if: steps.check.outputs.eligible == 'true'
         env:
-          GH_TOKEN: \${{ github.token }}
-          API_URL: \${{ github.api_url }}
-          REPOSITORY: \${{ github.repository }}
-          SOURCE_RUN_ID: \${{ github.event.workflow_run.id }}
-          SOURCE_RUN_URL: \${{ github.event.workflow_run.html_url }}
-          SOURCE_WORKFLOW: \${{ github.event.workflow_run.name }}
+          GH_TOKEN: ${{ github.token }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          SOURCE_WORKFLOW: ${{ github.event.workflow_run.name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -139,7 +139,7 @@ jobs:
       - name: Explain why an automatic retry was skipped
         if: steps.check.outputs.eligible != 'true'
         env:
-          SOURCE_RUN_URL: \${{ github.event.workflow_run.html_url }}
+          SOURCE_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           {
             echo '## Automatic retry skipped'
