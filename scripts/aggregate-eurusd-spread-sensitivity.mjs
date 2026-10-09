@@ -46,6 +46,7 @@ for (const file of summaryFiles) {
     assumedSpread: Number(report.execution?.spread_pips),
     gateLimit: Number(report.parameters?.maxSpreadPips),
     bars: Number(report.data?.bars) || 0,
+    provenance: report.data?.provenance || null,
     overall: report.overall,
     is: report.fixed_five_year_validation.is_period,
     oos: report.fixed_five_year_validation.oos_period,
@@ -62,11 +63,16 @@ scenarios.sort((a,b) =>
   a.assumedSpread - b.assumedSpread ||
   a.gateLimit - b.gateLimit
 );
+const provenanceHashes = new Set(scenarios.map(s => s.provenance?.sha256_gzip || 'missing'));
+if (provenanceHashes.size !== 1 || provenanceHashes.has('missing')) {
+  throw new Error('Backtest scenarios must share one validated dataset manifest and SHA-256: ' + [...provenanceHashes].join(', '));
+}
 
 const jsonOut = {
   generated_at: new Date().toISOString(),
   scenario_count: scenarios.length,
   historical_spread_data_available: false,
+  dataset_provenance: scenarios[0]?.provenance || null,
   caveat: 'OHLCV replay uses constant assumed spread per scenario. It cannot reconstruct historical broker spread by timestamp. Treat results as cost sensitivity, not a reconstruction of historical XM execution.',
   scenarios
 };
@@ -102,6 +108,18 @@ const md = [
   'Generated: ' + jsonOut.generated_at,
   '',
   '> Important limitation: The replay source is M15 OHLCV and does not contain historical bid/ask spreads. Each scenario applies a constant assumed spread to both the setup gate and simulated costs (except cost-only scenarios, whose pips gate is set at 2.50). This is a sensitivity analysis, not actual historical spread replay.',
+  '',
+  '## Dataset provenance',
+  '',
+  '| Field | Value |',
+  '|---|---|',
+  '| Source type | ' + String(scenarios[0].provenance.source_type || 'unknown') + ' |',
+  '| Source run | ' + String(scenarios[0].provenance.source_run_id ?? 'fresh provider fetch') + ' |',
+  '| Validated at UTC | ' + String(scenarios[0].provenance.validated_at_utc || 'unknown') + ' |',
+  '| First bar | ' + String(scenarios[0].provenance.first_bar_open_utc || 'unknown') + ' |',
+  '| Last bar close | ' + String(scenarios[0].provenance.last_bar_close_utc || 'unknown') + ' |',
+  '| Bars / coverage | ' + String(scenarios[0].provenance.bars) + ' / ' + fmt(scenarios[0].provenance.coverage_pct, 2) + '% |',
+  '| SHA-256 | ' + String(scenarios[0].provenance.sha256_gzip || 'missing') + ' |',
   '',
   '## Scenario comparison',
   '',
