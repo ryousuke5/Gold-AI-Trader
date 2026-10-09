@@ -1,0 +1,42 @@
+name: EURUSD Diagnostic Unit Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/eurusd.js'
+      - 'src/eurusd_diagnostics.js'
+      - 'public/forward-monitor.html'
+      - 'tests/forward_monitor_diagnostics.test.js'
+      - '.github/workflows/eurusd-diagnostic-tests.yml'
+      - 'docs/EURUSD_FORWARD_DIAGNOSTIC_2026-10-09.md'
+  push:
+    branches: [main]
+    paths:
+      - 'src/eurusd.js'
+      - 'src/eurusd_diagnostics.js'
+      - 'public/forward-monitor.html'
+      - 'tests/forward_monitor_diagnostics.test.js'
+      - '.github/workflows/eurusd-diagnostic-tests.yml'
+      - 'docs/EURUSD_FORWARD_DIAGNOSTIC_2026-10-09.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eurusd-diagnostic-unit-tests
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run complete Node.js test suite
+        run: npm test
