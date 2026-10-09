@@ -19,3 +19,15 @@ The workflow .github/workflows/auto-recover-research.yml watches the GOLD V2 Fiv
 ## Safety invariants
 
 GOLD auto-trading OFF; EURUSD live execution OFF; no Render deployment for research-only work; no promotion without sufficient OOS and conservative-cost evidence.
+
+## Latest EURUSD forward state — 2026-10-09 (monitor display 20:45:03)
+
+- Strategy: `eurusd-m15-h1-deterministic-forward-v1`, M15.
+- Total 58 signals: BUY 0, SELL 0, WAIT 58. Forward trades/open 0; execution OFF.
+- Diagnostics: 53/58 rows (91.4%), average Range ATR 2.42, Body ATR 0.60, average spread 1.93 pips. Mean/median/P90 spread 1.93/1.90/2.08, range 1.80–2.20 pips; all 53 exceed the 1.20-pip ceiling and 40/53 fail spread/ATR 15%.
+- H1 trend is unclear on all 53 diagnostic rows. EMA, directional RSI, penetration and close-location reasons overlap because those checks are direction-dependent; they should be labeled “not evaluated — H1 unclear” rather than counted as independent failures when `trend === RANGE`.
+- Do not raise production thresholds from the live sample. The existing historical sensitivity run did not validate positive OOS at assumed 2.0 pips; ATR 35%/50% research variants had zero OOS trades.
+
+### Next EURUSD research task
+
+Read `docs/EURUSD_FORWARD_DIAGNOSTIC_2026-10-09.md`. Make a diagnostics-only change in `src/eurusd_features.js` and the forward monitor UI so direction-dependent gates are marked not-evaluated when H1 is RANGE; add regression tests proving BUY/SELL/WAIT logic is unchanged. Then use the fixed historical IS/OOS split to decompose H1 regime frequency, technical candidate frequency, and spread/cost blockers. No Render deployment or live execution change.
