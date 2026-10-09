@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/backtest-eurusd-legacy-core.mjs'
       - 'scripts/aggregate-eurusd-spread-sensitivity.mjs'
+      - 'scripts/validate-eurusd-spread-sensitivity.mjs'
       - '.github/workflows/eurusd-spread-sensitivity.yml'
   push:
     branches: [main]
@@ -34,6 +35,8 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: node --check scripts/backtest-eurusd-legacy-core.mjs
       - run: node --check scripts/aggregate-eurusd-spread-sensitivity.mjs
+      - run: node --check scripts/validate-eurusd-spread-sensitivity.mjs
+      - run: node scripts/validate-eurusd-spread-sensitivity.mjs
       - run: npm test
 
   prepare:
