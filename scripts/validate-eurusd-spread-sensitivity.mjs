@@ -120,7 +120,7 @@ try {
   assert.equal(aggregate.scenario_count, 1);
   assert.equal(aggregate.dataset_provenance.source_type, 'synthetic-smoke');
   assert.equal(aggregate.dataset_provenance.sha256_gzip, report.data.provenance.sha256_gzip);
-  assert.equal(aggregate.scenarios[0].spreadGate.max_spread_atr_pct, 15);
+  assert.equal(aggregate.scenarios[0].spreadGate.atr_limit_pct, 15);
   assert.ok(Number.isFinite(aggregate.scenarios[0].spreadGate.spread_atr_pct_distribution.p90));
   const markdown = await fs.readFile(path.join(aggregateOutput, 'eurusd_spread_sensitivity.md'), 'utf8');
   assert.match(markdown, /Dataset provenance/);
