@@ -89,6 +89,17 @@ else diagnostics.h1_range++;
 if(s.candidate==='WAIT'){diagnostics.waits++;for(const x of s.reasons||[])diagnostics.wait_reasons[x]=(diagnostics.wait_reasons[x]||0)+1;continue;}
 diagnostics.candidates++;const t=simulate(m,i,s);if(t){trades.push(t);next=i+Math.max(1,Math.ceil((Date.parse(t.exit_time)-Date.parse(t.signal_time))/900000))+C.cooldown;}}
 const cutoff=new Date(Date.now()-365*86400000),recent=trades.filter(t=>new Date(t.signal_time)>=cutoff),prior=trades.filter(t=>new Date(t.signal_time)<cutoff);
+const lastBarTime = m.length ? m[m.length - 1].time + 900 : 0;
+const shiftUtcYears = (unixSeconds, years) => {
+  const date = new Date(unixSeconds * 1000);
+  date.setUTCFullYear(date.getUTCFullYear() + years);
+  return Math.floor(date.getTime() / 1000);
+};
+const fiveYearStart = lastBarTime ? shiftUtcYears(lastBarTime, -5) : 0;
+const twoYearOosStart = lastBarTime ? shiftUtcYears(lastBarTime, -2) : 0;
+const lastFiveYears = trades.filter(t => Date.parse(t.signal_time) / 1000 >= fiveYearStart);
+const inSample = lastFiveYears.filter(t => Date.parse(t.signal_time) / 1000 < twoYearOosStart);
+const outOfSample = lastFiveYears.filter(t => Date.parse(t.signal_time) / 1000 >= twoYearOosStart);
 const report={
   strategy:'EURUSD legacy range breakout + H1 trend',
   scenario:{name:C.scenarioName,type:C.scenarioType},
@@ -122,6 +133,12 @@ const report={
   overall:stats(trades),
   recent_365_days:stats(recent),
   prior_period:stats(prior),
+  fixed_five_year_validation:{
+    period_start:fiveYearStart?new Date(fiveYearStart*1000).toISOString():null,
+    period_end:lastBarTime?new Date(lastBarTime*1000).toISOString():null,
+    is_period:{start:fiveYearStart?new Date(fiveYearStart*1000).toISOString():null,end:twoYearOosStart?new Date(twoYearOosStart*1000).toISOString():null,...stats(inSample)},
+    oos_period:{start:twoYearOosStart?new Date(twoYearOosStart*1000).toISOString():null,end:lastBarTime?new Date(lastBarTime*1000).toISOString():null,...stats(outOfSample)}
+  },
   diagnostics
 };
 await fs.mkdir(C.out,{recursive:true});await fs.writeFile(path.join(C.out,'summary.json'),JSON.stringify(report,null,2));await fs.writeFile(path.join(C.out,'trades.csv'),['signal_time,direction,r,exit_reason,exit_time',...trades.map(t=>[t.signal_time,t.direction,t.r,t.exit_reason,t.exit_time].join(','))].join('\n')+'\n');console.log(JSON.stringify(report,null,2));
