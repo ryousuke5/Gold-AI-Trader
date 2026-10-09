@@ -6,6 +6,8 @@ import { buildEurUsdSetup } from '../src/eurusd_features.js';
 const C = {
   data: process.env.LEGACY_CORE_DATA_FILE || 'eurusd-core-v4-data/eurusd-m15.json.gz',
   out: process.env.LEGACY_CORE_OUTPUT_DIR || 'eurusd-legacy-core-backtest-output',
+  scenarioName: String(process.env.LEGACY_CORE_SCENARIO_NAME || 'unspecified'),
+  scenarioType: String(process.env.LEGACY_CORE_SCENARIO_TYPE || 'unspecified'),
   tz: 'Europe/Nicosia',
   spread: Number(process.env.LEGACY_CORE_SPREAD_PIPS || 0.8),
   slip: Number(process.env.LEGACY_CORE_SLIPPAGE_PIPS || 0.1),
@@ -89,6 +91,7 @@ diagnostics.candidates++;const t=simulate(m,i,s);if(t){trades.push(t);next=i+Mat
 const cutoff=new Date(Date.now()-365*86400000),recent=trades.filter(t=>new Date(t.signal_time)>=cutoff),prior=trades.filter(t=>new Date(t.signal_time)<cutoff);
 const report={
   strategy:'EURUSD legacy range breakout + H1 trend',
+  scenario:{name:C.scenarioName,type:C.scenarioType},
   generated_at:new Date().toISOString(),
   data:{
     bars:m.length,
