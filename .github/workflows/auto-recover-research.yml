@@ -81,7 +81,7 @@ jobs:
             run.run_attempt === eventAttempt &&
             run.run_attempt === 1 &&
             retryable.includes(run.conclusion);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, \`eligible=\${eligible}\n\`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'eligible=' + eligible + '\n');
           console.log(JSON.stringify({
             run_id: run.id, name: run.name, event: run.event,
             status: run.status, conclusion: run.conclusion,
