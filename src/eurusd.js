@@ -325,6 +325,10 @@ export function registerEurUsdRoutes(app) {
             nowMs: Date.now()
           })
         : [];
+      const configuredSpreadLimit = Number(process.env.EURUSD_MAX_SPREAD_PIPS ?? 1.20);
+      const configuredSpreadAtrLimit = Number(process.env.EURUSD_MAX_SPREAD_ATR_PCT ?? 15);
+      const spreadLimitPips = Number.isFinite(configuredSpreadLimit) ? Math.max(0.1, configuredSpreadLimit) : 1.20;
+      const spreadLimitAtrPct = Number.isFinite(configuredSpreadAtrLimit) ? Math.max(1, configuredSpreadAtrLimit) : 15;
       const eurSetupDiagnostics = {
         range_width_atr: Number(setup.range_width_atr),
         breakout_distance_atr: nullableNumber(setup.breakout_distance_atr),
@@ -333,6 +337,10 @@ export function registerEurUsdRoutes(app) {
         volume_ratio: Number(setup.volume_ratio),
         spread_pips: Number(setup.spread_pips),
         spread_atr_pct: Number(setup.spread_atr_pct),
+        spread_limit_pips: spreadLimitPips,
+        spread_limit_atr_pct: spreadLimitAtrPct,
+        spread_pips_gate_passed: Number(setup.spread_pips) <= spreadLimitPips,
+        spread_atr_gate_passed: Number(setup.spread_atr_pct) <= spreadLimitAtrPct,
         stop_atr: Number(setup.stop_atr),
         trend: String(setup.trend || ''),
         setup_reasons: Array.isArray(setup.reasons) ? setup.reasons.map(String) : []
