@@ -4,6 +4,7 @@ import {
   validateEurUsdFeatures,
   buildEurUsdSetup
 } from './eurusd_features.js';
+import { normalizeEurUsdDirectionalDiagnostics } from './eurusd_diagnostics.js';
 import { buildEurUsdTrendPullbackSetup } from './eurusd_pullback.js';
 import {
   analyzeEurUsdFundamental,
@@ -192,7 +193,7 @@ export function registerEurUsdRoutes(app) {
       const featureErrors = validateEurUsdFeatures(features);
       if (featureErrors.length) return res.status(400).json({ ok: false, error: 'invalid_features', reasons: featureErrors, request_id: requestId });
 
-      const setup = buildEurUsdSetup(features);
+      const setup = normalizeEurUsdDirectionalDiagnostics(buildEurUsdSetup(features));
       if (setup.candidate === 'WAIT') {
         const decision = buildDecision(setup, emptyFundamental('AI fundamental search skipped because M15 setup was WAIT.'), null);
         const risk = evaluateEurUsdRisk({ decision, setup, features, account: dummyAccount() });
@@ -284,7 +285,7 @@ export function registerEurUsdRoutes(app) {
         });
       }
 
-      const setup = buildEurUsdSetup(features);
+      const setup = normalizeEurUsdDirectionalDiagnostics(buildEurUsdSetup(features));
       let fundamental = null;
       let decision;
       if (setup.candidate === 'WAIT') {
