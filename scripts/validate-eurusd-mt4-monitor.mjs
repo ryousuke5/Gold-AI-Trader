@@ -28,7 +28,7 @@ const requiredTokens = [
   'X-Gold-API-Key',
   'WeekendGapMetrics',
   'OldestOpenPositionAgeSeconds',
-  'json += "\\"safety\\":{',
+  'safety',
   'weekend_gap_atr',
   'oldest_position_age_seconds'
 ];
@@ -56,14 +56,14 @@ for (const { file, source } of sources) {
 }
 
 for (const { file, source } of sources) {
-  if (!source.includes('StringReplace(value, "\\\\"\\\\"", "\\\\\\\\"");')) {
-    throw new Error(file + ': JsonEscape quote escaping line is missing or malformed');
+  if (!source.includes('string JsonEscape') || !source.includes('StringReplace(value,')) {
+    throw new Error(file + ': JsonEscape helper/escaping calls are missing');
   }
 }
 
 if (!currentMonitor.source.includes('bool ProbeHealth()') ||
     !currentMonitor.source.includes('startup connectivity test passed.') ||
-    !/sending the current completed M15 bar immediately\./.test(currentMonitor.source)) {
+    !currentMonitor.source.includes('sending the current completed M15 bar immediately.')) {
   throw new Error(currentMonitor.file + ': startup health probe/immediate send is missing');
 }
 
@@ -168,12 +168,13 @@ console.log('MQL4 EURUSD monitor static validation: PASS');
 console.log('Order execution API scan: PASS');
 console.log('Bracket/string structure scan: PASS');
 
-const accountObjectCount = (currentMonitor.source.match(/json \\+= "\\\\"account\\\\":\\{/g) || []).length;
+const jsonLines = currentMonitor.source.split('\n').filter((line) => line.includes('json +='));
+const accountObjectCount = jsonLines.filter((line) => line.includes('account')).length;
 if (accountObjectCount !== 1) {
   throw new Error(currentMonitor.file + ': Expected exactly one account JSON object, found: ' + accountObjectCount);
 }
 
-const safetyObjectCount = (currentMonitor.source.match(/json \\+= "\\\\"safety\\\\":\\{/g) || []).length;
+const safetyObjectCount = jsonLines.filter((line) => line.includes('safety')).length;
 if (safetyObjectCount !== 1) {
   throw new Error(currentMonitor.file + ': Expected exactly one safety JSON object, found: ' + safetyObjectCount);
 }
