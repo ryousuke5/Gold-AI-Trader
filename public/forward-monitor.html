@@ -80,7 +80,8 @@ button{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
   <div class="hint">APIキーはこのブラウザの sessionStorage にのみ保存し、サーバーへは X-Gold-API-Key ヘッダーで送信します。共有PCでは接続後にブラウザを閉じてください。</div>
 </div>
 
-<script>
+<script type="module">
+import { getGoldDiagnosticsDisplayState } from '/gold-diagnostics-status.js';
 const keyInput=document.getElementById('key'), errorBox=document.getElementById('error');
 keyInput.value=sessionStorage.getItem('gold_api_key')||'';
 document.getElementById('connect').onclick=()=>{sessionStorage.setItem('gold_api_key',keyInput.value.trim());load();};
@@ -265,9 +266,16 @@ function renderDiagnostics(d,system){
   if(!d){root.innerHTML='<h2>GOLD API 診断</h2><div class="meta">診断データがありません。サーバーを更新してください。</div>';return;}
   const c=d.counters||{},r=d.latest_request||null,s=d.latest_signal||null,t=d.latest_time_rejection||null;
   const requestAge=r?.age_seconds;
-  const commState=requestAge==null?'bad':requestAge<=90?'good':requestAge<=180?'warn':'bad';
   const barAge=r?.bar_age_seconds;
-  const timeState=!r?'muted':r.timestamp_valid_at_receipt===true?'good':r.timestamp_reason_at_receipt==='bar_time_too_old'||r.timestamp_reason_at_receipt==='bar_time_in_future'?'warn':'bad';
+  const freshness=getGoldDiagnosticsDisplayState({
+    requestAgeSeconds:requestAge,
+    barAgeSeconds:barAge,
+    timestampValidAtReceipt:r?.timestamp_valid_at_receipt,
+    timestampReasonAtReceipt:r?.timestamp_reason_at_receipt
+  });
+  const commState=freshness.communicationState;
+  const barAgeState=freshness.currentBarState;
+  const timeState=freshness.receiptTimeState;
   const spread=r?.spread,spreadLimit=r?.spread_limit_price;
   const spreadOver=spread!=null&&spreadLimit!=null&&Number(spread)>Number(spreadLimit);
   const stateMode=String(system?.gold_state?.mode||'ANALYSIS');
@@ -289,11 +297,11 @@ function renderDiagnostics(d,system){
   const timeReason=r?.outcome_reason||r?.timestamp_reason_at_receipt||'なし';
   const latestDecision=s?(s.candidate+' / '+s.decision):'—';
   const latestReason=s?.reason||'—';
-  root.innerHTML='<div class="diaghead"><div><h2>GOLD API 診断パネル</h2><div class="meta">UTC時刻・通信・重複処理・スプレッド・実売買ゲート / 30秒ごと更新</div></div><div>'+chip('通信 '+(commState==='good'?'正常':commState==='warn'?'遅延':'停止/未受信'),commState==='good'?'good':commState==='warn'?'warn':'bad')+' '+chip('実注文ゲート '+liveLabel,liveState)+'</div></div>'+
+  root.innerHTML='<div class="diaghead"><div><h2>GOLD API 診断パネル</h2><div class="meta">UTC時刻・通信・重複処理・スプレッド・実売買ゲート / 30秒ごと更新</div></div><div>'+chip('通信 '+freshness.communicationLabel,freshness.communicationChipState)+' '+chip('実注文ゲート '+liveLabel,liveState)+'</div></div>'+
   '<div class="diaggrid">'+
     diagItem('最終リクエスト',ageLabel(requestAge),reqAt+' / '+lastOutcome,commState)+
-    diagItem('最終バー時刻（UTC）',barAt,'受信時のUTC offset '+offset,timeState)+
-    diagItem('バー経過時間',ageLabel(barAge),'許容範囲：未来30秒以内・古さ最大90秒',barAge!=null&&barAge>=0&&barAge<=90?'good':timeState==='muted'?'muted':'warn')+
+    diagItem('最終バー時刻（UTC）',barAt,'受信時のUTC offset '+offset+' / 受信時チェック '+freshness.receiptTimeLabel,timeState)+
+    diagItem('バー経過時間（現在）',ageLabel(barAge),'現在の確定M5足の経過時間。90秒制限は受信時点の鮮度チェックに適用',barAgeState)+
     diagItem('最終スプレッド',spreadLabel,spreadDetail,spread==null?'muted':spreadOver?'warn':'good')+
     diagItem('時刻拒否',fmt(c.time_rejections),'古い足 '+fmt(c.stale_bar_rejections)+' / 未来 '+fmt(c.future_bar_rejections)+' / 不正 '+fmt(c.invalid_bar_rejections),Number(c.time_rejections)>0?'warn':'good')+
     diagItem('重複バー応答',fmt(c.duplicate_bar_responses),'処理済みバーの再送。通常は注文ではなく判定の重複防止',Number(c.duplicate_bar_responses)>0?'warn':'good')+
