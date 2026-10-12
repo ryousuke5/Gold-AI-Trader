@@ -56,7 +56,7 @@ if (!source.includes('StringReplace(value, "\\\"", "\\\\\\"");')) {
 }
 if (!source.includes('bool ProbeHealth()') ||
     !source.includes('startup connectivity test passed.') ||
-    !/sending the current completed M15 bar immediately(?: \\(startup bypass\\))?\\./.test(source)) {
+    !/sending the current completed M15 bar immediately(?: \(startup bypass\))?\./.test(source)) {
   throw new Error(file + ': startup health probe/immediate send is missing');
 }
 }
