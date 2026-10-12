@@ -63,7 +63,10 @@ for (const { file, source } of sources) {
 
 if (!currentMonitor.source.includes('bool ProbeHealth()') ||
     !currentMonitor.source.includes('startup connectivity test passed.') ||
-    !currentMonitor.source.includes('sending the current completed M15 bar immediately.')) {
+    !(
+      currentMonitor.source.includes('sending the current completed M15 bar immediately.') ||
+      currentMonitor.source.includes('sending the current completed M15 bar immediately (startup bypass).')
+    )) {
   throw new Error(currentMonitor.file + ': startup health probe/immediate send is missing');
 }
 
