@@ -14,3 +14,13 @@ test('MT4 signal payload converts all sent bar timestamps from broker time to UT
   assert.match(source, /barOpenH1 \+ 3600 - serverUtcOffsetSeconds/);
   assert.match(source, /server_utc_offset_seconds/);
 });
+
+
+test('MT4 GOLD bridge suppresses retries for the same unrecoverable stale M5 bar', async () => {
+  const source = await readFile(new URL('../mt4/GoldAITraderV18.mq4', import.meta.url), 'utf8');
+  assert.match(source, /bool IsStaleBarTimeRejection\\(string response\\)/);
+  assert.match(source, /StringFind\\(response, "invalid_bar_time"\\)[\\s\\S]*StringFind\\(response, "bar_time_too_old"\\)/);
+  const onTimer = source.split('void OnTimer()')[1]?.split('// EA lifecycle')[0] || '';
+  assert.match(onTimer, /else if\\s*\\(IsStaleBarTimeRejection\\(response\\)\\)[\\s\\S]*?g_lastClosedM5Bar\\s*=\\s*closedBar;/);
+  assert.match(onTimer, /suppressing retries until a newer bar/);
+});
