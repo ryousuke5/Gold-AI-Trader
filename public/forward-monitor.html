@@ -302,7 +302,7 @@ function renderDiagnostics(d,system){
   '</div>'+
   '<div class="diag-row">'+
     '<div class="diagitem"><div class="k">最終シグナル</div><div class="v">'+esc(lastSignalAt)+'</div><div class="d">'+esc(latestDecision)+' / '+esc(latestReason)+'</div></div>'+
-    '<div class="diagitem"><div class="k">安全設定</div><div class="v '+(live?'diag-bad':'diag-good')+'">Mode '+esc(stateMode)+' / 実注文ゲート '+esc(liveLabel)+'</div><div class="d">auto_trading_enabled='+esc(String(auto))+' / 最終シグナル risk_approved='+esc(s?String(s.risk_approved):'—')+'</div></div>'+
+    '<div class="diagitem"><div class="k">安全設定</div><div class="v '+(orderGate?'diag-bad':'diag-good')+'">Mode '+esc(stateMode)+' / 実注文ゲート '+esc(liveLabel)+'</div><div class="d">auto_trading_enabled='+esc(String(auto))+' / 最終シグナル risk_approved='+esc(s?String(s.risk_approved):'—')+'</div></div>'+
     '<div class="diagitem"><div class="k">カウンター開始</div><div class="v">'+esc(fmtTime(d.process_started_at))+'</div><div class="d">プロセス稼働 '+esc(ageLabel(d.uptime_seconds))+' / 時刻拒否直近 '+esc(t?.at?fmtTime(t.at):'なし')+(t?' ('+String(t.reason)+')':'')+'</div></div>'+
   '</div>'+
   '<div class="diag-foot">件数はこのRenderプロセス起動後の累計で、再起動・再デプロイ時にリセットされます。スプレッド警告は観測値で、警告表示によって売買条件は変更されません。';
