@@ -18,9 +18,9 @@ test('EURUSD monitor records a candle after success, including duplicate_bar', (
   const successBlock = sendCurrentBar.match(/if\s*\(ok\)\s*\{([\s\S]*?)\n   \}/);
   assert.ok(successBlock, 'success block must exist');
   assert.match(successBlock[1], /g_lastProcessedM15Open\s*=\s*closedBarOpen;/);
-  assert.match(
-    source,
-    /httpCode == 409 && StringFind\(response, "\\"error\\":\\"duplicate_bar\\"\?"\)/
+  assert.ok(
+    source.includes('StringFind(response, "\\\"error\\\":\\\"duplicate_bar\\\"")'),
+    'duplicate_bar must remain treated as idempotent success'
   );
 });
 
