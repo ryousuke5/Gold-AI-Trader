@@ -22,3 +22,13 @@ test('MT4 GOLD bridge sends required completed history and remains non-executing
   assert.match(source, /input bool\s+AllowAutoOrders = false;/);
   assert.doesNotMatch(source, /OrderSend\s*\(/);
 });
+
+
+test('MT4 GOLD bridge treats stale-bar rejection as terminal for that candle only', () => {
+  assert.match(source, /bool IsStaleBarTimeRejection\\(string response\\)/);
+  const onTimer = source.split('void OnTimer()')[1]?.split('// EA lifecycle')[0] || '';
+  assert.match(onTimer, /IsStaleBarTimeRejection\\(response\\)/);
+  assert.match(onTimer, /g_lastClosedM5Bar\\s*=\\s*closedBar/);
+  assert.match(source, /g_retrySeconds\\s*=\\s*30/);
+  assert.doesNotMatch(source, /OrderSend\\s*\\(/);
+});
