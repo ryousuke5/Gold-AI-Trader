@@ -8,6 +8,8 @@ on:
       - 'src/eurusd_diagnostics.js'
       - 'public/forward-monitor.html'
       - 'tests/forward_monitor_diagnostics.test.js'
+      - 'mt4/EURUSDAIMonitorV13.mq4'
+      - 'tests/eurusd_monitor_retry_source.test.js'
       - '.github/workflows/eurusd-diagnostic-tests.yml'
       - 'docs/EURUSD_FORWARD_DIAGNOSTIC_2026-10-09.md'
   push:
@@ -17,6 +19,8 @@ on:
       - 'src/eurusd_diagnostics.js'
       - 'public/forward-monitor.html'
       - 'tests/forward_monitor_diagnostics.test.js'
+      - 'mt4/EURUSDAIMonitorV13.mq4'
+      - 'tests/eurusd_monitor_retry_source.test.js'
       - '.github/workflows/eurusd-diagnostic-tests.yml'
       - 'docs/EURUSD_FORWARD_DIAGNOSTIC_2026-10-09.md'
 
