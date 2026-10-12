@@ -492,6 +492,17 @@ bool PostJson(string path, string payload, string &response)
 }
 
 //---------------------------------------------------------
+// Reject non-retryable stale-bar responses from the API.
+// The same completed M5 candle can never become newer, so retrying it every
+// 30 seconds only adds noise. Keep transient HTTP/network failures retryable.
+//---------------------------------------------------------
+bool IsStaleBarTimeRejection(string response)
+{
+   return StringFind(response, "invalid_bar_time") >= 0 &&
+          StringFind(response, "bar_time_too_old") >= 0;
+}
+
+//---------------------------------------------------------
 // Main timer
 //---------------------------------------------------------
 void OnTimer()
@@ -567,7 +578,8 @@ void OnTimer()
       return;
    }
 
-   if(PostJson("/api/gold/signal", payload, response))
+   bool requestSucceeded = PostJson("/api/gold/signal", payload, response);
+   if(requestSucceeded)
    {
       g_lastClosedM5Bar = closedBar;
       Print("GoldAITrader: signal response = ", response);
@@ -576,6 +588,15 @@ void OnTimer()
       {
          Print("GoldAITrader: AllowAutoOrders=true is ignored in V1.2 analysis bridge. No orders are sent.");
       }
+   }
+   else if(IsStaleBarTimeRejection(response))
+   {
+      // A stale timestamp is not transient for this specific candle. Skip it
+      // until a newer completed M5 candle exists; never loosen server checks.
+      g_lastClosedM5Bar = closedBar;
+      Print("GoldAITrader: stale completed M5 bar rejected; suppressing retries until a newer bar. bar_open=",
+            TimeToString(closedBar, TIME_DATE|TIME_MINUTES),
+            " reason=bar_time_too_old");
    }
 }
 
