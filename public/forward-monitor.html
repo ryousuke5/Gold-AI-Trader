@@ -25,6 +25,7 @@ button{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
 .tablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px}.table{width:100%;border-collapse:collapse;min-width:760px}.table th,.table td{padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:left}.table th{color:var(--muted);font-size:11px;background:var(--panel2)}.table tr:last-child td{border-bottom:0}
 .num{font-variant-numeric:tabular-nums}.buy{color:var(--good)}.sell{color:var(--bad)}.wait{color:var(--muted)}
 .error{background:#301b1b;border:1px solid #6d3737;color:#ffd1d1;padding:12px;border-radius:10px;margin-bottom:16px;display:none}.hint{color:var(--muted);font-size:12px;margin-top:8px}
+.diaghead{display:flex;gap:12px;align-items:start;justify-content:space-between;flex-wrap:wrap}.diaggrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}.diagitem{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;min-width:0}.diagitem .k{color:var(--muted);font-size:11px}.diagitem .v{font-size:18px;font-weight:800;margin-top:3px;overflow-wrap:anywhere}.diagitem .d{color:var(--muted);font-size:11px;margin-top:4px;overflow-wrap:anywhere}.diag-good{color:var(--good)}.diag-warn{color:var(--warn)}.diag-bad{color:var(--bad)}.diag-muted{color:var(--muted)}.diag-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.diag-foot{color:var(--muted);font-size:11px;margin-top:12px}@media(max-width:980px){.diaggrid{grid-template-columns:repeat(2,minmax(0,1fr))}.diag-row{grid-template-columns:1fr}}@media(max-width:600px){.diaggrid{grid-template-columns:1fr 1fr}.diagitem .v{font-size:16px}}
 @media(max-width:980px){.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -53,6 +54,7 @@ button{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
     <div class="item"><span class="dot good"></span><span>最終更新 <b id="updated">—</b></span></div>
   </div>
 
+  <div id="diagnostics" class="card section diag-panel"></div>
   <div id="cards" class="grid"></div>
 
   <div class="card section">
@@ -242,7 +244,66 @@ function cardMarket(title,meta,signals,extra,engine,liveGate){
   (signals.h1_trend ? '<div class="section"><h3>H1トレンド条件 内訳</h3>'+h1TrendSummary(signals.h1_trend)+'</div>' : '')+
   (signals.range_atr ? '<div class="section"><h3>Range ATR 実測分布</h3>'+rangeAtrSummary(signals.range_atr)+'</div>' : '')+extra+'</div>';
 }
+function ageLabel(seconds){
+  if(seconds==null||!Number.isFinite(Number(seconds))) return '—';
+  const value=Number(seconds);
+  if(value<0) return '未来 '+Math.abs(value).toFixed(0)+' 秒';
+  if(value<60) return value.toFixed(0)+' 秒';
+  if(value<3600) return Math.floor(value/60)+' 分 '+Math.floor(value%60)+' 秒';
+  return Math.floor(value/3600)+' 時間 '+Math.floor((value%3600)/60)+' 分';
+}
+function diagItem(label,value,detail,state){
+  return '<div class="diagitem"><div class="k">'+esc(label)+'</div><div class="v diag-'+esc(state||'muted')+'">'+esc(value)+'</div>'+(detail?'<div class="d">'+esc(detail)+'</div>':'')+'</div>';
+}
+function renderDiagnostics(d,system){
+  const root=document.getElementById('diagnostics');
+  if(!d){root.innerHTML='<h2>GOLD API 診断</h2><div class="meta">診断データがありません。サーバーを更新してください。</div>';return;}
+  const c=d.counters||{},r=d.latest_request||null,s=d.latest_signal||null,t=d.latest_time_rejection||null;
+  const requestAge=r?.age_seconds;
+  const commState=requestAge==null?'bad':requestAge<=90?'good':requestAge<=180?'warn':'bad';
+  const barAge=r?.bar_age_seconds;
+  const timeState=!r?'muted':r.timestamp_valid_at_receipt===true?'good':r.timestamp_reason_at_receipt==='bar_time_too_old'||r.timestamp_reason_at_receipt==='bar_time_in_future'?'warn':'bad';
+  const spread=r?.spread,spreadLimit=r?.spread_limit_price;
+  const spreadOver=spread!=null&&spreadLimit!=null&&Number(spread)>Number(spreadLimit);
+  const live=system?.real_execution?.gold?.effective_live_gate===true;
+  const stateMode=String(system?.gold_state?.mode||'ANALYSIS');
+  const auto=system?.gold_state?.auto_trading_enabled===true;
+  const outcome=r?.outcome||'リクエスト未受信';
+  const outcomeLabels={RECEIVED:'受信直後',TIME_REJECTED:'時刻チェックで拒否',DUPLICATE_BAR:'重複バー',INVALID_FEATURES:'入力データ不正',SERVER_ERROR:'サーバーエラー',SIGNAL_EVALUATED:'シグナル判定完了'};
+  const lastOutcome=outcomeLabels[outcome]||outcome;
+  const liveLabel=live?'ON — 要確認':'OFF';
+  const liveState=live?'bad':'good';
+  const reqAt=r?.received_at?fmtTime(r.received_at):'未受信';
+  const lastSignalAt=s?.created_at?fmtTime(s.created_at):'未判定';
+  const barAt=r?.bar_time_utc?fmtTime(r.bar_time_utc):'—';
+  const offset=r?.server_utc_offset_seconds==null?'—':(Number(r.server_utc_offset_seconds)/3600).toFixed(2)+' 時間';
+  const spreadLabel=spread==null?'データなし':Number(spread).toFixed(2);
+  const spreadDetail=spreadLimit==null?'上限未取得':'上限 '+Number(spreadLimit).toFixed(2);
+  const timeReason=r?.outcome_reason||r?.timestamp_reason_at_receipt||'なし';
+  const latestDecision=s?(s.candidate+' / '+s.decision):'—';
+  const latestReason=s?.reason||'—';
+  root.innerHTML='<div class="diaghead"><div><h2>GOLD API 診断パネル</h2><div class="meta">UTC時刻・通信・重複処理・スプレッド・実売買ゲート / 30秒ごと更新</div></div><div>'+chip('通信 '+(commState==='good'?'正常':commState==='warn'?'遅延':'停止/未受信'),commState==='good'?'good':commState==='warn'?'warn':'bad')+' '+chip('実売買 '+liveLabel,liveState)+'</div></div>'+
+  '<div class="diaggrid">'+
+    diagItem('最終リクエスト',ageLabel(requestAge),reqAt+' / '+lastOutcome,commState)+
+    diagItem('最終バー時刻（UTC）',barAt,'受信時のUTC offset '+offset,timeState)+
+    diagItem('バー経過時間',ageLabel(barAge),'許容範囲：未来30秒以内・古さ最大90秒',barAge!=null&&barAge>=0&&barAge<=90?'good':timeState==='muted'?'muted':'warn')+
+    diagItem('最終スプレッド',spreadLabel,spreadDetail,spread==null?'muted':spreadOver?'warn':'good')+
+    diagItem('時刻拒否',fmt(c.time_rejections),'古い足 '+fmt(c.stale_bar_rejections)+' / 未来 '+fmt(c.future_bar_rejections)+' / 不正 '+fmt(c.invalid_bar_rejections),Number(c.time_rejections)>0?'warn':'good')+
+    diagItem('重複バー応答',fmt(c.duplicate_bar_responses),'処理済みバーの再送。通常は注文ではなく判定の重複防止',Number(c.duplicate_bar_responses)>0?'warn':'good')+
+    diagItem('判定完了',fmt(c.signal_evaluations),'入力不正 '+fmt(c.invalid_feature_responses)+' / サーバーエラー '+fmt(c.server_errors),Number(c.server_errors)>0?'bad':'good')+
+    diagItem('スプレッド警告',fmt(c.spread_warnings),'リクエスト単位 / 現在値は上限を'+(spreadOver?'超過':'超過していません'),spreadOver?'warn':'good')+
+  '</div>'+
+  '<div class="diag-row">'+
+    '<div class="diagitem"><div class="k">最終シグナル</div><div class="v">'+esc(lastSignalAt)+'</div><div class="d">'+esc(latestDecision)+' / '+esc(latestReason)+'</div></div>'+
+    '<div class="diagitem"><div class="k">安全設定</div><div class="v '+(live?'diag-bad':'diag-good')+'">Mode '+esc(stateMode)+' / 実売買 '+esc(liveLabel)+'</div><div class="d">auto_trading_enabled='+esc(String(auto))+' / 最終シグナル risk_approved='+esc(s?String(s.risk_approved):'—')+'</div></div>'+
+    '<div class="diagitem"><div class="k">カウンター開始</div><div class="v">'+esc(fmtTime(d.process_started_at))+'</div><div class="d">プロセス稼働 '+esc(ageLabel(d.uptime_seconds))+' / 時刻拒否直近 '+esc(t?.at?fmtTime(t.at):'なし')+(t?' ('+String(t.reason)+')':'')+'</div></div>'+
+  '</div>'+
+  '<div class="diag-foot">件数はこのRenderプロセス起動後の累計で、再起動・再デプロイ時にリセットされます。スプレッド警告は観測値で、警告表示によって売買条件は変更されません。';
+  if(r?.outcome==='TIME_REJECTED') root.innerHTML+='<br>直近の時刻拒否：'+esc(timeReason)+' / バー経過 '+esc(ageLabel(barAge));
+  root.innerHTML+='</div>';
+}
 function render(data){
+  renderDiagnostics(data.system?.gold_diagnostics,data.system);
   const e=data.eurusd,g=data.gold;
   const f=e.forward, gR=g.trade_results.summary;
   document.getElementById('cards').innerHTML=
