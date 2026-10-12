@@ -14,6 +14,8 @@ input int    MaxRetryMinutes = 12;
 input int    MagicNumber = 26100301;
 
 datetime g_lastClosedM15Open = 0;
+// The server may already have processed this candle; do not resend it after success.
+datetime g_lastProcessedM15Open = 0;
 datetime g_lastAttemptAt = 0;
 datetime g_retryExpiredBarOpen = 0;
 bool g_apiConfigReady = false;
@@ -715,6 +717,11 @@ bool SendCurrentBar(bool bypassRetryWindow)
       g_lastAttemptAt = 0;
    }
 
+   // A normal response or duplicate_bar means this candle is already handled.
+   // Retry only when the request failed before a usable result was received.
+   if(currentClosedBarOpen == g_lastProcessedM15Open)
+      return false;
+
    if(!bypassRetryWindow &&
       g_lastAttemptAt > 0 &&
       (TimeCurrent() - g_lastAttemptAt) < RetrySeconds)
@@ -756,6 +763,8 @@ bool SendCurrentBar(bool bypassRetryWindow)
 
    if(ok)
    {
+      // PostJson returns true for HTTP success and idempotent duplicate_bar responses.
+      g_lastProcessedM15Open = closedBarOpen;
       Print("EURUSDAIMonitorV13: EURUSD M15 signal processed.",
             " bar_open=",
             TimeToString(closedBarOpen, TIME_DATE|TIME_MINUTES),
