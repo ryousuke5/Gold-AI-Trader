@@ -244,6 +244,11 @@ function cardMarket(title,meta,signals,extra,engine,liveGate){
   (signals.h1_trend ? '<div class="section"><h3>H1トレンド条件 内訳</h3>'+h1TrendSummary(signals.h1_trend)+'</div>' : '')+
   (signals.range_atr ? '<div class="section"><h3>Range ATR 実測分布</h3>'+rangeAtrSummary(signals.range_atr)+'</div>' : '')+extra+'</div>';
 }
+function utcLabel(value){
+  if(!value) return '—';
+  const parsed=new Date(value);
+  return Number.isNaN(parsed.getTime())?'—':parsed.toISOString().replace('T',' ').replace('.000Z',' UTC').replace(/Z$/,' UTC');
+}
 function ageLabel(seconds){
   if(seconds==null||!Number.isFinite(Number(seconds))) return '—';
   const value=Number(seconds);
@@ -265,24 +270,26 @@ function renderDiagnostics(d,system){
   const timeState=!r?'muted':r.timestamp_valid_at_receipt===true?'good':r.timestamp_reason_at_receipt==='bar_time_too_old'||r.timestamp_reason_at_receipt==='bar_time_in_future'?'warn':'bad';
   const spread=r?.spread,spreadLimit=r?.spread_limit_price;
   const spreadOver=spread!=null&&spreadLimit!=null&&Number(spread)>Number(spreadLimit);
-  const live=system?.real_execution?.gold?.effective_live_gate===true;
   const stateMode=String(system?.gold_state?.mode||'ANALYSIS');
   const auto=system?.gold_state?.auto_trading_enabled===true;
+  const emergencyStopped=Boolean(system?.gold_state?.emergency_stopped_at);
+  const live=stateMode==='LIVE'&&system?.real_execution?.gold?.effective_live_gate===true;
+  const orderGate=(stateMode==='DEMO'&&auto&&!emergencyStopped)||(stateMode==='LIVE'&&live&&!emergencyStopped);
   const outcome=r?.outcome||'リクエスト未受信';
   const outcomeLabels={RECEIVED:'受信直後',TIME_REJECTED:'時刻チェックで拒否',DUPLICATE_BAR:'重複バー',INVALID_FEATURES:'入力データ不正',SERVER_ERROR:'サーバーエラー',SIGNAL_EVALUATED:'シグナル判定完了'};
   const lastOutcome=outcomeLabels[outcome]||outcome;
-  const liveLabel=live?'ON — 要確認':'OFF';
-  const liveState=live?'bad':'good';
+  const liveLabel=orderGate?'ON — 要確認':'OFF';
+  const liveState=orderGate?'bad':'good';
   const reqAt=r?.received_at?fmtTime(r.received_at):'未受信';
   const lastSignalAt=s?.created_at?fmtTime(s.created_at):'未判定';
-  const barAt=r?.bar_time_utc?fmtTime(r.bar_time_utc):'—';
+  const barAt=r?.bar_time_utc?utcLabel(r.bar_time_utc):'—';
   const offset=r?.server_utc_offset_seconds==null?'—':(Number(r.server_utc_offset_seconds)/3600).toFixed(2)+' 時間';
   const spreadLabel=spread==null?'データなし':Number(spread).toFixed(2);
   const spreadDetail=spreadLimit==null?'上限未取得':'上限 '+Number(spreadLimit).toFixed(2);
   const timeReason=r?.outcome_reason||r?.timestamp_reason_at_receipt||'なし';
   const latestDecision=s?(s.candidate+' / '+s.decision):'—';
   const latestReason=s?.reason||'—';
-  root.innerHTML='<div class="diaghead"><div><h2>GOLD API 診断パネル</h2><div class="meta">UTC時刻・通信・重複処理・スプレッド・実売買ゲート / 30秒ごと更新</div></div><div>'+chip('通信 '+(commState==='good'?'正常':commState==='warn'?'遅延':'停止/未受信'),commState==='good'?'good':commState==='warn'?'warn':'bad')+' '+chip('実売買 '+liveLabel,liveState)+'</div></div>'+
+  root.innerHTML='<div class="diaghead"><div><h2>GOLD API 診断パネル</h2><div class="meta">UTC時刻・通信・重複処理・スプレッド・実売買ゲート / 30秒ごと更新</div></div><div>'+chip('通信 '+(commState==='good'?'正常':commState==='warn'?'遅延':'停止/未受信'),commState==='good'?'good':commState==='warn'?'warn':'bad')+' '+chip('実注文ゲート '+liveLabel,liveState)+'</div></div>'+
   '<div class="diaggrid">'+
     diagItem('最終リクエスト',ageLabel(requestAge),reqAt+' / '+lastOutcome,commState)+
     diagItem('最終バー時刻（UTC）',barAt,'受信時のUTC offset '+offset,timeState)+
@@ -295,7 +302,7 @@ function renderDiagnostics(d,system){
   '</div>'+
   '<div class="diag-row">'+
     '<div class="diagitem"><div class="k">最終シグナル</div><div class="v">'+esc(lastSignalAt)+'</div><div class="d">'+esc(latestDecision)+' / '+esc(latestReason)+'</div></div>'+
-    '<div class="diagitem"><div class="k">安全設定</div><div class="v '+(live?'diag-bad':'diag-good')+'">Mode '+esc(stateMode)+' / 実売買 '+esc(liveLabel)+'</div><div class="d">auto_trading_enabled='+esc(String(auto))+' / 最終シグナル risk_approved='+esc(s?String(s.risk_approved):'—')+'</div></div>'+
+    '<div class="diagitem"><div class="k">安全設定</div><div class="v '+(live?'diag-bad':'diag-good')+'">Mode '+esc(stateMode)+' / 実注文ゲート '+esc(liveLabel)+'</div><div class="d">auto_trading_enabled='+esc(String(auto))+' / 最終シグナル risk_approved='+esc(s?String(s.risk_approved):'—')+'</div></div>'+
     '<div class="diagitem"><div class="k">カウンター開始</div><div class="v">'+esc(fmtTime(d.process_started_at))+'</div><div class="d">プロセス稼働 '+esc(ageLabel(d.uptime_seconds))+' / 時刻拒否直近 '+esc(t?.at?fmtTime(t.at):'なし')+(t?' ('+String(t.reason)+')':'')+'</div></div>'+
   '</div>'+
   '<div class="diag-foot">件数はこのRenderプロセス起動後の累計で、再起動・再デプロイ時にリセットされます。スプレッド警告は観測値で、警告表示によって売買条件は変更されません。';
