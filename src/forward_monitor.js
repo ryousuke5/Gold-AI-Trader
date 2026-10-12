@@ -9,6 +9,7 @@ import {
 } from './db.js';
 import { getEurUsdForwardConfig, summarizeEurUsdForwardTrades } from './eurusd_forward.js';
 import { getEurUsdNewsFeedState } from './eurusd_news_feed.js';
+import { getGoldDiagnosticSnapshot } from './gold_diagnostics.js';
 
 const GOLD_SYMBOLS = ['GOLD', 'XAUUSD'];
 
@@ -473,6 +474,7 @@ export async function buildForwardMonitorSnapshot(nowMs = Date.now()) {
         status: dbProbe?.status || 'unknown'
       },
       gold_state: state || null,
+      gold_diagnostics: getGoldDiagnosticSnapshot(nowMs),
       signal_engines: {
         eurusd: {
           enabled: true,
