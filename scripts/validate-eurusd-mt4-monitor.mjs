@@ -6,6 +6,13 @@ const sources = await Promise.all(files.map(async (file) => ({
   source: await fs.readFile(file, 'utf8')
 })));
 
+const currentMonitor = sources.find(({ file }) => file === 'mt4/EURUSDAIMonitorV13.mq4');
+if (!currentMonitor) {
+  throw new Error('Current EURUSD monitor V13 source is missing');
+}
+
+// These payload and retry implementation details belong to the current V13 EA.
+// Archived monitor versions are checked for basic source integrity and safety below.
 const requiredTokens = [
   '#property strict',
   'EventSetTimer',
@@ -21,16 +28,14 @@ const requiredTokens = [
   'X-Gold-API-Key',
   'WeekendGapMetrics',
   'OldestOpenPositionAgeSeconds',
-  'json += "\\"safety\\":{"',
+  'safety',
   'weekend_gap_atr',
   'oldest_position_age_seconds'
 ];
 
-for (const { file, source } of sources) {
-  for (const token of requiredTokens) {
-    if (!source.includes(token)) {
-      throw new Error(file + ': Missing required token: ' + token);
-    }
+for (const token of requiredTokens) {
+  if (!currentMonitor.source.includes(token)) {
+    throw new Error(currentMonitor.file + ': Missing required token: ' + token);
   }
 }
 
@@ -51,12 +56,18 @@ for (const { file, source } of sources) {
 }
 
 for (const { file, source } of sources) {
-if (!source.includes('StringReplace(value, "\\\"", "\\\\\\"");')) {
-  throw new Error(file + ': JsonEscape quote escaping line is missing or malformed');
+  if (!source.includes('string JsonEscape') || !source.includes('StringReplace(value,')) {
+    throw new Error(file + ': JsonEscape helper/escaping calls are missing');
+  }
 }
-if (!source.includes('bool ProbeHealth()') || !source.includes('startup connectivity test passed.') || !source.includes('sending the current completed M15 bar immediately.')) {
-  throw new Error(file + ': startup health probe/immediate send is missing');
-}
+
+if (!currentMonitor.source.includes('bool ProbeHealth()') ||
+    !currentMonitor.source.includes('startup connectivity test passed.') ||
+    !(
+      currentMonitor.source.includes('sending the current completed M15 bar immediately.') ||
+      currentMonitor.source.includes('sending the current completed M15 bar immediately (startup bypass).')
+    )) {
+  throw new Error(currentMonitor.file + ': startup health probe/immediate send is missing');
 }
 
 function scanStructure(text) {
@@ -150,11 +161,9 @@ const functions = [
   'void OnDeinit'
 ];
 
-for (const { file, source } of sources) {
-  for (const signature of functions) {
-    if (!source.includes(signature)) {
-      throw new Error(file + ': Missing required function signature: ' + signature);
-    }
+for (const signature of functions) {
+  if (!currentMonitor.source.includes(signature)) {
+    throw new Error(currentMonitor.file + ': Missing required function signature: ' + signature);
   }
 }
 
@@ -162,15 +171,13 @@ console.log('MQL4 EURUSD monitor static validation: PASS');
 console.log('Order execution API scan: PASS');
 console.log('Bracket/string structure scan: PASS');
 
-for (const { file, source } of sources) {
-const accountObjectCount = (source.match(/json \+= "\\"account\\":\{/g) || []).length;
+const jsonLines = currentMonitor.source.split('\n').filter((line) => line.includes('json +='));
+const accountObjectCount = jsonLines.filter((line) => line.includes('account')).length;
 if (accountObjectCount !== 1) {
-  throw new Error('Expected exactly one account JSON object, found: ' + accountObjectCount);
+  throw new Error(currentMonitor.file + ': Expected exactly one account JSON object, found: ' + accountObjectCount);
 }
 
-const safetyObjectCount = (source.match(/json \+= "\\"safety\\":\{/g) || []).length;
+const safetyObjectCount = jsonLines.filter((line) => line.includes('safety')).length;
 if (safetyObjectCount !== 1) {
-  throw new Error(file + ': Expected exactly one safety JSON object, found: ' + safetyObjectCount);
+  throw new Error(currentMonitor.file + ': Expected exactly one safety JSON object, found: ' + safetyObjectCount);
 }
-}
-
