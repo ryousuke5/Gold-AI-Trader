@@ -18,9 +18,12 @@ test('MT4 signal payload converts all sent bar timestamps from broker time to UT
 
 test('MT4 GOLD bridge suppresses retries for the same unrecoverable stale M5 bar', async () => {
   const source = await readFile(new URL('../mt4/GoldAITraderV18.mq4', import.meta.url), 'utf8');
-  assert.match(source, /bool IsStaleBarTimeRejection\\(string response\\)/);
-  assert.match(source, /StringFind\\(response, "invalid_bar_time"\\)[\\s\\S]*StringFind\\(response, "bar_time_too_old"\\)/);
+  assert.ok(source.includes('bool IsStaleBarTimeRejection(string response)'));
+  assert.ok(source.includes('StringFind(response, "invalid_bar_time") >= 0'));
+  assert.ok(source.includes('StringFind(response, "bar_time_too_old") >= 0'));
   const onTimer = source.split('void OnTimer()')[1]?.split('// EA lifecycle')[0] || '';
-  assert.match(onTimer, /else if\\s*\\(IsStaleBarTimeRejection\\(response\\)\\)[\\s\\S]*?g_lastClosedM5Bar\\s*=\\s*closedBar;/);
-  assert.match(onTimer, /suppressing retries until a newer bar/);
+  assert.ok(onTimer.includes('else if(IsStaleBarTimeRejection(response))'));
+  const staleBranch = onTimer.split('else if(IsStaleBarTimeRejection(response))')[1] || '';
+  assert.ok(staleBranch.includes('g_lastClosedM5Bar = closedBar;'));
+  assert.ok(staleBranch.includes('suppressing retries until a newer bar'));
 });
