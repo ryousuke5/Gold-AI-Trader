@@ -54,6 +54,6 @@ test('EURUSD spread matrix brackets the observed live spread distribution', () =
 
 test('EURUSD sensitivity report discloses unavailable historical spread data', () => {
   assert.match(aggregator, /historical broker spread by timestamp/);
-  assert.match(aggregator, /sensitivity analysis, not a reconstruction of historical XM execution/);
+  assert.match(aggregator, /cost sensitivity, not a reconstruction of historical XM execution/);
   assert.match(workflow, /no historical broker Ask\/spread data/);
 });
