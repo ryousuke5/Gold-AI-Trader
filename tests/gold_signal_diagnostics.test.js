@@ -87,3 +87,50 @@ test('Gold signal diagnostic log handles missing H1 diagnostics and malformed va
   assert.equal(payload.runtime_mode, 'ANALYSIS');
   assert.equal(payload.auto_trading_enabled, false);
 });
+
+test('Gold signal diagnostic log preserves H1 diagnostic version 2 gate combinations', () => {
+  const payload = buildGoldSignalDiagnosticLog({
+    signal: { candidate: 'WAIT', decision: 'WAIT', reason: 'h1_trend_filter' },
+    setup: { diagnostics: {
+      h1_diagnostics_version: 2,
+      h1_close_vs_ema20_atr: -0.3,
+      h1_ema20_vs_ema50_atr: -0.1,
+      h1_ema50_vs_ema200_atr: 0.2,
+      h1_rsi14: 48,
+      h1_min_rsi_buy: 50,
+      h1_max_rsi_buy: 72,
+      h1_min_rsi_sell: 28,
+      h1_max_rsi_sell: 50,
+      h1_up_close_above_ema20: false,
+      h1_up_ema20_above_ema50: false,
+      h1_up_ema50_above_ema200: true,
+      h1_up_rsi_in_band: false,
+      h1_down_close_below_ema20: true,
+      h1_down_ema20_below_ema50: true,
+      h1_down_ema50_below_ema200: false,
+      h1_down_rsi_in_band: true,
+      h1_up_failure_components: ['close_not_above_ema20', 'ema20_not_above_ema50', 'rsi_outside_buy_band'],
+      h1_down_failure_components: ['ema50_not_below_ema200'],
+      h1_up_conditions_passed_count: 1,
+      h1_down_conditions_passed_count: 3,
+      h1_direction_conditions_total: 4,
+      h1_up_gate_passed: false,
+      h1_down_gate_passed: false,
+      h1_up_first_failure: 'close_not_above_ema20',
+      h1_down_first_failure: 'ema50_not_below_ema200',
+      h1_up_failure_pattern: 'close_not_above_ema20|ema20_not_above_ema50|rsi_outside_buy_band',
+      h1_down_failure_pattern: 'ema50_not_below_ema200',
+      h1_ema_stack_state: 'MIXED',
+      h1_nearest_direction_by_pass_count: 'DOWN'
+    } }
+  });
+  assert.equal(payload.h1.diagnostics_version, 2);
+  assert.equal(payload.h1.up_conditions_passed_count, 1);
+  assert.equal(payload.h1.down_conditions_passed_count, 3);
+  assert.equal(payload.h1.up_gate_passed, false);
+  assert.equal(payload.h1.down_gate_passed, false);
+  assert.equal(payload.h1.up_first_failure, 'close_not_above_ema20');
+  assert.equal(payload.h1.down_first_failure, 'ema50_not_below_ema200');
+  assert.equal(payload.h1.ema_stack_state, 'MIXED');
+  assert.equal(payload.h1.nearest_direction_by_pass_count, 'DOWN');
+});

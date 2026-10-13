@@ -288,7 +288,8 @@ export function summarizeGoldH1Trend(rows = []) {
   const list = Array.isArray(rows) ? rows : [];
   const observations = list
     .map(row => ({ row, diagnostic: extractGoldV2DiagnosticPayload(row) }))
-    .filter(item => Number(item.diagnostic?.h1_diagnostics_version) === 1);
+    // Version 1 records remain valid; version 2 adds combined outcomes and first blockers.
+    .filter(item => Number(item.diagnostic?.h1_diagnostics_version) >= 1);
   const rejected = observations.filter(({ row }) =>
     String(row?.reason || '').trim() === 'h1_trend_filter' ||
     normalizeInvalidReasons(row?.invalid_reasons).includes('h1_trend_filter')
@@ -309,11 +310,33 @@ export function summarizeGoldH1Trend(rows = []) {
     ]
   };
 
+  const getFailures = (diagnostic, side) => {
+    const key = side === 'up' ? 'h1_up_failure_components' : 'h1_down_failure_components';
+    if (Array.isArray(diagnostic?.[key])) return diagnostic[key].map(String);
+    // Defensive fallback for partially populated legacy diagnostics.
+    const checks = side === 'up'
+      ? [
+          ['h1_up_close_above_ema20', 'close_not_above_ema20'],
+          ['h1_up_ema20_above_ema50', 'ema20_not_above_ema50'],
+          ['h1_up_ema50_above_ema200', 'ema50_not_above_ema200'],
+          ['h1_up_rsi_in_band', 'rsi_outside_buy_band']
+        ]
+      : [
+          ['h1_down_close_below_ema20', 'close_not_below_ema20'],
+          ['h1_down_ema20_below_ema50', 'ema20_not_below_ema50'],
+          ['h1_down_ema50_below_ema200', 'ema50_not_below_ema200'],
+          ['h1_down_rsi_in_band', 'rsi_outside_sell_band']
+        ];
+    return checks.filter(([flag]) => diagnostic?.[flag] !== true).map(([, failure]) => failure);
+  };
+
+  const upFailures = new Map(observations.map(({ diagnostic }) => [diagnostic, getFailures(diagnostic, 'up')]));
+  const downFailures = new Map(observations.map(({ diagnostic }) => [diagnostic, getFailures(diagnostic, 'down')]));
   const summarizeBlockers = (side, specs) => specs.map(([key, label]) => {
-    const listKey = side === 'up' ? 'h1_up_failure_components' : 'h1_down_failure_components';
-    const failed = rejected.filter(({ diagnostic }) =>
-      Array.isArray(diagnostic[listKey]) && diagnostic[listKey].includes(key)
-    ).length;
+    const failed = rejected.filter(({ diagnostic }) => {
+      const failures = side === 'up' ? upFailures.get(diagnostic) : downFailures.get(diagnostic);
+      return failures.includes(key);
+    }).length;
     return {
       key,
       label,
@@ -323,14 +346,90 @@ export function summarizeGoldH1Trend(rows = []) {
     };
   });
 
+  const frequencyRows = (items, limit = 8) => {
+    const counts = new Map();
+    for (const item of items) {
+      if (!item) continue;
+      counts.set(item, (counts.get(item) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([key, count]) => ({ key, count, pct: items.length ? count / items.length * 100 : null, denominator: items.length }))
+      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+      .slice(0, limit);
+  };
+
+  const upRejectedFailures = rejected.map(({ diagnostic }) => upFailures.get(diagnostic) || []);
+  const downRejectedFailures = rejected.map(({ diagnostic }) => downFailures.get(diagnostic) || []);
+  const passDistribution = failureSets => [0, 1, 2, 3, 4].map(passedCount => {
+    const count = failureSets.filter(failures => 4 - failures.length === passedCount).length;
+    return {
+      passed_conditions: passedCount,
+      total_conditions: 4,
+      count,
+      pct: failureSets.length ? count / failureSets.length * 100 : null,
+      denominator: failureSets.length
+    };
+  });
+  const upFirstFailure = upRejectedFailures.map(failures => failures[0] || 'all_pass');
+  const downFirstFailure = downRejectedFailures.map(failures => failures[0] || 'all_pass');
+  const upPatterns = upRejectedFailures.map(failures => failures.length ? failures.join(' + ') : 'all_pass');
+  const downPatterns = downRejectedFailures.map(failures => failures.length ? failures.join(' + ') : 'all_pass');
+
+  const stackStateFor = diagnostic => {
+    if (['BULLISH', 'BEARISH', 'MIXED'].includes(String(diagnostic?.h1_ema_stack_state || '').toUpperCase())) {
+      return String(diagnostic.h1_ema_stack_state).toUpperCase();
+    }
+    if (diagnostic?.h1_up_ema20_above_ema50 === true && diagnostic?.h1_up_ema50_above_ema200 === true) return 'BULLISH';
+    if (diagnostic?.h1_down_ema20_below_ema50 === true && diagnostic?.h1_down_ema50_below_ema200 === true) return 'BEARISH';
+    return 'MIXED';
+  };
+  const upPasses = observations.filter(({ diagnostic }) => upFailures.get(diagnostic).length === 0).length;
+  const downPasses = observations.filter(({ diagnostic }) => downFailures.get(diagnostic).length === 0).length;
+  const bothFail = observations.filter(({ diagnostic }) =>
+    upFailures.get(diagnostic).length > 0 && downFailures.get(diagnostic).length > 0
+  ).length;
+  const stackCounts = { BULLISH: 0, BEARISH: 0, MIXED: 0 };
+  const nearestDirectionCounts = { UP: 0, DOWN: 0, TIE: 0 };
+  for (const { diagnostic } of observations) {
+    stackCounts[stackStateFor(diagnostic)] += 1;
+    const upPassed = Number.isFinite(Number(diagnostic.h1_up_conditions_passed_count))
+      ? Number(diagnostic.h1_up_conditions_passed_count)
+      : 4 - upFailures.get(diagnostic).length;
+    const downPassed = Number.isFinite(Number(diagnostic.h1_down_conditions_passed_count))
+      ? Number(diagnostic.h1_down_conditions_passed_count)
+      : 4 - downFailures.get(diagnostic).length;
+    if (upPassed > downPassed) nearestDirectionCounts.UP += 1;
+    else if (downPassed > upPassed) nearestDirectionCounts.DOWN += 1;
+    else nearestDirectionCounts.TIE += 1;
+  }
+
+  const versions = {};
+  for (const { diagnostic } of observations) {
+    const version = String(Number(diagnostic.h1_diagnostics_version) || 1);
+    versions[version] = (versions[version] || 0) + 1;
+  }
+
   return {
+    schema_version: 2,
     observations: observations.length,
+    diagnostic_version_counts: versions,
     trend_filter_rejected_count: rejected.length,
     trend_filter_passed_count: Math.max(0, observations.length - rejected.length),
     trend_filter_rejected_pct: observations.length ? rejected.length / observations.length * 100 : null,
+    up_gate_passed_count: upPasses,
+    down_gate_passed_count: downPasses,
+    both_directions_failed_count: bothFail,
+    ema_stack_state_counts: stackCounts,
+    nearest_direction_by_pass_count: nearestDirectionCounts,
+    up_first_failure_counts: frequencyRows(upFirstFailure),
+    down_first_failure_counts: frequencyRows(downFirstFailure),
+    up_failure_patterns: frequencyRows(upPatterns, 6),
+    down_failure_patterns: frequencyRows(downPatterns, 6),
+    up_pass_count_distribution: passDistribution(upRejectedFailures),
+    down_pass_count_distribution: passDistribution(downRejectedFailures),
     up_blockers: summarizeBlockers('up', componentSpecs.up),
     down_blockers: summarizeBlockers('down', componentSpecs.down),
-    interpretation: 'blocker counts overlap; do not add them together as a sequential funnel'
+    interpretation: 'Individual blockers overlap. First-failure counts follow the gate condition order; pass-count distributions are among H1-rejected rows.'
   };
 }
 

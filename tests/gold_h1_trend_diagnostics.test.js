@@ -46,6 +46,16 @@ test('GOLD V2 H1 trend rejection exposes independent directional blockers withou
   assert.ok(Number.isFinite(diagnostic.h1_close_vs_ema20_atr));
   assert.ok(Number.isFinite(diagnostic.h1_ema20_vs_ema50_atr));
   assert.ok(Number.isFinite(diagnostic.h1_ema50_vs_ema200_atr));
+  assert.equal(diagnostic.h1_diagnostics_version, 2);
+  assert.equal(diagnostic.h1_up_conditions_passed_count, 1);
+  assert.equal(diagnostic.h1_down_conditions_passed_count, 2);
+  assert.equal(diagnostic.h1_direction_conditions_total, 4);
+  assert.equal(diagnostic.h1_up_gate_passed, false);
+  assert.equal(diagnostic.h1_down_gate_passed, false);
+  assert.equal(diagnostic.h1_up_first_failure, 'close_not_above_ema20');
+  assert.equal(diagnostic.h1_down_first_failure, 'ema20_not_below_ema50');
+  assert.equal(diagnostic.h1_ema_stack_state, 'MIXED');
+  assert.equal(diagnostic.h1_nearest_direction_by_pass_count, 'DOWN');
 });
 
 test('GOLD V2 H1 diagnostic summary counts overlapping blockers without treating them as a sequential funnel', () => {
@@ -59,9 +69,20 @@ test('GOLD V2 H1 diagnostic summary counts overlapping blockers without treating
   assert.equal(summary.observations, 1);
   assert.equal(summary.trend_filter_rejected_count, 1);
   assert.equal(summary.trend_filter_passed_count, 0);
+  assert.equal(summary.schema_version, 2);
+  assert.equal(summary.up_gate_passed_count, 0);
+  assert.equal(summary.down_gate_passed_count, 0);
+  assert.equal(summary.both_directions_failed_count, 1);
+  assert.equal(summary.ema_stack_state_counts.MIXED, 1);
   assert.equal(summary.up_blockers.find(x => x.key === 'close_not_above_ema20').failed_count, 1);
   assert.equal(summary.up_blockers.find(x => x.key === 'rsi_outside_buy_band').failed_count, 1);
   assert.equal(summary.down_blockers.find(x => x.key === 'ema20_not_below_ema50').failed_count, 1);
+  assert.equal(summary.up_first_failure_counts[0].key, 'close_not_above_ema20');
+  assert.equal(summary.down_first_failure_counts[0].key, 'ema20_not_below_ema50');
+  assert.equal(summary.up_failure_patterns[0].key, 'close_not_above_ema20 + ema50_not_above_ema200 + rsi_outside_buy_band');
+  assert.equal(summary.down_failure_patterns[0].key, 'ema20_not_below_ema50 + rsi_outside_sell_band');
+  assert.equal(summary.up_pass_count_distribution.find(x => x.passed_conditions === 1).count, 1);
+  assert.equal(summary.down_pass_count_distribution.find(x => x.passed_conditions === 2).count, 1);
 });
 
 test('GOLD V2 H1 diagnostic rejects missing or zero-ATR data safely', () => {
@@ -69,4 +90,24 @@ test('GOLD V2 H1 diagnostic rejects missing or zero-ATR data safely', () => {
   assert.equal(buildGoldV2H1TrendDiagnostics({
     h1: { close: 1, ema20: 1, ema50: 1, ema200: 1, rsi14: 50, atr14: 0 }
   }), null);
+});
+
+test('GOLD H1 summary remains compatible with version 1 persisted diagnostics', () => {
+  const legacy = {
+    h1_diagnostics_version: 1,
+    h1_up_failure_components: ['close_not_above_ema20', 'ema20_not_above_ema50'],
+    h1_down_failure_components: ['ema20_not_below_ema50'],
+    h1_up_ema20_above_ema50: false,
+    h1_up_ema50_above_ema200: true,
+    h1_down_ema20_below_ema50: false,
+    h1_down_ema50_below_ema200: true
+  };
+  const summary = summarizeGoldH1Trend([{
+    reason: 'h1_trend_filter',
+    invalid_reasons: ['h1_trend_filter', 'GOLD_V2_DIAG:' + JSON.stringify(legacy)]
+  }]);
+  assert.equal(summary.observations, 1);
+  assert.equal(summary.diagnostic_version_counts['1'], 1);
+  assert.equal(summary.up_first_failure_counts[0].key, 'close_not_above_ema20');
+  assert.equal(summary.down_first_failure_counts[0].key, 'ema20_not_below_ema50');
 });
