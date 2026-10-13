@@ -1,0 +1,198 @@
+name: GOLD V2 H1 Quick Comparison
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gold-v2-h1-quick-comparison.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: gold-v2-h1-quick-comparison
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run full unit test suite
+        run: npm test
+
+      - name: Reuse the last successful five-year XAUUSD M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: 37893136797
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate fixed dataset window
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          const p = 'gold-xauusd-data/xauusd_m5_manifest.json';
+          const m = JSON.parse(await fs.readFile(p, 'utf8'));
+          if (m.requested_start_date_utc !== '2021-10-06' ||
+              m.requested_end_date_exclusive_utc !== '2026-10-05') {
+            throw new Error('Unexpected dataset period: ' + JSON.stringify({
+              start: m.requested_start_date_utc, end: m.requested_end_date_exclusive_utc
+            }));
+          }
+          const st = await fs.stat('gold-xauusd-data/xauusd-m5.json.gz');
+          if (st.size < 1000000) throw new Error('Prepared dataset missing or too small');
+          console.log(JSON.stringify({
+            dataset: p,
+            instrument: m.instrument,
+            provider: m.provider,
+            start: m.requested_start_date_utc,
+            end_exclusive: m.requested_end_date_exclusive_utc,
+            bytes: st.size,
+            source_note: 'Fixed prior successful artifact; this is not a new market-data fetch.'
+          }, null, 2));
+          NODE
+
+      - name: Run isolated one-variable-at-a-time comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATA_FILE=gold-xauusd-data/xauusd-m5.json.gz
+          run_one() {
+            local name="$1"
+            local h1_mode="$2"
+            local max_range="$3"
+            local out="gold-h1-comparison-results/$name"
+            echo "===== scenario=$name h1_mode=$h1_mode max_range_atr=$max_range ====="
+            env \
+              GOLD_BACKTEST_LOOKBACK_DAYS=1825 \
+              GOLD_BACKTEST_INITIAL_EQUITY=100000 \
+              GOLD_BACKTEST_RISK_PCT=0.25 \
+              GOLD_BACKTEST_SPREAD_PRICE=0.50 \
+              GOLD_BACKTEST_SLIPPAGE_PRICE=0.05 \
+              GOLD_BACKTEST_MAX_DAILY_LOSS_PCT=2 \
+              GOLD_BACKTEST_MAX_DRAWDOWN_PCT=5 \
+              GOLD_BACKTEST_MAX_HOLD_BARS=96 \
+              GOLD_BACKTEST_MAX_ENTRY_GAP_ATR=0.50 \
+              GOLD_BACKTEST_SERVER_TIMEZONE=Europe/Nicosia \
+              GOLD_H1_TREND_MODE="$h1_mode" \
+              GOLD_MAX_RANGE_ATR="$max_range" \
+              GOLD_BACKTEST_DATA_FILE="$DATA_FILE" \
+              GOLD_BACKTEST_OUTPUT_DIR="$out" \
+              node scripts/backtest-gold-v2.mjs
+          }
+
+          run_one baseline_strict strict 2.8
+          run_one h1_close_ema20_rsi close_ema20_rsi 2.8
+          run_one range_max_4 strict 4.0
+          run_one range_max_4_5 strict 4.5
+          run_one range_max_5 strict 5.0
+          run_one range_max_5_5 strict 5.5
+
+      - name: Build comparison report
+        run: |
+          python3 - <<'PY'
+          import csv
+          import json
+          from pathlib import Path
+
+          root = Path("gold-h1-comparison-results")
+          rows = []
+          for path in sorted(root.glob("*/gold_v2_backtest_report.json")):
+              report = json.loads(path.read_text(encoding="utf-8"))
+              baseline = report["results"]["baseline"]
+              conservative = report["results"]["conservative"]
+              overall = baseline["summary"]
+              cons = conservative["summary"]
+              is_result = baseline.get("is1095", {})
+              oos_result = baseline.get("oos730", {})
+              row = {
+                  "variant": path.parent.name,
+                  "h1_mode": "close_ema20_rsi" if path.parent.name == "h1_close_ema20_rsi" else "strict",
+                  "five_year_trades": overall.get("trades", 0),
+                  "five_year_pf": overall.get("profit_factor"),
+                  "five_year_expectancy_R": overall.get("expectancy_R"),
+                  "five_year_maxDD_pct": overall.get("max_drawdown_pct"),
+                  "is1095_trades": is_result.get("trades", 0),
+                  "is1095_pf": is_result.get("profit_factor"),
+                  "is1095_expectancy_R": is_result.get("expectancy_R"),
+                  "oos730_trades": oos_result.get("trades", 0),
+                  "oos730_pf": oos_result.get("profit_factor"),
+                  "oos730_expectancy_R": oos_result.get("expectancy_R"),
+                  "oos730_maxDD_pct": oos_result.get("max_drawdown_pct"),
+                  "conservative_trades": cons.get("trades", 0),
+                  "conservative_pf": cons.get("profit_factor"),
+                  "conservative_expectancy_R": cons.get("expectancy_R"),
+                  "conservative_maxDD_pct": cons.get("max_drawdown_pct"),
+                  "quality_gate": bool(baseline.get("qualityGate", {}).get("passed", False)),
+                  "data_first": report.get("source_period", {}).get("m5_first"),
+                  "data_last": report.get("source_period", {}).get("m5_last")
+              }
+              rows.append(row)
+
+          expected = {
+              "baseline_strict", "h1_close_ema20_rsi",
+              "range_max_4", "range_max_4_5", "range_max_5", "range_max_5_5"
+          }
+          actual = {r["variant"] for r in rows}
+          if actual != expected:
+              raise SystemExit(f"Incomplete scenarios: expected={sorted(expected)}, actual={sorted(actual)}")
+
+          out = Path("gold-h1-comparison-summary")
+          out.mkdir(parents=True, exist_ok=True)
+          (out / "gold_h1_comparison.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+          fields = list(rows[0].keys())
+          with (out / "gold_h1_comparison.csv").open("w", newline="", encoding="utf-8") as f:
+              writer = csv.DictWriter(f, fieldnames=fields)
+              writer.writeheader()
+              writer.writerows(rows)
+
+          def fmt(x):
+              if x is None: return "—"
+              if isinstance(x, bool): return "PASS" if x else "FAIL"
+              if isinstance(x, (int, float)): return f"{x:.3f}" if isinstance(x, float) else str(x)
+              return str(x)
+
+          md = [
+              "# GOLD V2 H1 and Range ATR comparison",
+              "",
+              "Research-only. No production parameters are changed by this workflow.",
+              "All scenarios use the same fixed five-year XAUUSD M5 dataset (2021-10-06 to 2026-10-05), original strategy entry/risk rules, and cost model.",
+              "Baseline cost assumption: spread price 0.50 and slippage price 0.05. Conservative cost model is the backtester's built-in spread >= 0.75 and slippage >= 0.10.",
+              "H1 research mode removes only the EMA20/EMA50/EMA200 ordering requirement; close-vs-EMA20 and H1 RSI bands remain. It is opt-in for this backtest only.",
+              "",
+              "| Variant | 5y trades | 5y PF | 5y Exp(R) | IS trades | IS Exp(R) | OOS trades | OOS PF | OOS Exp(R) | OOS MaxDD% | Cons PF | Cons Exp(R) | Quality Gate |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"
+          ]
+          for r in rows:
+              md.append("| " + " | ".join(fmt(r[k]) for k in [
+                  "variant","five_year_trades","five_year_pf","five_year_expectancy_R",
+                  "is1095_trades","is1095_expectancy_R","oos730_trades","oos730_pf",
+                  "oos730_expectancy_R","oos730_maxDD_pct","conservative_pf",
+                  "conservative_expectancy_R","quality_gate"
+              ]) + " |")
+          (out / "gold_h1_comparison.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+          print((out / "gold_h1_comparison.md").read_text(encoding="utf-8"))
+          PY
+
+      - name: Upload comparison report and raw backtest outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-h1-comparison
+          path: |
+            gold-h1-comparison-summary/
+            gold-h1-comparison-results/
+          retention-days: 90
+          if-no-files-found: warn
