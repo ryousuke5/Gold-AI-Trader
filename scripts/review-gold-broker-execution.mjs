@@ -482,7 +482,7 @@ export function analyzeData(rawQuotes, rawOrders, options = {}) {
       mean_spread_points: mean(spreadsPoints),
       median_spread_points: percentile(spreadsPoints, 0.5),
       p90_spread_points: percentile(spreadsPoints, 0.9),
-      max_spread_points: spreadsPoints.length ? Math.max(...spreadsPoints) : null
+      max_spread_points: spreadsPoints.at(-1) ?? null
     };
   });
   const quotePeriod = quoteTimes.length
