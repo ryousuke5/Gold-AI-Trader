@@ -1,0 +1,360 @@
+name: GOLD OOS Direction and Execution Cost Review
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gold-oos-cost-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: gold-oos-cost-review
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        include:
+          - name: strict_zero_cost
+            h1_mode: strict
+            spread: '0.00'
+            slip: '0.00'
+          - name: strict_base_050_005
+            h1_mode: strict
+            spread: '0.50'
+            slip: '0.05'
+          - name: strict_observed_056_005
+            h1_mode: strict
+            spread: '0.56'
+            slip: '0.05'
+          - name: strict_observed_056_000
+            h1_mode: strict
+            spread: '0.56'
+            slip: '0.00'
+          - name: strict_observed_056_010
+            h1_mode: strict
+            spread: '0.56'
+            slip: '0.10'
+          - name: strict_observed_056_020
+            h1_mode: strict
+            spread: '0.56'
+            slip: '0.20'
+          - name: strict_conservative_075_010
+            h1_mode: strict
+            spread: '0.75'
+            slip: '0.10'
+          - name: strict_stress_100_010
+            h1_mode: strict
+            spread: '1.00'
+            slip: '0.10'
+          - name: strict_high_stress_150_020
+            h1_mode: strict
+            spread: '1.50'
+            slip: '0.20'
+          - name: h1r_zero_cost
+            h1_mode: close_ema20_rsi
+            spread: '0.00'
+            slip: '0.00'
+          - name: h1r_base_050_005
+            h1_mode: close_ema20_rsi
+            spread: '0.50'
+            slip: '0.05'
+          - name: h1r_observed_056_005
+            h1_mode: close_ema20_rsi
+            spread: '0.56'
+            slip: '0.05'
+          - name: h1r_observed_056_000
+            h1_mode: close_ema20_rsi
+            spread: '0.56'
+            slip: '0.00'
+          - name: h1r_observed_056_010
+            h1_mode: close_ema20_rsi
+            spread: '0.56'
+            slip: '0.10'
+          - name: h1r_observed_056_020
+            h1_mode: close_ema20_rsi
+            spread: '0.56'
+            slip: '0.20'
+          - name: h1r_conservative_075_010
+            h1_mode: close_ema20_rsi
+            spread: '0.75'
+            slip: '0.10'
+          - name: h1r_stress_100_010
+            h1_mode: close_ema20_rsi
+            spread: '1.00'
+            slip: '0.10'
+          - name: h1r_high_stress_150_020
+            h1_mode: close_ema20_rsi
+            spread: '1.50'
+            slip: '0.20'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Download the fixed five-year XAUUSD M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: 38362767897
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify dataset and provenance
+        env:
+          DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+          MANIFEST_FILE: gold-xauusd-data/xauusd_m5_manifest.json
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          import { gunzipSync } from 'node:zlib';
+          const manifest = JSON.parse(await fs.readFile(process.env.MANIFEST_FILE, 'utf8'));
+          const bytes = await fs.readFile(process.env.DATA_FILE);
+          const bars = JSON.parse(gunzipSync(bytes).toString('utf8'));
+          if (!Array.isArray(bars) || bars.length < 300000) throw new Error('Insufficient fixed XAUUSD M5 data');
+          if (new Date(bars[0].time * 1000).toISOString().slice(0,10) !== '2021-10-06') throw new Error('Unexpected first bar');
+          if (new Date(bars.at(-1).time * 1000).toISOString().slice(0,10) !== '2026-10-04') throw new Error('Unexpected last bar');
+          console.log(JSON.stringify({
+            source_run_id: 38362767897,
+            instrument: 'XAUUSD',
+            source_type: manifest.source_type ?? 'prepared Dukascopy bid OHLCV',
+            rows: bars.length,
+            first_bar_utc: new Date(bars[0].time * 1000).toISOString(),
+            last_bar_utc: new Date(bars.at(-1).time * 1000).toISOString(),
+            historical_ask_spread_available: false,
+            note: 'Fixed bid OHLCV snapshot. It does not contain historical broker Ask/spread observations.'
+          }, null, 2));
+          NODE
+
+      - name: Run five-year strategy with one fixed execution-cost setting
+        env:
+          GOLD_BACKTEST_LOOKBACK_DAYS: '1825'
+          GOLD_BACKTEST_INITIAL_EQUITY: '100000'
+          GOLD_BACKTEST_RISK_PCT: '0.25'
+          GOLD_BACKTEST_SPREAD_PRICE: ${{ matrix.spread }}
+          GOLD_BACKTEST_SLIPPAGE_PRICE: ${{ matrix.slip }}
+          GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: '2'
+          GOLD_BACKTEST_MAX_DRAWDOWN_PCT: '5'
+          GOLD_BACKTEST_MAX_HOLD_BARS: '96'
+          GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: '0.50'
+          GOLD_RANGE_LOOKBACK: '12'
+          GOLD_MIN_RANGE_ATR: '0.80'
+          GOLD_MAX_RANGE_ATR: '2.80'
+          GOLD_BREAKOUT_ATR: '0.10'
+          GOLD_MIN_BODY_ATR: '0.40'
+          GOLD_MIN_CLOSE_LOCATION: '0.65'
+          GOLD_MIN_VOLUME_RATIO: '1.10'
+          GOLD_SESSION_START_UTC: '7'
+          GOLD_SESSION_END_UTC: '20'
+          GOLD_H1_TREND_MODE: ${{ matrix.h1_mode }}
+          GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_BACKTEST_OUTPUT_DIR: gold-oos-cost-output
+        run: |
+          node scripts/backtest-gold-v2.mjs
+          mkdir -p gold-oos-cost-raw/${{ matrix.name }}
+          cp gold-oos-cost-output/gold_v2_backtest_report.json gold-oos-cost-raw/${{ matrix.name }}/
+          cp gold-oos-cost-output/gold_v2_trades_baseline.csv gold-oos-cost-raw/${{ matrix.name }}/
+
+      - name: Upload scenario raw outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-oos-cost-${{ matrix.name }}
+          path: gold-oos-cost-raw/${{ matrix.name }}/
+          retention-days: 30
+          if-no-files-found: error
+
+  aggregate:
+    needs: review
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gold-oos-cost-*
+          path: gold-oos-cost-artifacts
+          merge-multiple: false
+      - name: Build OOS direction and cost sensitivity tables
+        run: |
+          python3 <<'PY'
+          import csv, json, math
+          from datetime import datetime, timezone, timedelta
+          from pathlib import Path
+
+          root = Path("gold-oos-cost-artifacts")
+          out = Path("gold-oos-cost-report")
+          out.mkdir(parents=True, exist_ok=True)
+          scenarios = []
+
+          def summarize(trades):
+              n=len(trades)
+              wins=[t for t in trades if float(t["net_pnl"])>0]
+              losses=[t for t in trades if float(t["net_pnl"])<0]
+              gp=sum(float(t["net_pnl"]) for t in wins)
+              gl=-sum(float(t["net_pnl"]) for t in losses)
+              total_r=sum(float(t["net_r"]) for t in trades)
+              return {
+                "trades":n, "wins":len(wins), "losses":len(losses),
+                "win_rate_pct":100*len(wins)/n if n else None,
+                "profit_factor":gp/gl if gl else (math.inf if gp else 0),
+                "expectancy_R":total_r/n if n else None,
+                "total_R":total_r,
+                "net_pnl":sum(float(t["net_pnl"]) for t in trades),
+                "exit_reasons":dict((r, sum(1 for t in trades if t["exit_reason"]==r)) for r in sorted({t["exit_reason"] for t in trades}))
+              }
+
+          for report_path in sorted(root.glob("*/gold_v2_backtest_report.json")):
+              folder = report_path.parent
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+              base = report["results"]["baseline"]
+              cost = report["cost_scenarios"]["baseline"]
+              start = datetime.fromisoformat(report["test_period"]["end"].replace("Z","+00:00")) - timedelta(days=730)
+              end = datetime.fromisoformat(report["test_period"]["end"].replace("Z","+00:00"))
+              trades=[]
+              with (folder/"gold_v2_trades_baseline.csv").open(encoding="utf-8-sig", newline="") as f:
+                  for t in csv.DictReader(f):
+                      if not t.get("exit_time"): continue
+                      t["exit_dt"] = datetime.fromtimestamp(int(float(t["exit_time"])), timezone.utc)
+                      if start <= t["exit_dt"] <= end:
+                          t["net_r_num"]=float(t["net_r"])
+                          t["net_pnl_num"]=float(t["net_pnl"])
+                          trades.append(t)
+              # Verify this independent trade-list split agrees with the backtest's OOS count.
+              expected = int(base.get("oos730", {}).get("trades", 0))
+              mismatch = expected != len(trades)
+              by_side = {}
+              for side in ("BUY","SELL"):
+                  side_trades=[t for t in trades if t["side"]==side]
+                  by_side[side]=summarize(side_trades)
+              # Save individual out-of-sample trade rows for audit.
+              trade_fields=["signal_time","entry_time","exit_time","side","entry","stop_loss","take_profit","net_r","net_pnl","exit_reason","holding_minutes","range_atr","breakout_atr","volume_ratio"]
+              oos_rows=[]
+              for t in sorted(trades,key=lambda x: int(float(x["exit_time"]))):
+                  row={k:t.get(k,"") for k in trade_fields}
+                  row["signal_time_utc"]=datetime.fromtimestamp(int(float(t["signal_time"])),timezone.utc).isoformat()
+                  row["entry_time_utc"]=datetime.fromtimestamp(int(float(t["entry_time"])),timezone.utc).isoformat()
+                  row["exit_time_utc"]=t["exit_dt"].isoformat()
+                  oos_rows.append(row)
+              with (out/f"{folder.name}_oos_trades.csv").open("w",encoding="utf-8",newline="") as f:
+                  fields=list(oos_rows[0].keys()) if oos_rows else trade_fields+["signal_time_utc","entry_time_utc","exit_time_utc"]
+                  w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(oos_rows)
+
+              p=report["strategy_parameters"]
+              s=base["summary"]; o=base["oos730"]
+              scenarios.append({
+                "scenario":folder.name,
+                "h1_mode":p.get("h1TrendMode","strict"),
+                "spread_price":cost.get("spread_price"),
+                "slippage_price":cost.get("slippage_price"),
+                "trades_5y":s.get("trades"),
+                "wins_5y":s.get("wins"),
+                "losses_5y":s.get("losses"),
+                "pf_5y":s.get("profit_factor"),
+                "expectancy_5y_R":s.get("expectancy_R"),
+                "total_5y_R":s.get("total_R"),
+                "oos_start_utc":start.isoformat(),
+                "oos_end_utc":end.isoformat(),
+                "oos_trades_report":expected,
+                "oos_trades_from_csv":len(trades),
+                "oos_split_match":not mismatch,
+                "oos_wins":o.get("wins"),
+                "oos_losses":o.get("losses"),
+                "oos_pf":o.get("profit_factor"),
+                "oos_expectancy_R":o.get("expectancy_R"),
+                "oos_buy":by_side["BUY"],
+                "oos_sell":by_side["SELL"],
+                "quality_gate":bool(base.get("qualityGate",{}).get("passed",False)),
+                "total_max_drawdown_pct":s.get("max_drawdown_pct"),
+                "oos_max_drawdown_pct":o.get("max_drawdown_pct")
+              })
+
+          if len(scenarios) != 18:
+              raise SystemExit(f"Expected 18 completed scenario artifacts, got {len(scenarios)}")
+          if not all(s["oos_split_match"] for s in scenarios):
+              raise SystemExit("OOS trade CSV counts do not match backtest reports; refusing to produce final report")
+          scenarios.sort(key=lambda x:(x["h1_mode"],float(x["spread_price"]),float(x["slippage_price"])))
+          (out/"gold_oos_cost_review.json").write_text(json.dumps(scenarios,indent=2,allow_nan=False),encoding="utf-8")
+          cols=["scenario","h1_mode","spread_price","slippage_price","trades_5y","pf_5y","expectancy_5y_R","oos_trades_report","oos_buy_trades","oos_buy_wins","oos_buy_pf","oos_buy_expectancy_R","oos_sell_trades","oos_sell_wins","oos_sell_pf","oos_sell_expectancy_R","oos_pf","oos_expectancy_R","total_max_drawdown_pct","oos_max_drawdown_pct","quality_gate"]
+          with (out/"gold_oos_cost_review.csv").open("w",newline="",encoding="utf-8") as f:
+              w=csv.DictWriter(f,fieldnames=cols);w.writeheader()
+              for s in scenarios:
+                  row={k:s.get(k) for k in cols}
+                  row.update({
+                    "oos_buy_trades":s["oos_buy"]["trades"],
+                    "oos_buy_wins":s["oos_buy"]["wins"],
+                    "oos_buy_pf":s["oos_buy"]["profit_factor"],
+                    "oos_buy_expectancy_R":s["oos_buy"]["expectancy_R"],
+                    "oos_sell_trades":s["oos_sell"]["trades"],
+                    "oos_sell_wins":s["oos_sell"]["wins"],
+                    "oos_sell_pf":s["oos_sell"]["profit_factor"],
+                    "oos_sell_expectancy_R":s["oos_sell"]["expectancy_R"]
+                  })
+                  w.writerow(row)
+
+          md=[
+            "# GOLD OOS direction & execution cost review",
+            "",
+            "Research-only. This workflow does not change production configuration or order execution.",
+            "Fixed dataset: prepared Dukascopy XAUUSD M5 bid OHLCV, 2021-10-06 through 2026-10-04; H1 bars are aggregated from M5.",
+            "The latest forward monitor snapshot previously showed XAUUSD spread price 0.56. This is one observed snapshot, not a historical spread distribution.",
+            "Historical broker Ask/spread observations are not available in the prepared dataset. Spread and slippage cases are sensitivity assumptions, not verified historical fills.",
+            "Commission, swap/financing and broker-specific contract/margin rules are not included because their exact values are not available in this input.",
+            "OOS: final 730 days relative to the dataset report's test-period end. Direction statistics are independently recomputed from the exported trade CSV and cross-checked against report OOS trade counts.",
+            "",
+            "## Cost-and-direction comparison",
+            "",
+            "| Scenario | H1 mode | Spread price | Slippage price/side | 5y trades | 5y PF | 5y Exp(R) | OOS n | OOS BUY n / wins / Exp(R) | OOS SELL n / wins / PF / Exp(R) | OOS total Exp(R) | Quality gate |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---|---|---:|---|"
+          ]
+          def fmt(x):
+              if x is None: return "—"
+              if isinstance(x,float) and math.isinf(x): return "∞" if x>0 else "−∞"
+              if isinstance(x,bool): return "PASS" if x else "FAIL"
+              if isinstance(x,float): return f"{x:.3f}"
+              return str(x)
+          for s in scenarios:
+              b=s["oos_buy"]; z=s["oos_sell"]
+              md.append("| "+" | ".join(fmt(v) for v in [
+                s["scenario"],s["h1_mode"],s["spread_price"],s["slippage_price"],s["trades_5y"],s["pf_5y"],s["expectancy_5y_R"],s["oos_trades_report"],
+                f'{b["trades"]} / {b["wins"]} / {fmt(b["expectancy_R"])}',
+                f'{z["trades"]} / {z["wins"]} / {fmt(z["profit_factor"])} / {fmt(z["expectancy_R"])}',
+                s["oos_expectancy_R"],s["quality_gate"]
+              ])+" |")
+          md += [
+            "",
+            "## Interpretation guardrails",
+            "",
+            "- Do not infer a reliable BUY/SELL edge from only a few OOS trades; report counts alongside rates and PF.",
+            "- The 0.56 spread-price case corresponds to the last observed panel snapshot only. It is not a proof of average historical or future spread.",
+            "- If cost scenario changes alter trade count, compare both trade selection and per-trade net outcomes; do not attribute all differences solely to fill price.",
+            "- No scenario may be promoted to production unless trade-count, OOS expectancy/PF, drawdown and live forward-cost criteria pass."
+          ]
+          (out/"gold_oos_cost_review.md").write_text("\n".join(md)+"\n",encoding="utf-8")
+          print((out/"gold_oos_cost_review.md").read_text(encoding="utf-8"))
+          PY
+      - name: Upload OOS/cost report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-oos-cost-review-summary
+          path: gold-oos-cost-report/
+          retention-days: 90
+          if-no-files-found: error
