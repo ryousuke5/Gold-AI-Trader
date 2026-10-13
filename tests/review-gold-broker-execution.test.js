@@ -51,8 +51,8 @@ test('analyzeData reconciles actual order prices, Bid/Ask, commission, swap, and
 
   const buy = report.trades.find(trade => trade.side === 'BUY');
   const sell = report.trades.find(trade => trade.side === 'SELL');
-  assert.equal(buy.entrySpreadPrice, 0.2);
-  assert.equal(buy.exitSpreadPrice, 0.2);
+  assert.ok(Math.abs(buy.entrySpreadPrice - 0.2) < 1e-9);
+  assert.ok(Math.abs(buy.exitSpreadPrice - 0.2) < 1e-9);
   assert.ok(Math.abs(buy.entrySlippagePrice - 0.05) < 1e-9);
   assert.ok(Math.abs(buy.exitSlippagePrice - 0.0) < 1e-9);
   assert.ok(Math.abs(sell.entrySlippagePrice - 0.01) < 1e-9);
