@@ -180,7 +180,7 @@ function nearestQuote(quotes, timestamp, maxDistanceSeconds) {
     const db = Math.abs(b.serverTime - timestamp);
     if (da !== db) return da - db;
     // On ties, prefer the observation before the order's second-level timestamp.
-    return b.serverTime - a.serverTime;
+    return a.serverTime - b.serverTime;
   });
 
   const best = candidates[0];
