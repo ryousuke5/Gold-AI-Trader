@@ -42,6 +42,9 @@ test('analyzeData reconciles actual order prices, Bid/Ask, commission, swap, and
   assert.equal(report.data_quality.valid_quote_rows, 2);
   assert.equal(report.data_quality.closed_trades_valid, 2);
   assert.equal(report.data_quality.full_round_trip_quote_coverage_pct, 100);
+  assert.equal(report.quote_spread_summary_by_symbol[0].quote_count, 2);
+  assert.ok(Math.abs(report.quote_spread_summary_by_symbol[0].mean_spread_price - 0.2) < 1e-9);
+  assert.ok(Math.abs(report.quote_spread_summary_by_symbol[0].p90_spread_points - 20) < 1e-9);
   assert.equal(report.overall.gross.total, 3);
   assert.equal(report.overall.commissions.signed_total, -2);
   assert.equal(report.overall.swaps.signed_total, -0.5);
