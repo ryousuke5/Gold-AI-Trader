@@ -42,6 +42,8 @@ export function buildGoldV2Setup(features = {}, config = {}) {
     maxH1RsiBuy: Math.min(99, n(config.maxH1RsiBuy, 72)),
     minH1RsiSell: Math.max(1, n(config.minH1RsiSell, 28)),
     maxH1RsiSell: Math.min(99, n(config.maxH1RsiSell, 50)),
+    // Research-only alternative; default remains the production-strict EMA stack.
+    h1TrendMode: config.h1TrendMode === 'close_ema20_rsi' ? 'close_ema20_rsi' : 'strict',
     sessionStartUtc: Math.min(23, Math.max(0, Math.floor(n(config.sessionStartUtc, 7)))),
     sessionEndUtc: Math.min(23, Math.max(0, Math.floor(n(config.sessionEndUtc, 20))))
   };
@@ -65,9 +67,13 @@ export function buildGoldV2Setup(features = {}, config = {}) {
     : hour >= cfg.sessionStartUtc || hour <= cfg.sessionEndUtc;
   if (!inSession) return { candidate: 'WAIT', trend: 'OUT_OF_SESSION', reason: 'session_filter' };
 
-  const trendUp = h1.close > h1.ema20 && h1.ema20 > h1.ema50 && h1.ema50 > h1.ema200 &&
+  // close_ema20_rsi is an explicitly opt-in research variant to measure how much
+  // the mandatory EMA20/EMA50/EMA200 stack suppresses candidates. Never set it in live config.
+  const trendUp = h1.close > h1.ema20 &&
+    (cfg.h1TrendMode === 'close_ema20_rsi' || (h1.ema20 > h1.ema50 && h1.ema50 > h1.ema200)) &&
     h1.rsi14 >= cfg.minH1RsiBuy && h1.rsi14 <= cfg.maxH1RsiBuy;
-  const trendDown = h1.close < h1.ema20 && h1.ema20 < h1.ema50 && h1.ema50 < h1.ema200 &&
+  const trendDown = h1.close < h1.ema20 &&
+    (cfg.h1TrendMode === 'close_ema20_rsi' || (h1.ema20 < h1.ema50 && h1.ema50 < h1.ema200)) &&
     h1.rsi14 >= cfg.minH1RsiSell && h1.rsi14 <= cfg.maxH1RsiSell;
   if (!trendUp && !trendDown) return { candidate: 'WAIT', trend: 'RANGE', reason: 'h1_trend_filter' };
 
