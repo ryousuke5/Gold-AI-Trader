@@ -9,6 +9,7 @@ on:
       - 'tests/gold_strategy_v2.test.js'
       - 'scripts/aggregate-eurusd-spread-sensitivity.mjs'
       - 'scripts/validate-eurusd-spread-sensitivity.mjs'
+      - 'tests/eurusd_spread_sensitivity_workflow.test.js'
       - '.github/workflows/eurusd-spread-sensitivity.yml'
   push:
     branches: [main]
@@ -170,9 +171,19 @@ jobs:
             spread: '1.5'
             gate: '2.5'
             atr_gate: '15'
+          - name: cost-1.9
+            type: execution-cost
+            spread: '1.9'
+            gate: '2.5'
+            atr_gate: '15'
           - name: cost-2.0
             type: execution-cost
             spread: '2.0'
+            gate: '2.5'
+            atr_gate: '15'
+          - name: cost-2.1
+            type: execution-cost
+            spread: '2.1'
             gate: '2.5'
             atr_gate: '15'
           - name: cost-2.2
@@ -205,10 +216,20 @@ jobs:
             spread: '2.0'
             gate: '1.5'
             atr_gate: '15'
+          - name: gate-1.8
+            type: spread-gate
+            spread: '2.0'
+            gate: '1.8'
+            atr_gate: '15'
           - name: gate-2.0
             type: spread-gate
             spread: '2.0'
             gate: '2.0'
+            atr_gate: '15'
+          - name: gate-2.1
+            type: spread-gate
+            spread: '2.0'
+            gate: '2.1'
             atr_gate: '15'
           - name: gate-2.2
             type: spread-gate
