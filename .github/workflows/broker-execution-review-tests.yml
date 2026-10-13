@@ -1,0 +1,44 @@
+name: Broker Execution Review Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mt4/GoldBrokerExecutionRecorder.mq4'
+      - 'scripts/review-gold-broker-execution.mjs'
+      - 'tests/review-gold-broker-execution.test.js'
+      - 'docs/GOLD_BROKER_EXECUTION_REVIEW.md'
+      - 'package.json'
+      - '.github/workflows/broker-execution-review-tests.yml'
+  push:
+    branches:
+      - 'research/**'
+    paths:
+      - 'mt4/GoldBrokerExecutionRecorder.mq4'
+      - 'scripts/review-gold-broker-execution.mjs'
+      - 'tests/review-gold-broker-execution.test.js'
+      - 'docs/GOLD_BROKER_EXECUTION_REVIEW.md'
+      - 'package.json'
+      - '.github/workflows/broker-execution-review-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check analyzer syntax
+        run: node --check scripts/review-gold-broker-execution.mjs
+      - name: Run focused broker execution tests
+        run: node --test tests/review-gold-broker-execution.test.js
+      - name: Run full unit test suite
+        run: npm test
