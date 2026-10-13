@@ -236,6 +236,7 @@ jobs:
       matrix:
         include:
           - name: baseline
+            h1_trend_mode: "strict"
             range_lookback: "12"
             min_range_atr: "0.80"
             max_range_atr: "2.80"
@@ -246,6 +247,7 @@ jobs:
             session_start: "7"
             session_end: "20"
           - name: strict
+            h1_trend_mode: "strict"
             range_lookback: "12"
             min_range_atr: "0.80"
             max_range_atr: "2.50"
@@ -256,6 +258,7 @@ jobs:
             session_start: "7"
             session_end: "17"
           - name: loose
+            h1_trend_mode: "strict"
             range_lookback: "18"
             min_range_atr: "0.60"
             max_range_atr: "3.50"
@@ -266,6 +269,7 @@ jobs:
             session_start: "7"
             session_end: "22"
           - name: range_max_4
+            h1_trend_mode: "strict"
             range_lookback: "12"
             min_range_atr: "0.80"
             max_range_atr: "4.00"
@@ -276,6 +280,7 @@ jobs:
             session_start: "7"
             session_end: "20"
           - name: range_max_4_5
+            h1_trend_mode: "strict"
             range_lookback: "12"
             min_range_atr: "0.80"
             max_range_atr: "4.50"
@@ -286,6 +291,7 @@ jobs:
             session_start: "7"
             session_end: "20"
           - name: range_max_5
+            h1_trend_mode: "strict"
             range_lookback: "12"
             min_range_atr: "0.80"
             max_range_atr: "5.00"
@@ -296,6 +302,7 @@ jobs:
             session_start: "7"
             session_end: "20"
           - name: range_max_5_5
+            h1_trend_mode: "strict"
             range_lookback: "12"
             min_range_atr: "0.80"
             max_range_atr: "5.50"
@@ -306,6 +313,7 @@ jobs:
             session_start: "7"
             session_end: "20"
           - name: ny_focus
+            h1_trend_mode: "strict"
             range_lookback: "12"
             min_range_atr: "0.80"
             max_range_atr: "2.80"
@@ -314,6 +322,17 @@ jobs:
             close_location: "0.65"
             volume_ratio: "1.10"
             session_start: "12"
+            session_end: "20"
+          - name: h1_close_ema20_rsi_research
+            h1_trend_mode: "close_ema20_rsi"
+            range_lookback: "12"
+            min_range_atr: "0.80"
+            max_range_atr: "2.80"
+            breakout_atr: "0.10"
+            body_atr: "0.40"
+            close_location: "0.65"
+            volume_ratio: "1.10"
+            session_start: "7"
             session_end: "20"
 
     steps:
@@ -356,6 +375,7 @@ jobs:
           GOLD_MIN_VOLUME_RATIO: ${{ matrix.volume_ratio }}
           GOLD_SESSION_START_UTC: ${{ matrix.session_start }}
           GOLD_SESSION_END_UTC: ${{ matrix.session_end }}
+          GOLD_H1_TREND_MODE: ${{ matrix.h1_trend_mode }}
           GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
           GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
         run: node scripts/backtest-gold-v2.mjs
