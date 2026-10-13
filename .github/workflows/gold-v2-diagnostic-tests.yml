@@ -6,6 +6,9 @@ on:
     paths:
       - 'server.js'
       - 'src/gold_h1_trend_diagnostics.js'
+      - 'src/gold_strategy_v2.js'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'tests/gold_strategy_v2.test.js'
       - 'src/forward_monitor.js'
       - 'public/forward-monitor.html'
       - 'tests/gold_h1_trend_diagnostics.test.js'
