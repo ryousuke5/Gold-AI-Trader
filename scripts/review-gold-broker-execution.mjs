@@ -80,6 +80,16 @@ function mean(values) {
   return values.length ? sum(values) / values.length : null;
 }
 
+function percentile(sortedValues, p) {
+  if (!sortedValues.length) return null;
+  const position = (sortedValues.length - 1) * p;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sortedValues[lower];
+  const weight = position - lower;
+  return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight;
+}
+
 function profitFactor(values) {
   const wins = sum(values.filter(value => value > 0));
   const losses = -sum(values.filter(value => value < 0));
@@ -456,6 +466,31 @@ export function analyzeData(rawQuotes, rawOrders, options = {}) {
 
   const quoteTimes = normalizedQuotes.quotes.map(quote => quote.serverTime);
   const summary = summarizeTrades(reconciled);
+  const spreadSummaryBySymbol = [...normalizedQuotes.bySymbol.entries()].map(([symbol, symbolQuotes]) => {
+    const spreads = symbolQuotes.map(quote => quote.spreadPrice).sort((a, b) => a - b);
+    const spreadsPoints = symbolQuotes.map(quote => quote.spreadPrice / quote.point).sort((a, b) => a - b);
+    return {
+      symbol,
+      quote_count: symbolQuotes.length,
+      first_timestamp_server_epoch: symbolQuotes.reduce((min, quote) => Math.min(min, quote.serverTime), Infinity),
+      last_timestamp_server_epoch: symbolQuotes.reduce((max, quote) => Math.max(max, quote.serverTime), -Infinity),
+      min_spread_price: spreads[0] ?? null,
+      mean_spread_price: mean(spreads),
+      median_spread_price: percentile(spreads, 0.5),
+      p90_spread_price: percentile(spreads, 0.9),
+      max_spread_price: spreads.at(-1) ?? null,
+      mean_spread_points: mean(spreadsPoints),
+      median_spread_points: percentile(spreadsPoints, 0.5),
+      p90_spread_points: percentile(spreadsPoints, 0.9),
+      max_spread_points: spreadsPoints.length ? Math.max(...spreadsPoints) : null
+    };
+  });
+  const quotePeriod = quoteTimes.length
+    ? {
+        first: quoteTimes.reduce((min, value) => Math.min(min, value), Infinity),
+        last: quoteTimes.reduce((max, value) => Math.max(max, value), -Infinity)
+      }
+    : null;
   const missingCommissionCount = reconciled.filter(trade => trade.commission === null).length;
   const missingSwapCount = reconciled.filter(trade => trade.swap === null).length;
   const missingNetCount = reconciled.filter(trade => trade.netProfit === null).length;
@@ -471,9 +506,7 @@ export function analyzeData(rawQuotes, rawOrders, options = {}) {
     orders_missing_swap: missingSwapCount,
     orders_missing_net_pnl: missingNetCount,
     no_quote_data: normalizedQuotes.quotes.length === 0,
-    quote_period_server_epoch: quoteTimes.length
-      ? { first: Math.min(...quoteTimes), last: Math.max(...quoteTimes) }
-      : null,
+    quote_period_server_epoch: quotePeriod,
     entry_quote_coverage_pct: summary.quote_matching.entry_coverage_pct,
     exit_quote_coverage_pct: summary.quote_matching.exit_coverage_pct,
     full_round_trip_quote_coverage_pct: summary.quote_matching.both_coverage_pct,
@@ -487,6 +520,7 @@ export function analyzeData(rawQuotes, rawOrders, options = {}) {
     max_quote_match_distance_seconds: maxDistanceSeconds,
     data_quality: quality,
     overall: summary,
+    quote_spread_summary_by_symbol: spreadSummaryBySymbol,
     by_symbol_side: summaryRows,
     by_server_month_side: byMonthSide,
     trades: reconciled,
@@ -582,6 +616,18 @@ function reportMarkdown(report) {
     '- `summary_by_server_month_side.csv`: grouped by server-time month and direction.',
     '- `execution_cost_summary.json`: full structured output and rejected-row diagnostics.',
     '',
+    '## Observed spread distribution in the collected quotes',
+    '',
+    '| Symbol | Quotes | Mean spread price | Median | P90 | Max | Mean points | P90 points |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|',
+    ...(report.quote_spread_summary_by_symbol.length
+      ? report.quote_spread_summary_by_symbol.map(row => '| ' + [
+          row.symbol, row.quote_count, fmt(row.mean_spread_price), fmt(row.median_spread_price),
+          fmt(row.p90_spread_price), fmt(row.max_spread_price), fmt(row.mean_spread_points),
+          fmt(row.p90_spread_points)
+        ].join(' | ') + ' |')
+      : ['| No quote rows | — | — | — | — | — | — | — |']),
+    '',
     'No production settings or order-execution gates are changed by this analysis.'
   );
   return lines.join('\n') + '\n';
@@ -656,6 +702,14 @@ export async function runReview(options) {
   const monthlyHeaders = ['month_server_time', ...groupedHeaders];
   await fs.writeFile(path.join(options.outDir, 'summary_by_server_month_side.csv'),
     toCsv(report.by_server_month_side, monthlyHeaders), 'utf8');
+
+  const spreadHeaders = [
+    'symbol','quote_count','first_timestamp_server_epoch','last_timestamp_server_epoch',
+    'min_spread_price','mean_spread_price','median_spread_price','p90_spread_price',
+    'max_spread_price','mean_spread_points','median_spread_points','p90_spread_points','max_spread_points'
+  ];
+  await fs.writeFile(path.join(options.outDir, 'quote_spread_summary_by_symbol.csv'),
+    toCsv(report.quote_spread_summary_by_symbol, spreadHeaders), 'utf8');
 
   await fs.writeFile(path.join(options.outDir, 'execution_cost_summary.json'),
     JSON.stringify(report, null, 2) + '\n', 'utf8');
