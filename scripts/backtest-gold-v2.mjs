@@ -42,7 +42,8 @@ const STRATEGY = {
   minH1RsiSell: Math.max(1, Number(process.env.GOLD_MIN_H1_RSI_SELL || 28)),
   maxH1RsiSell: Math.min(99, Number(process.env.GOLD_MAX_H1_RSI_SELL || 50)),
   sessionStartUtc: Math.min(23, Math.max(0, Math.floor(Number(process.env.GOLD_SESSION_START_UTC || 7)))),
-  sessionEndUtc: Math.min(23, Math.max(0, Math.floor(Number(process.env.GOLD_SESSION_END_UTC || 20))))
+  sessionEndUtc: Math.min(23, Math.max(0, Math.floor(Number(process.env.GOLD_SESSION_END_UTC || 20)))),
+  h1TrendMode: process.env.GOLD_H1_TREND_MODE === 'close_ema20_rsi' ? 'close_ema20_rsi' : 'strict'
 };
 
 function ema(values, period) {

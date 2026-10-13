@@ -134,3 +134,21 @@ test('GOLD V2 identifies close location as a separate breakout rejection reason'
   assert.equal(result.candidate, 'WAIT');
   assert.equal(result.reason, 'close_location_filter');
 });
+
+
+test('GOLD V2 research H1 mode is opt-in and default remains strict', () => {
+  const features = {
+    m5: { ema20: 2510, ema50: 2505, rsi14: 60, atr14: 2 },
+    h1: { close: 2505, ema20: 2500, ema50: 2502, ema200: 2490, rsi14: 60, atr14: 8 },
+    recentM5: Array.from({ length: 13 }, (_, i) => ({
+      time: Date.parse('2026-10-09T13:00:00Z') / 1000 - (12 - i) * 300,
+      open: 2500 + i * 0.1, high: 2502 + i * 0.1, low: 2498 + i * 0.1,
+      close: 2501 + i * 0.1, volume: 100 + i
+    }))
+  };
+  const strict = buildGoldV2Setup(features);
+  const relaxed = buildGoldV2Setup(features, { h1TrendMode: 'close_ema20_rsi' });
+  assert.equal(strict.reason, 'h1_trend_filter');
+  assert.notEqual(relaxed.reason, 'h1_trend_filter');
+  assert.equal(buildGoldV2Setup(features, { h1TrendMode: 'unknown' }).reason, 'h1_trend_filter');
+});
