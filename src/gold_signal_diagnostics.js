@@ -29,9 +29,9 @@ export function buildGoldSignalDiagnosticLog({
   const diagnostics = setup && typeof setup === 'object' && setup.diagnostics && typeof setup.diagnostics === 'object'
     ? setup.diagnostics
     : {};
-  const hasH1Diagnostics = Number(diagnostics.h1_diagnostics_version) === 1;
+  const hasH1Diagnostics = Number(diagnostics.h1_diagnostics_version) >= 1;
   const h1 = hasH1Diagnostics ? {
-    diagnostics_version: 1,
+    diagnostics_version: Number(diagnostics.h1_diagnostics_version) || 1,
     close_vs_ema20_atr: numberOrNull(diagnostics.h1_close_vs_ema20_atr),
     ema20_vs_ema50_atr: numberOrNull(diagnostics.h1_ema20_vs_ema50_atr),
     ema50_vs_ema200_atr: numberOrNull(diagnostics.h1_ema50_vs_ema200_atr),
@@ -53,7 +53,18 @@ export function buildGoldSignalDiagnosticLog({
       rsi_in_band: diagnostics.h1_down_rsi_in_band === true
     },
     up_failure_components: failureComponents(diagnostics.h1_up_failure_components),
-    down_failure_components: failureComponents(diagnostics.h1_down_failure_components)
+    down_failure_components: failureComponents(diagnostics.h1_down_failure_components),
+    up_conditions_passed_count: numberOrNull(diagnostics.h1_up_conditions_passed_count),
+    down_conditions_passed_count: numberOrNull(diagnostics.h1_down_conditions_passed_count),
+    total_conditions: numberOrNull(diagnostics.h1_direction_conditions_total),
+    up_gate_passed: diagnostics.h1_up_gate_passed === true,
+    down_gate_passed: diagnostics.h1_down_gate_passed === true,
+    up_first_failure: boundedString(diagnostics.h1_up_first_failure, 80),
+    down_first_failure: boundedString(diagnostics.h1_down_first_failure, 80),
+    up_failure_pattern: boundedString(diagnostics.h1_up_failure_pattern, 320),
+    down_failure_pattern: boundedString(diagnostics.h1_down_failure_pattern, 320),
+    ema_stack_state: boundedString(diagnostics.h1_ema_stack_state, 16),
+    nearest_direction_by_pass_count: boundedString(diagnostics.h1_nearest_direction_by_pass_count, 8)
   } : null;
 
   return {
