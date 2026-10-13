@@ -47,6 +47,7 @@ Outputs:
 - `execution_cost_summary.json`: full counts and data-quality diagnostics.
 - `executions_reconciled.csv`: one audit row for each valid closed trade.
 - `summary_by_symbol_side.csv` and `summary_by_server_month_side.csv`: grouped summaries.
+- `quote_spread_summary_by_symbol.csv`: mean, median, P90 and maximum of the observed Bid/Ask spread in price and symbol-specific points.
 
 ## How costs are calculated
 
