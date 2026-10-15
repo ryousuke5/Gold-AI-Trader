@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/xauusd-retest-v3-five-year-cost-review.yml'
       - 'scripts/backtest-xauusd-retest-v3.mjs'
+      - 'src/xauusd_retest_v3.js'
+      - 'tests/xauusd_retest_v3.test.js'
       - 'scripts/fetch-xauusd-m5-chunk.py'
       - 'scripts/assemble-xauusd-m5.py'
       - 'config/gold-v2-data-window.json'
