@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/backtest-gold-v2-resumable.mjs'
       - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/run-gold-v2-rr-sensitivity.mjs'
       - 'scripts/compare-gold-v2-backtest-engines.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
       - 'src/trade_exit_diagnostics.js'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'scripts/backtest-gold-v2-resumable.mjs'
       - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/run-gold-v2-rr-sensitivity.mjs'
       - 'scripts/compare-gold-v2-backtest-engines.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
       - 'src/trade_exit_diagnostics.js'
@@ -141,6 +143,7 @@ jobs:
         run: |
           node --check scripts/backtest-gold-v2-resumable.mjs
           node --check scripts/backtest-gold-v2.mjs
+          node --check scripts/run-gold-v2-rr-sensitivity.mjs
           node --check scripts/compare-gold-v2-backtest-engines.mjs
           node --check scripts/report-gold-v2-backtest.mjs
           node --check src/gold_strategy_v2.js
@@ -226,6 +229,12 @@ jobs:
           fs.writeFileSync('gold-backtest-output/baseline_run_manifest.json', JSON.stringify({commit_sha:process.env.GITHUB_SHA,run_id:process.env.GITHUB_RUN_ID,workflow:'Gold V2 5Y Baseline',artifact:'gold-v2-5y-baseline',generated_at:new Date().toISOString(),metrics:m},null,2));
           console.log(JSON.stringify(m,null,2));
           NODE
+
+      - name: Run controlled effective-RR sensitivity (research only)
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_RR_SENSITIVITY_OUTPUT_DIR: gold-backtest-output/rr-sensitivity
+        run: node scripts/run-gold-v2-rr-sensitivity.mjs
 
       - name: Upload baseline artifacts
         if: always()
