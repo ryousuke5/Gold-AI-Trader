@@ -42,6 +42,7 @@ jobs:
       GOLD_BACKTEST_SLIPPAGE_PRICE: 0.05
       GOLD_BACKTEST_MAX_HOLD_BARS: 96
       GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: 0.50
+      GOLD_BACKTEST_MIN_EFFECTIVE_RR: 1.50
       GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: 2
       GOLD_BACKTEST_MAX_DRAWDOWN_PCT: 5
       GOLD_BACKTEST_SERVER_TIMEZONE: Europe/Nicosia
@@ -164,6 +165,9 @@ jobs:
           GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
           GOLD_REFERENCE_TRADES_CSV: gold-backtest-output/reference-engine/gold_v2_trades_baseline.csv
           GOLD_RESUMABLE_TRADES_JSON: gold-backtest-output/gold_v2_resumed_trades.json
+          GOLD_REQUIRE_ENGINE_PARITY: 'true'
+          GOLD_BACKTEST_MIN_EFFECTIVE_RR: 1.50
+          GOLD_BACKTEST_SERVER_TIMEZONE: Europe/Nicosia
         run: node scripts/compare-gold-v2-backtest-engines.mjs
 
       - name: Verify trade integrity
