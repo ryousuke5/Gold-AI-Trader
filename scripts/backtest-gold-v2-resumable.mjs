@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
+import { classifyTradeExit, summarizeExitMechanisms } from '../src/trade_exit_diagnostics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(process.env.GOLD_BACKTEST_OUTPUT_DIR || path.join(__dirname, '../gold-backtest-output'));
@@ -54,7 +55,117 @@ function h1(m){const map=new Map();for(const b of m){const t=Math.floor(b.time/3
 function h1idx(h,t){let lo=0,hi=h.length-1,b=-1;while(lo<=hi){const m=(lo+hi)>>1;if(h[m].time+3600<=t){b=m;lo=m+1;}else hi=m-1;}return b;}
 function recent(b,i,n=80){return b.slice(Math.max(0,i-n+1),i+1).map(x=>({...x,time:x.time+300}));}
 function gate(state,e,t){const d=new Date(t*1000).toISOString().slice(0,10);if(state.day!==d){state.day=d;state.dayStartEquity=e;}state.peak=Math.max(state.peak,e);const daily=(e-state.dayStartEquity)/state.dayStartEquity*100,dd=(state.peak-e)/state.peak*100;const reasons=[];if(daily<=-CONFIG.maxDailyLossPct)reasons.push('daily_loss_limit');if(dd>=CONFIG.maxDrawdownPct)reasons.push('drawdown_limit');return{allowed:!reasons.length,reasons};}
-function trade(signal,next,future,setup,e){const side=setup.candidate,entry=side==='BUY'?next.open+CONFIG.spreadPrice+CONFIG.slippagePrice:next.open-CONFIG.slippagePrice,stop=setup.stop_loss,target=setup.take_profit,dist=Math.abs(entry-stop),entryGapAtr=Math.abs(next.open-signal.close)/Math.max(1e-6,Number(signal.atr14));const effectiveTargetDistance=Math.abs(target-entry);\n  const effectiveRR=effectiveTargetDistance/dist;\n  if(!(entry>0&&stop>0&&target>0&&dist>0&&entryGapAtr<=CONFIG.maxEntryGapAtr&&effectiveRR>=CONFIG.minEffectiveRR))return null;const risk=e*CONFIG.riskPct/100,scan=future.slice(0,CONFIG.maxHoldBars);let exit=scan.at(-1)||next,reason='TIME',price=exit?.close??next.close,prev=null;for(const b of scan){if(prev&&b.time-prev.time>900){exit=prev;reason='DATA_GAP';price=side==='BUY'?prev.close-CONFIG.slippagePrice:prev.close+CONFIG.spreadPrice+CONFIG.slippagePrice;break;}const sh=side==='BUY'?b.low<=stop:b.high+CONFIG.spreadPrice>=stop,th=side==='BUY'?b.high>=target:b.low+CONFIG.spreadPrice<=target;if(sh){exit=b;reason='STOP';price=side==='BUY'?stop-CONFIG.slippagePrice:stop+CONFIG.spreadPrice+CONFIG.slippagePrice;break;}if(th){exit=b;reason='TARGET';price=side==='BUY'?target-CONFIG.slippagePrice:target+CONFIG.spreadPrice+CONFIG.slippagePrice;break;}prev=b;}const r=(side==='BUY'?price-entry:entry-price)/dist;const exitIndex=scan.indexOf(exit);return{signal_time:signal.time,entry_time:next.time,exit_time:exit.time,exit_index:exitIndex>=0?exitIndex:scan.length-1,side,setup_type:setup.setup_type,entry,stop_loss:stop,take_profit:target,risk_cash:risk,entry_gap_atr:entryGapAtr,effective_rr:effectiveRR,net_r:r,net_pnl:risk*r,exit_reason:reason};}
+function trade(signal,next,future,setup,e){
+  const side=setup.candidate;
+  const entry=side==='BUY'
+    ? next.open+CONFIG.spreadPrice+CONFIG.slippagePrice
+    : next.open-CONFIG.slippagePrice;
+  const stop=setup.stop_loss;
+  const target=setup.take_profit;
+  const dist=Math.abs(entry-stop);
+  const entryGapAtr=Math.abs(next.open-signal.close)/Math.max(1e-6,Number(signal.atr14));
+  const effectiveTargetDistance=Math.abs(target-entry);
+  const effectiveRR=dist>0 ? effectiveTargetDistance/dist : 0;
+
+  if(!(entry>0&&stop>0&&target>0&&dist>0&&entryGapAtr<=CONFIG.maxEntryGapAtr&&effectiveRR>=CONFIG.minEffectiveRR))return null;
+
+  const risk=e*CONFIG.riskPct/100;
+  const scan=future.slice(0,CONFIG.maxHoldBars);
+  let exit=scan.at(-1)||next;
+  let reason='TIME';
+  let price=exit?.close??next.close;
+  let prev=null;
+  let stopAndTargetSameBar=false;
+
+  for(const bar of scan){
+    if(prev&&bar.time-prev.time>900){
+      exit=prev;
+      reason='DATA_GAP';
+      price=side==='BUY'
+        ? prev.close-CONFIG.slippagePrice
+        : prev.close+CONFIG.spreadPrice+CONFIG.slippagePrice;
+      break;
+    }
+    const stopHit=side==='BUY'
+      ? bar.low<=stop
+      : bar.high+CONFIG.spreadPrice>=stop;
+    const targetHit=side==='BUY'
+      ? bar.high>=target
+      : bar.low+CONFIG.spreadPrice<=target;
+    if(stopHit){
+      exit=bar;
+      reason='STOP';
+      price=side==='BUY'
+        ? stop-CONFIG.slippagePrice
+        : stop+CONFIG.spreadPrice+CONFIG.slippagePrice;
+      stopAndTargetSameBar=targetHit;
+      break;
+    }
+    if(targetHit){
+      exit=bar;
+      reason='TARGET';
+      price=side==='BUY'
+        ? target-CONFIG.slippagePrice
+        : target+CONFIG.spreadPrice+CONFIG.slippagePrice;
+      break;
+    }
+    prev=bar;
+  }
+
+  const r=(side==='BUY' ? price-entry : entry-price)/dist;
+  const exitIndex=scan.indexOf(exit);
+  const resolvedExitIndex=exitIndex>=0 ? exitIndex : Math.max(0,scan.length-1);
+  const inspectedBars=scan.slice(0,Math.min(scan.length,resolvedExitIndex+1));
+  let mfeR=0,maeR=0;
+  for(const bar of inspectedBars){
+    const favorablePrice=side==='BUY' ? bar.high : bar.low+CONFIG.spreadPrice;
+    const adversePrice=side==='BUY' ? bar.low : bar.high+CONFIG.spreadPrice;
+    const favorable=side==='BUY'
+      ? (favorablePrice-entry)/dist
+      : (entry-favorablePrice)/dist;
+    const adverse=side==='BUY'
+      ? (entry-adversePrice)/dist
+      : (adversePrice-entry)/dist;
+    if(Number.isFinite(favorable))mfeR=Math.max(mfeR,favorable);
+    if(Number.isFinite(adverse))maeR=Math.max(maeR,adverse);
+  }
+
+  const diagnostics=setup.diagnostics||{};
+  const item={
+    signal_time:signal.time,
+    entry_time:next.time,
+    exit_time:exit.time,
+    exit_index:resolvedExitIndex,
+    entry_bar_exit:resolvedExitIndex===0,
+    holding_bars:Math.max(1,resolvedExitIndex+1),
+    holding_minutes:Math.max(0,(exit.time-next.time)/60),
+    side,
+    setup_type:setup.setup_type,
+    entry,
+    stop_loss:stop,
+    take_profit:target,
+    risk_cash:risk,
+    entry_gap_atr:entryGapAtr,
+    effective_rr:effectiveRR,
+    net_r:r,
+    net_pnl:risk*r,
+    exit_reason:reason,
+    stop_and_target_same_bar:stopAndTargetSameBar,
+    hour_utc:Number.isFinite(Number(diagnostics.hour_utc))
+      ? Number(diagnostics.hour_utc)
+      : new Date((signal.time+300)*1000).getUTCHours(),
+    range_atr:diagnostics.range_atr??null,
+    breakout_atr:diagnostics.breakout_atr??null,
+    body_atr:diagnostics.body_atr??null,
+    close_location:diagnostics.close_location??null,
+    volume_ratio:diagnostics.volume_ratio??null,
+    extension_atr:diagnostics.extension_atr??null,
+    mfe_r:mfeR,
+    mae_r:maeR
+  };
+  item.exit_class=classifyTradeExit(item);
+  return item;
+}
 function fp(obj){return crypto.createHash('sha256').update(JSON.stringify(obj)).digest('hex');}
 function datasetFingerprint(rows){
   const h=crypto.createHash('sha256');
