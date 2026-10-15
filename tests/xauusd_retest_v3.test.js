@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findXauRetestSetupV3, hasValidStopGeometry } from '../src/xauusd_retest_v3.js';
+import { findXauRetestSetupV3, hasValidStopGeometry, isXauEntryDistanceWithinLimit } from '../src/xauusd_retest_v3.js';
 
 function bar(time, open, high, low, close, volume=100){
   return {time,open,high,low,close,volume};
