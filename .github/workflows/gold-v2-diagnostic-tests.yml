@@ -9,6 +9,8 @@ on:
       - 'src/gold_strategy_v2.js'
       - 'src/gold_signal_diagnostics.js'
       - 'src/trade_exit_diagnostics.js'
+      - 'src/xm_gold_trading_calendar.js'
+      - 'tests/xm-gold-trading-calendar.test.js'
       - 'scripts/backtest-gold-v2.mjs'
       - 'scripts/backtest-gold-v2-resumable.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
