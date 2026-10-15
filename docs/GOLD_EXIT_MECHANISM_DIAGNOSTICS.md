@@ -20,6 +20,28 @@ For each group, the JSON report summarizes sample size, share, loss rate, total 
 
 This lets the reviewer check whether immediate stops are associated with larger entry gaps, weaker breakout bodies, extreme extension, or particular session hours, while time-exit losses can be compared by the same factors and by their adverse/favorable excursion before the time limit. Differences are descriptive, not causal proof; segment conclusions require enough trades and out-of-sample replication.
 
+## Setup funnel diagnostics
+
+The resumable five-year runner also writes `gold_v2_funnel_diagnostics.json` and embeds the same object as `funnel_diagnostics` in `gold_v2_baseline_metrics.json`. Counters are stored in every checkpoint and restored on resume; the checkpoint identity includes a funnel schema version so old checkpoints cannot silently mix incomplete counters with new results.
+
+The funnel reports:
+
+- `bars_scanned`, `bars_skipped_while_in_trade`, and bars omitted for incomplete M5/H1 indicators.
+- `signals_evaluated`, plus counts of each `setup_wait_reasons` reason.
+- Candidate totals and BUY/SELL/other direction counts.
+- Risk-gate checks, candidates blocked by each risk reason, and candidates passing the gate.
+- Candidates rejected because the next M5 candle is not contiguous, invalid stop/target geometry, excessive entry gap, or insufficient effective reward/risk.
+- `trades_accepted`, which should match the emitted trade list and exit-diagnostics sample size.
+
+The workflow enforces reconciliation equations so lost counters or double-counted candidates fail validation rather than producing a misleading report:
+
+- Evaluated signals = WAIT outcomes + candidates.
+- Candidates = risk-gate blocked + risk-gate passed.
+- Risk-gate passed = next-bar-gap rejects + trade attempts.
+- Trade attempts = geometry rejects + entry-gap rejects + effective-RR rejects + accepted trades.
+
+These are descriptive accounting counters, not additional filters. They must not change entry decisions or live execution.
+
 ## Reproduce
 
 With a prepared XAUUSD M5 OHLCV dataset containing at least 200,000 valid bars:
