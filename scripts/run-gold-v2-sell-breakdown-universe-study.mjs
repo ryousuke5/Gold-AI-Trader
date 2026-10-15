@@ -7,6 +7,7 @@ import {
   latestCompletedH1Index,
   loadBacktestM5FromFile
 } from './backtest-gold-v2.mjs';
+import { classifyXmGoldGap, UNVERIFIED_XM_GAP_CLASSES } from '../src/xm_gold_trading_calendar.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -130,15 +131,45 @@ function isolatedBarrierOutcome(bars, startIndex, event) {
   const scan=bars.slice(startIndex,startIndex+cfg.maxHoldBars);
   if(!scan.length) return {reason:'NO_FORWARD_BARS',net_R:null};
   let previous=null, exitReason='TIME', exitPrice=scan[scan.length-1].close+cfg.spreadPrice+cfg.slippagePrice, exitTime=scan[scan.length-1].time;
+  let firstGap=null;
   for(const b of scan) {
     if(previous && b.time-previous.time>900) {
-      exitReason='DATA_GAP';
-      exitPrice=previous.close+cfg.spreadPrice+cfg.slippagePrice;
-      exitTime=previous.time;
-      break;
+      const gap=classifyXmGoldGap(previous.time,b.time);
+      if(!firstGap) firstGap={
+        classification:gap.classification,
+        start_pair:gap.start_pair,
+        gap_start_utc:new Date(gap.gap_start*1000).toISOString(),
+        next_bar_time_utc:new Date(b.time*1000).toISOString(),
+        minutes_missing:gap.minutes_missing,
+        expected_xm_gold_gap_pair:gap.expected_xm_gold_gap_pair
+      };
+      if(UNVERIFIED_XM_GAP_CLASSES.has(gap.classification)) {
+        return {
+          reason:'CENSORED_UNVERIFIED_SESSION_GAP',
+          exit_time_utc:new Date(previous.time*1000).toISOString(),
+          net_R:null,
+          first_gap:firstGap,
+          note:'Censored because this gap is not verified by the published regular XM GOLD session or a dated holiday calendar.'
+        };
+      }
+      // For a confirmed daily/weekend closure, carry the open position and check the reopen price.
+      const openWithSpread=b.open+cfg.spreadPrice;
+      if(openWithSpread>=event.stop_loss) {
+        exitReason='STOP_GAP_ADVERSE_FILL';
+        exitPrice=b.open+cfg.spreadPrice+cfg.slippagePrice;
+        exitTime=b.time;
+        break;
+      }
+      if(openWithSpread<=event.take_profit) {
+        exitReason='TARGET_GAP_AT_LIMIT';
+        exitPrice=event.take_profit+cfg.spreadPrice+cfg.slippagePrice;
+        exitTime=b.time;
+        break;
+      }
     }
     const stopHit=b.high+cfg.spreadPrice>=event.stop_loss;
     const targetHit=b.low+cfg.spreadPrice<=event.take_profit;
+    // M5 OHLC cannot establish intra-bar order if both barriers are touched; stop-first is conservative.
     if(stopHit) {
       exitReason='STOP';
       exitPrice=event.stop_loss+cfg.spreadPrice+cfg.slippagePrice;
@@ -157,7 +188,8 @@ function isolatedBarrierOutcome(bars, startIndex, event) {
     reason:exitReason,
     exit_time_utc:new Date(exitTime*1000).toISOString(),
     net_R:(event.entry_price-exitPrice)/event.stop_distance,
-    note:'Isolated event-only stop/target simulation; events can overlap and are not portfolio results.'
+    first_gap:firstGap,
+    note:'Primary gap-aware isolated event-path sensitivity: carry positions through confirmed XM GOLD closures; censor unverified gaps. Event paths can overlap and are not portfolio results.'
   };
 }
 
@@ -310,7 +342,9 @@ function outcomeMetrics(rows) {
     isolated_events:outcomes.length,
     target_exits:outcomes.filter(x=>x.reason==='TARGET').length,
     stop_exits:outcomes.filter(x=>x.reason==='STOP').length,
-    data_gap_exits:outcomes.filter(x=>x.reason==='DATA_GAP').length,
+    scheduled_gap_stop_exits:outcomes.filter(x=>x.reason==='STOP_GAP_ADVERSE_FILL').length,
+    scheduled_gap_target_exits:outcomes.filter(x=>x.reason==='TARGET_GAP_AT_LIMIT').length,
+    censored_unverified_gap_exits:rows.map(e=>e.isolated_barrier_outcome).filter(x=>x?.reason==='CENSORED_UNVERIFIED_SESSION_GAP').length,
     time_exits:outcomes.filter(x=>x.reason==='TIME').length,
     winners:wins,
     mean_net_R:avg(net),
@@ -423,8 +457,8 @@ const result={
   interpretation_limits:[
     'These are first-break event observations, not all tick movements or independent observations; separated events can still overlap within the 96-bar horizon.',
     'The event universe intentionally ignores M5 body, volume, close-location, RSI, EMA-alignment, extension, stop-distance, entry-gap and effective-RR filters; those are studied as variables/gates.',
-    'Fixed-horizon moves continue after a stop/target would have exited. They describe price trajectory, not real trade PnL.',
-    'Isolated stop/target outcomes are per-event counterfactuals and are not portfolio returns.',
+    'Fixed-horizon outcomes require consecutive M5 bars; any timestamp gap inside a selected horizon makes it incomplete/censored. Horizons represent contiguous active-market bars, not elapsed wall-clock minutes, and continue after barriers; they are not real trade PnL.',
+    'The primary isolated barrier model carries positions across calendar-confirmed daily/weekend closures and uses the first observed reopen price for gap-through barriers; unverified gaps are censored rather than exited at the prior candle close.',
     'Bucket counts below five are descriptive only; no causal or production rule should be inferred from these results.'
   ]
 };
