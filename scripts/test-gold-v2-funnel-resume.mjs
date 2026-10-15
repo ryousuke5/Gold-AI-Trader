@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'gold-v2-funnel-resume-'));
 
 function priceAt(index) {
-  return 2000 + 0.00004 * index + 4 * Math.sin(index * 0.025) + 1.5 * Math.sin(index * 0.11);
+  return 2000 + 0.01 * index + 4 * Math.sin(index * 0.025) + 1.5 * Math.sin(index * 0.11);
 }
 
 function validateFunnel(diagnostics, tradesLength) {
@@ -61,7 +61,27 @@ function runBacktest(dataFile, outputDir, stopAfter) {
         GOLD_BACKTEST_DATA_FILE: dataFile,
         GOLD_BACKTEST_OUTPUT_DIR: outputDir,
         GOLD_BACKTEST_INITIAL_EQUITY: '100000',
-        GOLD_TEST_STOP_AFTER_BARS: String(stopAfter)
+        GOLD_TEST_STOP_AFTER_BARS: String(stopAfter),
+        // Loosen only the synthetic-fixture thresholds so CI exercises the candidate branch.
+        GOLD_SESSION_START_UTC: '0',
+        GOLD_SESSION_END_UTC: '23',
+        GOLD_MIN_RANGE_ATR: '0.1',
+        GOLD_MAX_RANGE_ATR: '100',
+        GOLD_BREAKOUT_ATR: '0.01',
+        GOLD_MIN_BODY_ATR: '0.05',
+        GOLD_MIN_VOLUME_RATIO: '0.1',
+        GOLD_BUY_RSI_MIN: '1',
+        GOLD_BUY_RSI_MAX: '99',
+        GOLD_SELL_RSI_MIN: '1',
+        GOLD_SELL_RSI_MAX: '99',
+        GOLD_MAX_EXTENSION_ATR: '100',
+        GOLD_MIN_STOP_ATR: '0.1',
+        GOLD_MAX_STOP_ATR: '100',
+        GOLD_MIN_H1_RSI_BUY: '1',
+        GOLD_MAX_H1_RSI_BUY: '99',
+        GOLD_MIN_H1_RSI_SELL: '1',
+        GOLD_MAX_H1_RSI_SELL: '99',
+        GOLD_BACKTEST_MIN_EFFECTIVE_RR: '0.5'
       }
     }
   );
@@ -122,6 +142,8 @@ try {
   assert.deepEqual(exportedDiagnostics, completed.funnel_diagnostics, 'exported diagnostics differ from checkpoint');
   assert.equal(completed.trades.length, trades.length, 'checkpoint/trade output count mismatch');
   validateFunnel(completed.funnel_diagnostics, trades.length);
+  assert.ok(completed.funnel_diagnostics.candidates > 0, 'synthetic fixture did not exercise candidate diagnostics');
+  assert.ok(completed.funnel_diagnostics.trade_attempts > 0, 'synthetic fixture did not exercise trade-attempt diagnostics');
 
   console.log('GOLD V2 FUNNEL RESUME SMOKE TEST PASS', JSON.stringify({
     rows: bars.length,
