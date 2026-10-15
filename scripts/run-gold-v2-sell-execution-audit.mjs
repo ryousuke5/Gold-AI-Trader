@@ -267,14 +267,14 @@ for(const cost of costs) {
   const discrepancies={
     reference_stop_atr_max_abs:Math.max(0,...geometryRows.map(r=>Math.abs(r.stop_atr_difference_vs_stored??0))),
     effective_rr_max_abs_for_baseline_source:Math.max(0,...geometryRows.map(r=>cost.name==='baseline'?Math.abs(r.effective_rr_difference_vs_stored??0):0)),
-    current_isolated_reason_mismatches:geometryRows.filter(r=>r.force_close_reason!==({DATA_GAP:'DATA_GAP_CLOSE_PREV'}[r.existing_isolated_reason]||r.existing_isolated_reason)).length,
-    current_net_R_max_abs_difference:Math.max(0,...geometryRows.map(r=>Math.abs((r.existing_isolated_net_R??0)-(r.force_close_net_R??0))))
+    primary_gap_policy_reason_mismatches:geometryRows.filter(r=>r.censor_irregular_gap_reason!==r.existing_isolated_reason).length,
+    primary_net_R_max_abs_difference:Math.max(0,...geometryRows.map(r=>Math.abs((r.existing_isolated_net_R??0)-(r.censor_irregular_gap_net_R??0))))
   };
   perCost[cost.name]={
     costs:{spread:cost.spread,slippage:cost.slippage},
     event_count:cases.length,
     outcomes:{
-      existing_data_gap_exit_count:cases.filter(r=>r.existing_isolated_reason==='DATA_GAP').length,
+      primary_censored_unverified_gap_count:cases.filter(r=>r.existing_isolated_reason==='CENSORED_UNVERIFIED_SESSION_GAP').length,
       force_close_on_gap:describe(validCurrent.map(r=>({net_R:r.force_close_net_R}))),
       hold_gap_aware:describe(validHold.map(r=>({net_R:r.hold_gap_aware_net_R}))),
       censor_irregular_gap:describe(validCensor.map(r=>({net_R:r.censor_irregular_gap_net_R})))
@@ -306,15 +306,15 @@ for(const cost of costs) {
     },
     annual:group(geometryRows,r=>r.year_utc,items=>({
       n:items.length,
-      existing_data_gap:items.filter(r=>r.existing_isolated_reason==='DATA_GAP').length,
+      primary_censored_unverified_gap:items.filter(r=>r.existing_isolated_reason==='CENSORED_UNVERIFIED_SESSION_GAP').length,
       force_close:describe(items.filter(r=>Number.isFinite(r.force_close_net_R)).map(r=>({net_R:r.force_close_net_R}))),
       hold_gap_aware:describe(items.filter(r=>Number.isFinite(r.hold_gap_aware_net_R)).map(r=>({net_R:r.hold_gap_aware_net_R})))
     })),
     geometry_integrity:{
       maximum_abs_reference_stop_atr_difference:discrepancies.reference_stop_atr_max_abs,
       maximum_abs_effective_rr_difference_against_baseline_stored:discrepancies.effective_rr_max_abs_for_baseline_source,
-      current_isolated_reason_mismatches:cost.name==='baseline'?discrepancies.current_isolated_reason_mismatches:null,
-      current_net_R_max_abs_difference:cost.name==='baseline'?discrepancies.current_net_R_max_abs_difference:null,
+      primary_gap_policy_reason_mismatches:cost.name==='baseline'?discrepancies.primary_gap_policy_reason_mismatches:null,
+      primary_net_R_max_abs_difference:cost.name==='baseline'?discrepancies.primary_net_R_max_abs_difference:null,
       all_stop_distances_recomputed_from_signal_close_and_stop:geometryRows.every(r=>Math.abs(r.stop_atr_ref-Math.abs((events.find(e=>e.signal_time_utc===r.signal_time_utc)?.signal_close??0)-(events.find(e=>e.signal_time_utc===r.signal_time_utc)?.stop_loss??0))/(events.find(e=>e.signal_time_utc===r.signal_time_utc)?.signal_atr??1))<1e-8)
     }
   };
@@ -375,11 +375,11 @@ if(!result.costs.baseline.geometry_integrity.all_stop_distances_recomputed_from_
 if(result.costs.baseline.geometry_integrity.maximum_abs_reference_stop_atr_difference>1e-7) {
   throw new Error('Stored stop_atr does not reconcile with signal-close-to-stop geometry.');
 }
-if(result.costs.baseline.geometry_integrity.current_isolated_reason_mismatches!==0) {
-  throw new Error('Reconstructed baseline gap/exit reasons do not match stored event outcomes.');
+if(result.costs.baseline.geometry_integrity.primary_gap_policy_reason_mismatches!==0) {
+  throw new Error('Reconstructed XM-session-aware primary gap reasons do not match stored event outcomes.');
 }
-if(result.costs.baseline.geometry_integrity.current_net_R_max_abs_difference>1e-7) {
-  throw new Error('Reconstructed baseline net R does not match stored event outcomes.');
+if(result.costs.baseline.geometry_integrity.primary_net_R_max_abs_difference>1e-7) {
+  throw new Error('Reconstructed XM-session-aware primary net R does not match stored event outcomes.');
 }
 await fs.writeFile(path.join(outputDir,'gold_v2_sell_execution_geometry_gap_audit.json'),JSON.stringify(result,null,2));
 
