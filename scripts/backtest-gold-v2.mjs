@@ -107,7 +107,7 @@ function atr(bars, period) {
   return out;
 }
 
-function addIndicators(bars) {
+export function addIndicators(bars) {
   const closes = bars.map((b) => b.close);
   const e20 = ema(closes, 20), e50 = ema(closes, 50), e200 = ema(closes, 200);
   const r = rsi(closes, 14), a = atr(bars, 14);
@@ -136,7 +136,7 @@ function zonedHourStartUtc(timestampSeconds, timeZone) {
   return Math.floor((localHourAsUtc-offsetSeconds*1000)/1000);
 }
 
-function aggregateM5ToH1(m5, timeZone='UTC') {
+export function aggregateM5ToH1(m5, timeZone='UTC') {
   const buckets = new Map();
   for (const bar of m5) {
     const hour = timeZone==='UTC' ? Math.floor(bar.time/3600)*3600 : zonedHourStartUtc(bar.time,timeZone);
@@ -167,7 +167,7 @@ function normalizeDukascopy(rows) {
   ).sort((a,b)=>a.time-b.time);
 }
 
-async function loadBacktestM5FromFile(filePath) {
+export async function loadBacktestM5FromFile(filePath) {
   const resolved = path.resolve(filePath);
   const bytes = await fs.readFile(resolved);
   const raw = resolved.endsWith('.gz') ? gunzipSync(bytes).toString('utf8') : bytes.toString('utf8');
@@ -255,13 +255,13 @@ function dataQuality(bars) {
   };
 }
 
-function recentBars(bars, index, count=80) {
+export function recentBars(bars, index, count=80) {
   return bars.slice(Math.max(0,index-count+1),index+1).map((b)=>({
     time:b.time+300, open:b.open, high:b.high, low:b.low, close:b.close, volume:b.volume
   }));
 }
 
-function latestCompletedH1Index(h1, signalTime) {
+export function latestCompletedH1Index(h1, signalTime) {
   let lo=0, hi=h1.length-1, best=-1;
   while(lo<=hi) {
     const mid=Math.floor((lo+hi)/2);
