@@ -24,144 +24,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  plan:
-    runs-on: ubuntu-latest
-    outputs:
-      chunks: ${{ steps.plan.outputs.chunks }}
-      start_date: ${{ steps.plan.outputs.start_date }}
-      end_date: ${{ steps.plan.outputs.end_date }}
-      cache_version: ${{ steps.plan.outputs.cache_version }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build fixed five-year 14-day chunk plan
-        id: plan
-        run: |
-          python3 - <<'PY'
-          import json, os
-          from datetime import date, timedelta
-
-          with open("config/gold-v2-data-window.json", "r", encoding="utf-8") as fh:
-              cfg = json.load(fh)
-          lookback_days = int(cfg["lookback_days"])
-          chunk_days = int(cfg["chunk_days"])
-          end_day = date.fromisoformat(str(cfg["end_date_utc"]))
-          if lookback_days != 1825 or chunk_days < 1 or chunk_days > 31:
-              raise SystemExit("Unexpected fixed research window configuration")
-          start_day = end_day - timedelta(days=lookback_days)
-          chunks, cursor, idx = [], start_day, 1
-          while cursor < end_day:
-              end = min(cursor + timedelta(days=chunk_days), end_day)
-              chunks.append({
-                  "index": idx, "id": f"{cursor:%Y%m%d}_{end:%Y%m%d}",
-                  "start": cursor.isoformat(), "end": end.isoformat()
-              })
-              cursor, idx = end, idx + 1
-          if len(chunks) > 256:
-              raise SystemExit(f"Unexpected chunk count: {len(chunks)}")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-              fh.write(f"chunks={json.dumps(chunks, separators=(',', ':'))}\n")
-              fh.write(f"start_date={start_day.isoformat()}\n")
-              fh.write(f"end_date={end_day.isoformat()}\n")
-              fh.write(f"cache_version={cfg['cache_version']}\n")
-          print(json.dumps({
-              "lookback_days": lookback_days, "chunk_days": chunk_days,
-              "chunk_count": len(chunks), "cache_version": cfg["cache_version"],
-              "start_date": start_day.isoformat(), "end_date_exclusive": end_day.isoformat()
-          }, indent=2))
-          PY
-
-  prepare-chunks:
-    needs: [plan, validate]
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      max-parallel: 8
-      matrix:
-        chunk: ${{ fromJSON(needs.plan.outputs.chunks) }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Restore completed M5 chunk
-        id: m5cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
-            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
-          key: xauusd-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
-      - name: Restore raw M1 checkpoint
-        if: steps.m5cache.outputs.cache-hit != 'true'
-        id: m1cache
-        uses: actions/cache/restore@v4
-        with:
-          path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
-          key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
-          restore-keys: |
-            xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-
-      - name: Prepare chunk directories
-        run: |
-          mkdir -p "gold-xauusd-data/raw/${{ matrix.chunk.id }}"
-          mkdir -p gold-xauusd-data/chunks
-      - name: Validate downloader
-        if: steps.m5cache.outputs.cache-hit != 'true'
-        run: python3 scripts/fetch-xauusd-m5-chunk.py --self-test
-      - name: Download or resume this 14-day chunk
-        if: steps.m5cache.outputs.cache-hit != 'true'
-        run: |
-          python3 scripts/fetch-xauusd-m5-chunk.py \
-            --start-date "${{ matrix.chunk.start }}" \
-            --end-date "${{ matrix.chunk.end }}" \
-            --cache-dir "gold-xauusd-data/raw/${{ matrix.chunk.id }}" \
-            --output-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz" \
-            --manifest-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json" \
-            --request-delay 1.5 --timeout 30 --retries 8
-      - name: Save raw M1 checkpoint
-        if: always() && steps.m5cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
-          key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
-      - name: Save completed M5 chunk
-        if: success() && steps.m5cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
-            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
-          key: xauusd-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
-      - name: Upload chunk for assembly
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xauusd-v3-chunk-${{ matrix.chunk.id }}
-          path: |
-            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
-            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
-          retention-days: 2
-          if-no-files-found: error
-
   assemble-data:
-    needs: [plan, prepare-chunks, validate]
+    needs: [validate]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Download all chunks
+      - name: Download previously validated fixed five-year dataset
         uses: actions/download-artifact@v4
         with:
-          pattern: xauusd-v3-chunk-*
-          path: gold-xauusd-data/chunks
-          merge-multiple: true
-      - name: Assemble and validate five-year XAUUSD M5 dataset
+          name: xauusd-v3-prepared-five-year-data
+          path: gold-xauusd-data
+          repository: ${{ github.repository }}
+          run-id: 38672403236
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify exact dataset and five-year period
         run: |
-          python3 scripts/assemble-xauusd-m5.py \
-            --input-dir gold-xauusd-data/chunks \
-            --output-file gold-xauusd-data/xauusd-m5.json.gz \
-            --manifest-file gold-xauusd-data/xauusd_m5_manifest.json \
-            --start-date "${{ needs.plan.outputs.start_date }}" \
-            --end-date "${{ needs.plan.outputs.end_date }}" \
-            --min-bars 200000
-      - name: Upload prepared five-year dataset
+          test -s gold-xauusd-data/xauusd-m5.json.gz
+          test -s gold-xauusd-data/xauusd_m5_manifest.json
+          python3 - <<'PY'
+          import gzip, hashlib, json
+          from pathlib import Path
+          data = Path("gold-xauusd-data/xauusd-m5.json.gz").read_bytes()
+          digest = hashlib.sha256(data).hexdigest()
+          with gzip.open("gold-xauusd-data/xauusd-m5.json.gz", "rt", encoding="utf-8") as fh:
+              bars = json.load(fh)
+          manifest = json.loads(Path("gold-xauusd-data/xauusd_m5_manifest.json").read_text(encoding="utf-8"))
+          print(json.dumps({
+              "sha256": digest,
+              "bars": len(bars),
+              "manifest": manifest
+          }, indent=2)[:8000])
+          if len(bars) < 200000:
+              raise SystemExit("Refusing insufficient fixed dataset")
+          first = int(bars[0]["time"])
+          last = int(bars[-1]["time"])
+          if first > 1633478400 or last < 1791072000:
+              raise SystemExit("Fixed dataset timestamp range is outside the five-year research window")
+          PY
+          sha256sum gold-xauusd-data/xauusd-m5.json.gz
+      - name: Publish immutable input for this run's matrix jobs
         uses: actions/upload-artifact@v4
         with:
           name: xauusd-v3-prepared-five-year-data
