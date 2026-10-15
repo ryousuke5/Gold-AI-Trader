@@ -1,0 +1,117 @@
+name: XAUUSD Retest V3 Five-Year Cost Review
+
+on:
+  push:
+    branches: [research/xauusd-retest-v3-five-year-cost-review]
+    paths:
+      - '.github/workflows/xauusd-retest-v3-five-year-cost-review.yml'
+      - 'scripts/backtest-xauusd-retest-v3.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: xauusd-retest-v3-five-year-cost-review
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - name: baseline_055_010
+            execution_spread: '0.55'
+            slippage: '0.10'
+          - name: spread_stress_075_010
+            execution_spread: '0.75'
+            slippage: '0.10'
+          - name: spread_stress_100_010
+            execution_spread: '1.00'
+            slippage: '0.10'
+          - name: slippage_stress_055_020
+            execution_spread: '0.55'
+            slippage: '0.20'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate V3 EA and tests
+        run: |
+          node scripts/validate-xauusd-retest-v3.mjs
+          node --check src/xauusd_retest_v3.js
+          node --check scripts/backtest-xauusd-retest-v3.mjs
+          node --test tests/xauusd_retest_v3.test.js
+      - name: Download fixed five-year prepared dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          repository: ${{ github.repository }}
+          run-id: 37459802618
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify input exists and report digest
+        run: |
+          test -s gold-xauusd-data/xauusd-m5.json.gz
+          sha256sum gold-xauusd-data/xauusd-m5.json.gz
+      - name: Run five-year V3 backtest with isolated execution-cost scenario
+        env:
+          XAU_V3_DAYS: '1825'
+          XAU_V3_END_UTC: '2026-10-05T00:00:00Z'
+          XAU_V3_DATA_FILE: 'gold-xauusd-data/xauusd-m5.json.gz'
+          XAU_V3_TIMEZONE: 'Europe/Nicosia'
+          XAU_V3_SIGNAL_SPREAD_PRICE: '0.55'
+          XAU_V3_SPREAD_PRICE: '${{ matrix.execution_spread }}'
+          XAU_V3_SLIPPAGE_PRICE: '${{ matrix.slippage }}'
+          XAU_V3_MAX_HOLD_BARS: '96'
+          XAU_V3_COOLDOWN_BARS: '2'
+          XAU_V3_BREAKOUT_LOOKBACK: '12'
+          XAU_V3_MIN_RANGE_ATR: '0.55'
+          XAU_V3_MAX_RANGE_ATR: '3.50'
+          XAU_V3_BREAKOUT_ATR: '0.05'
+          XAU_V3_BREAKOUT_BODY_ATR: '0.25'
+          XAU_V3_BREAKOUT_CLOSE_LOCATION: '0.58'
+          XAU_V3_MAX_BREAKOUT_BODY_ATR: '1.80'
+          XAU_V3_MAX_RETEST_BARS: '6'
+          XAU_V3_MAX_CONFIRM_BARS: '3'
+          XAU_V3_RETEST_TOLERANCE_ATR: '0.25'
+          XAU_V3_MAX_PENETRATION_ATR: '0.25'
+          XAU_V3_RETEST_CLOSE_BUFFER_ATR: '0.08'
+          XAU_V3_CONFIRM_BUFFER_ATR: '0.02'
+          XAU_V3_CONFIRM_BODY_ATR: '0.20'
+          XAU_V3_CONFIRM_CLOSE_LOCATION: '0.55'
+          XAU_V3_MAX_CONFIRM_BODY_ATR: '1.50'
+          XAU_V3_MIN_STOP_ATR: '0.60'
+          XAU_V3_MAX_STOP_ATR: '2.20'
+          XAU_V3_STOP_BUFFER_ATR: '0.12'
+          XAU_V3_TAKE_PROFIT_R: '1.80'
+          XAU_V3_MAX_ENTRY_DISTANCE_ATR: '0.25'
+          XAU_V3_MAX_EXTENSION_ATR: '1.80'
+          XAU_V3_MIN_H1_AGREEMENT: '0.60'
+          XAU_V3_H1_BUY_RSI_MIN: '45'
+          XAU_V3_H1_BUY_RSI_MAX: '75'
+          XAU_V3_H1_SELL_RSI_MIN: '25'
+          XAU_V3_H1_SELL_RSI_MAX: '55'
+          XAU_V3_USE_VOLUME_FILTER: 'false'
+          XAU_V3_MIN_VOLUME_RATIO: '0.90'
+          XAU_V3_MAX_SPREAD_PRICE: '0.60'
+          XAU_V3_OUTPUT_DIR: 'xauusd-v3-five-year-output'
+        run: node scripts/backtest-xauusd-retest-v3.mjs
+      - name: Upload five-year result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-v3-five-year-${{ matrix.name }}
+          path: xauusd-v3-five-year-output/
+          retention-days: 30

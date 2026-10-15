@@ -7,7 +7,11 @@ import { findXauRetestSetupV3 } from '../src/xauusd_retest_v3.js';
 const CFG = {
   days: Number(process.env.XAU_V3_DAYS || 1825),
   timezone: process.env.XAU_V3_TIMEZONE || 'Europe/Nicosia',
+  // Keep signal eligibility constant while varying execution spread in cost-stress runs.
   spread: Number(process.env.XAU_V3_SPREAD_PRICE || 0.55),
+  signalSpread: process.env.XAU_V3_SIGNAL_SPREAD_PRICE === undefined
+    ? Number(process.env.XAU_V3_SPREAD_PRICE || 0.55)
+    : Number(process.env.XAU_V3_SIGNAL_SPREAD_PRICE),
   slippage: Number(process.env.XAU_V3_SLIPPAGE_PRICE || 0.10),
   maxHoldBars: Number(process.env.XAU_V3_MAX_HOLD_BARS || 96),
   cooldownBars: Number(process.env.XAU_V3_COOLDOWN_BARS || 2),
@@ -259,7 +263,7 @@ function breakdown(trades) {
 
 function buildFeatures(m5, i, h1, h1i) {
   const b = m5[i];
-  const spread = CFG.spread;
+  const spread = CFG.signalSpread;
   return {
     barTime: b.time + 300,
     bid: b.close,
