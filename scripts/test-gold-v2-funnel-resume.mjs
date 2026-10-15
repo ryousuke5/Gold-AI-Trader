@@ -9,7 +9,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'gold-v2-funnel-resume-'));
 
 function priceAt(index) {
-  return 2000 + 0.002 * index + 0.2 * Math.sin(index * 0.1) + 1.5 * Math.floor(index / 40) - 0.4 * Math.floor(index / 100);
+  const segment = Math.floor(index / 40);
+  const stepRise = 0.7 * Math.ceil(segment / 2) + 1.5 * Math.floor(segment / 2);
+  return 2000 + 0.002 * index + 0.2 * Math.sin(index * 0.1) + stepRise - 0.4 * Math.floor(index / 100);
 }
 
 function validateFunnel(diagnostics, tradesLength) {
@@ -61,6 +63,8 @@ function runBacktest(dataFile, outputDir, stopAfter) {
         GOLD_BACKTEST_DATA_FILE: dataFile,
         GOLD_BACKTEST_OUTPUT_DIR: outputDir,
         GOLD_BACKTEST_INITIAL_EQUITY: '100000',
+        GOLD_BACKTEST_SPREAD_PRICE: '0.05',
+        GOLD_BACKTEST_SLIPPAGE_PRICE: '0.01',
         GOLD_TEST_STOP_AFTER_BARS: String(stopAfter),
         // Loosen only the synthetic-fixture thresholds so CI exercises the candidate branch.
         GOLD_SESSION_START_UTC: '0',
@@ -82,7 +86,7 @@ function runBacktest(dataFile, outputDir, stopAfter) {
         GOLD_MAX_H1_RSI_BUY: '99',
         GOLD_MIN_H1_RSI_SELL: '1',
         GOLD_MAX_H1_RSI_SELL: '99',
-        GOLD_BACKTEST_MIN_EFFECTIVE_RR: '0.5'
+        GOLD_BACKTEST_MIN_EFFECTIVE_RR: '1.9'
       }
     }
   );
@@ -145,6 +149,8 @@ try {
   validateFunnel(completed.funnel_diagnostics, trades.length);
   assert.ok(completed.funnel_diagnostics.candidates > 0, 'synthetic fixture did not exercise candidate diagnostics');
   assert.ok(completed.funnel_diagnostics.trade_attempts > 0, 'synthetic fixture did not exercise trade-attempt diagnostics');
+  assert.ok(completed.funnel_diagnostics.rejected_effective_rr > 0, 'synthetic fixture did not exercise effective-RR rejection');
+  assert.ok(completed.funnel_diagnostics.trades_accepted > 0, 'synthetic fixture did not exercise accepted trades');
 
   console.log('GOLD V2 FUNNEL RESUME SMOKE TEST PASS', JSON.stringify({
     rows: bars.length,
