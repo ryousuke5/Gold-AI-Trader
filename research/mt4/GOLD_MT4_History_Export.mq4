@@ -7,6 +7,7 @@ input string          ExportSymbol = ""; // Blank means the current chart symbol
 input ENUM_TIMEFRAMES ExportTimeframe = PERIOD_M5;
 input datetime        StartServerTime = D'2021.10.06 00:00';
 input datetime        EndServerTime   = D'2026.10.05 00:00'; // exclusive end
+input int             AllowedBoundaryGapDays = 7; // fail closed if first/last available bar is farther away
 input string          OutputFile      = "GOLD_M5_XM_Broker_History.csv";
 
 int OnStart()
@@ -36,6 +37,45 @@ int OnStart()
       return(0);
    }
 
+   datetime firstAvailable = 0;
+   datetime lastAvailable = 0;
+   int availableInRange = 0;
+   for(int j = 0; j < copied; j++)
+   {
+      datetime t = rates[j].time;
+      if(t < StartServerTime || t >= EndServerTime)
+         continue;
+      if(firstAvailable == 0 || t < firstAvailable)
+         firstAvailable = t;
+      if(lastAvailable == 0 || t > lastAvailable)
+         lastAvailable = t;
+      availableInRange++;
+   }
+
+   if(availableInRange <= 0)
+   {
+      Print("XM HISTORY EXPORT FAILED: CopyRates returned bars, but none fall inside the requested interval.");
+      return(0);
+   }
+
+   int allowedGapSeconds = MathMax(1, AllowedBoundaryGapDays) * 86400;
+   int leadingGapSeconds = (int)(firstAvailable - StartServerTime);
+   int trailingGapSeconds = (int)(EndServerTime - lastAvailable);
+   if(leadingGapSeconds > allowedGapSeconds || trailingGapSeconds > allowedGapSeconds)
+   {
+      Print("XM HISTORY EXPORT INCOMPLETE - NO CSV WRITTEN: requested_start_server_time=",
+            TimeToString(StartServerTime, TIME_DATE | TIME_MINUTES),
+            " requested_end_server_time_exclusive=", TimeToString(EndServerTime, TIME_DATE | TIME_MINUTES),
+            " first_available_server_time=", TimeToString(firstAvailable, TIME_DATE | TIME_MINUTES),
+            " last_available_server_time=", TimeToString(lastAvailable, TIME_DATE | TIME_MINUTES),
+            " leading_gap_days=", DoubleToString(leadingGapSeconds / 86400.0, 2),
+            " trailing_gap_days=", DoubleToString(trailingGapSeconds / 86400.0, 2),
+            " allowed_boundary_gap_days=", AllowedBoundaryGapDays,
+            " bars_available=", availableInRange,
+            ". Load older M5 history and rerun. A partial file is deliberately not produced.");
+      return(0);
+   }
+
    int digits = (int)MarketInfo(symbol, MODE_DIGITS);
    int fileHandle = FileOpen(OutputFile, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
    if(fileHandle == INVALID_HANDLE)
@@ -49,6 +89,7 @@ int OnStart()
              "tick_volume", "spread_points", "real_volume");
 
    int written = 0;
+   int nonzeroSpreadBars = 0;
    datetime firstWritten = 0;
    datetime lastWritten = 0;
    for(int i = 0; i < copied; i++)
@@ -66,6 +107,8 @@ int OnStart()
                 (long)rates[i].tick_volume,
                 (int)rates[i].spread,
                 (long)rates[i].real_volume);
+      if(rates[i].spread > 0)
+         nonzeroSpreadBars++;
       if(written == 0)
          firstWritten = barTime;
       lastWritten = barTime;
@@ -96,6 +139,8 @@ int OnStart()
             " written_in_interval=", written);
    }
    Print("IMPORTANT: timestamps in CSV are MT4 broker/server wall time, not UTC. Convert historic timestamps using the account's historical Europe/Nicosia server offset (UTC+3/UTC+2) before merging with external datasets.");
-   Print("IMPORTANT: spread_points is whatever the broker history reports for each bar; missing/zero historical spread must not be interpreted as a measured zero spread.");
+   Print("SPREAD DATA AUDIT: bars_with_nonzero_historical_spread=", nonzeroSpreadBars,
+         " of ", written, ". If this value is zero, this export does not contain measured historical spread; do not treat 0 as a real zero spread.");
+   Print("IMPORTANT: timestamps in CSV are MT4 broker/server wall time, not UTC. Convert historic timestamps using the account's historical Europe/Nicosia server offset (UTC+3/UTC+2) before merging with external datasets.");
    return(0);
 }
