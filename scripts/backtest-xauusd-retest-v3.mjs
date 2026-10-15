@@ -291,27 +291,41 @@ function buildFeatures(m5, i, h1, h1i) {
 function simulate(m5, confirmationIndex, setup) {
   const entryBarIndex = confirmationIndex + 1;
   if (entryBarIndex >= m5.length) return null;
+
   const spread = CFG.spread;
   const slip = CFG.slippage;
   const dir = setup.candidate;
+  const signalBar = m5[confirmationIndex];
+  const entryBar = m5[entryBarIndex];
+  const atr = signalBar.atr14;
+  const signalClose = signalBar.close;
+  const rawNextOpen = entryBar.open;
   const entry = dir === 'BUY'
-    ? m5[entryBarIndex].open + spread + slip
-    : m5[entryBarIndex].open - slip;
+    ? rawNextOpen + spread + slip
+    : rawNextOpen - slip;
   const stop = setup.stop_loss;
+  const signalEntryReference = setup.entry;
+  const setupTargetReference = setup.take_profit;
+  const diagnostics = setup.diagnostics || {};
+
   // A market order with SL already on the wrong side of the next-bar fill
   // is not a valid executable setup. Do not count it as an immediate stop loss.
   if (!hasValidStopGeometry(dir, entry, stop)) return { rejected: 'invalid_stop_geometry' };
+
   const risk = Math.abs(entry - stop);
-  if (!(risk > 0)) return null;
-  const stopAtr = risk / m5[confirmationIndex].atr14;
+  if (!(risk > 0) || !(atr > 0)) return null;
+  const stopAtr = risk / atr;
   if (!(stopAtr >= CFG.minStopAtr && stopAtr <= CFG.maxStopAtr)) return null;
   const target = dir === 'BUY'
     ? entry + risk * setup.risk_reward
     : entry - risk * setup.risk_reward;
+
   const end = Math.min(m5.length - 1, entryBarIndex + CFG.maxHoldBars);
   let resultR = 0;
   let reason = 'TIME';
   let exitIndex = end;
+  let exitModelledPrice = null;
+
   for (let j = entryBarIndex; j <= end; j++) {
     const b = m5[j];
     const askHigh = b.high + spread;
@@ -320,42 +334,107 @@ function simulate(m5, confirmationIndex, setup) {
     const exitLow = dir === 'BUY' ? b.low : askLow;
     const hitStop = dir === 'BUY' ? exitLow <= stop : exitHigh >= stop;
     const hitTarget = dir === 'BUY' ? exitHigh >= target : exitLow <= target;
+
     if (hitStop && hitTarget) {
       resultR = -1 - slip / risk;
       reason = 'STOP_AND_TARGET_SAME_BAR_CONSERVATIVE';
       exitIndex = j;
+      exitModelledPrice = dir === 'BUY' ? stop - slip : stop + slip;
       break;
     }
     if (hitStop) {
       resultR = -1 - slip / risk;
       reason = 'STOP';
       exitIndex = j;
+      exitModelledPrice = dir === 'BUY' ? stop - slip : stop + slip;
       break;
     }
     if (hitTarget) {
       resultR = setup.risk_reward - slip / risk;
       reason = 'TARGET';
       exitIndex = j;
+      exitModelledPrice = dir === 'BUY' ? target - slip : target + slip;
       break;
     }
   }
+
   if (reason === 'TIME') {
     const b = m5[end];
-    const exit = dir === 'BUY' ? b.close : b.close + spread;
+    const sideExit = dir === 'BUY' ? b.close : b.close + spread;
     resultR = dir === 'BUY'
-      ? (exit - slip - entry) / risk
-      : (entry - (exit + slip)) / risk;
+      ? (sideExit - slip - entry) / risk
+      : (entry - (sideExit + slip)) / risk;
+    exitModelledPrice = dir === 'BUY' ? sideExit - slip : sideExit + slip;
   }
+
+  const exitBar = m5[exitIndex];
+  const entryBarRange = entryBar.high - entryBar.low;
+  const exitBarRange = exitBar.high - exitBar.low;
+  const adverseEntryGap = dir === 'BUY' ? entry - signalClose : signalClose - entry;
+  const adverseExecutionGap = dir === 'BUY' ? entry - signalEntryReference : signalEntryReference - entry;
+  const entryBarStopOvershoot = dir === 'BUY'
+    ? (stop - entryBar.low) / atr
+    : (entryBar.high - stop) / atr;
+  const exitBarStopOvershoot = reason === 'STOP' || reason === 'STOP_AND_TARGET_SAME_BAR_CONSERVATIVE'
+    ? (dir === 'BUY' ? (stop - exitBar.low) / atr : (exitBar.high - stop) / atr)
+    : null;
+  const exitBarTargetOvershoot = reason === 'TARGET'
+    ? (dir === 'BUY' ? (exitBar.high - target) / atr : (target - exitBar.low) / atr)
+    : null;
+
   return {
-    signal_time: new Date((m5[confirmationIndex].time + 300) * 1000).toISOString(),
-    entry_time: new Date((m5[entryBarIndex].time + 300) * 1000).toISOString(),
+    signal_time: new Date(signalBar.time + 300).toISOString(),
+    entry_time: new Date(entryBar.time).toISOString(),
     direction: dir,
     result_r: resultR,
     exit_reason: reason,
-    exit_time: new Date((m5[exitIndex].time + 300) * 1000).toISOString(),
+    exit_bar_close_time: new Date(exitBar.time + 300).toISOString(),
     hold_bars: exitIndex - entryBarIndex,
-    breakout_time: new Date((setup.diagnostics.breakout_time) * 1000).toISOString(),
-    retest_time: new Date((setup.diagnostics.retest_time) * 1000).toISOString()
+    breakout_time: new Date((diagnostics.breakout_time) * 1000).toISOString(),
+    retest_time: new Date((diagnostics.retest_time) * 1000).toISOString(),
+    confirmation_lag_bars: diagnostics.confirmation_lag_bars ?? null,
+    signal_close: signalClose,
+    signal_atr: atr,
+    signal_entry_reference: signalEntryReference,
+    setup_target_reference: setupTargetReference,
+    entry_bar_open_bid: rawNextOpen,
+    entry_bar_high_bid: entryBar.high,
+    entry_bar_low_bid: entryBar.low,
+    entry_bar_close_bid: entryBar.close,
+    entry_price_modelled: entry,
+    entry_gap_adverse_price: adverseEntryGap,
+    entry_gap_adverse_atr: adverseEntryGap / atr,
+    entry_vs_signal_entry_reference_adverse_atr: adverseExecutionGap / atr,
+    stop_loss: stop,
+    take_profit_execution_model: target,
+    risk_price: risk,
+    stop_distance_signal_reference_atr: Math.abs(signalEntryReference - stop) / atr,
+    stop_distance_execution_atr: stopAtr,
+    entry_bar_range_atr: entryBarRange / atr,
+    entry_bar_stop_overshoot_atr: entryBarStopOvershoot,
+    exit_bar_open_bid: exitBar.open,
+    exit_bar_high_bid: exitBar.high,
+    exit_bar_low_bid: exitBar.low,
+    exit_bar_close_bid: exitBar.close,
+    exit_bar_range_atr: exitBarRange / atr,
+    exit_bar_stop_overshoot_atr: exitBarStopOvershoot,
+    exit_bar_target_overshoot_atr: exitBarTargetOvershoot,
+    exit_price_modelled: exitModelledPrice,
+    range_high: diagnostics.range_high ?? null,
+    range_low: diagnostics.range_low ?? null,
+    range_atr: diagnostics.range_atr ?? null,
+    breakout_body_atr: diagnostics.breakout_body_atr ?? null,
+    breakout_close_location: diagnostics.breakout_close_location ?? null,
+    retest_low: diagnostics.retest_low ?? null,
+    retest_high: diagnostics.retest_high ?? null,
+    retest_close: diagnostics.retest_close ?? null,
+    confirmation_body_atr: diagnostics.confirmation_body_atr ?? null,
+    confirmation_close_location: diagnostics.confirmation_close_location ?? null,
+    extension_atr: diagnostics.extension_atr ?? null,
+    h1_slope_agreement: diagnostics.h1_slope_agreement ?? null,
+    volume_ratio: diagnostics.volume_ratio ?? null,
+    execution_spread_price: spread,
+    slippage_assumption_price: slip
   };
 }
 
@@ -473,6 +552,14 @@ async function main() {
     },
     parameters: CFG,
     bars: m5.length,
+    trade_execution_audit: {
+      schema_version: 2,
+      entry_time_resolution: 'next M5 bar open',
+      exit_time_resolution: 'exit M5 bar close; intrabar fill timestamp is not known from OHLC data',
+      entries_stopped_in_entry_bar: trades.filter(t => t.hold_bars === 0 && (t.exit_reason === 'STOP' || t.exit_reason === 'STOP_AND_TARGET_SAME_BAR_CONSERVATIVE')).length,
+      oos_trades: trades.filter(t => Date.parse(t.signal_time) >= endMs - 365 * 86400000).length,
+      oos_stops_in_entry_bar: trades.filter(t => Date.parse(t.signal_time) >= endMs - 365 * 86400000 && t.hold_bars === 0 && (t.exit_reason === 'STOP' || t.exit_reason === 'STOP_AND_TARGET_SAME_BAR_CONSERVATIVE')).length
+    },
     statistics: stats(trades),
     walk_forward: {
       development_period: stats(development),
@@ -484,12 +571,28 @@ async function main() {
   };
 
   await fs.writeFile(path.join(CFG.out, 'summary.json'), JSON.stringify(summary, null, 2));
+  const tradeAuditColumns = [
+    'signal_time','entry_time','direction','result_r','exit_reason','exit_bar_close_time','hold_bars',
+    'breakout_time','retest_time','confirmation_lag_bars',
+    'signal_close','signal_atr','signal_entry_reference','setup_target_reference',
+    'entry_bar_open_bid','entry_bar_high_bid','entry_bar_low_bid','entry_bar_close_bid',
+    'entry_price_modelled','entry_gap_adverse_price','entry_gap_adverse_atr',
+    'entry_vs_signal_entry_reference_adverse_atr','stop_loss','take_profit_execution_model','risk_price',
+    'stop_distance_signal_reference_atr','stop_distance_execution_atr','entry_bar_range_atr','entry_bar_stop_overshoot_atr',
+    'exit_bar_open_bid','exit_bar_high_bid','exit_bar_low_bid','exit_bar_close_bid','exit_bar_range_atr',
+    'exit_bar_stop_overshoot_atr','exit_bar_target_overshoot_atr','exit_price_modelled',
+    'range_high','range_low','range_atr','breakout_body_atr','breakout_close_location',
+    'retest_low','retest_high','retest_close','confirmation_body_atr','confirmation_close_location',
+    'extension_atr','h1_slope_agreement','volume_ratio','execution_spread_price','slippage_assumption_price'
+  ];
+  const csvCell = value => {
+    if (value === null || value === undefined) return '';
+    const s = String(value);
+    return /[",\n]/.test(s) ? '"' + s.replaceAll('"', '""') + '"' : s;
+  };
   await fs.writeFile(path.join(CFG.out, 'trades.csv'), [
-    'signal_time,entry_time,direction,result_r,exit_reason,exit_time,hold_bars,breakout_time,retest_time',
-    ...trades.map(t => [
-      t.signal_time, t.entry_time, t.direction, t.result_r, t.exit_reason,
-      t.exit_time, t.hold_bars, t.breakout_time, t.retest_time
-    ].join(','))
+    tradeAuditColumns.join(','),
+    ...trades.map(t => tradeAuditColumns.map(k => csvCell(t[k])).join(','))
   ].join('\n') + '\n');
 
   console.log(JSON.stringify(summary, null, 2));
