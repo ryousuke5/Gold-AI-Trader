@@ -113,6 +113,20 @@ jobs:
           const trades=JSON.parse(fs.readFileSync('gold-backtest-output/gold_v2_resumed_trades.json'));
           if(cp.status!=='COMPLETE') throw new Error('Backtest checkpoint is not COMPLETE');
           if(cp.trades.length!==trades.length) throw new Error('Checkpoint/trade output count mismatch');
+          const d=cp.funnel_diagnostics;
+          if(!d || d.schema_version!==1) throw new Error('Missing or unsupported funnel diagnostics');
+          const waitCount=Object.values(d.setup_wait_reasons||{}).reduce((sum,n)=>sum+Number(n||0),0);
+          const funnelChecks=[
+            ['setup outcomes', d.signals_evaluated===d.candidates+waitCount],
+            ['candidate sides', d.candidates===d.candidates_buy+d.candidates_sell+d.candidates_other],
+            ['risk gate checks', d.risk_gate_checks===d.candidates],
+            ['risk gate results', d.candidates===d.risk_gate_blocked_candidates+d.risk_gate_passed],
+            ['next-bar gap/attempts', d.risk_gate_passed===d.rejected_next_bar_gap+d.trade_attempts],
+            ['trade attempt outcomes', d.trade_attempts===d.rejected_invalid_geometry+d.rejected_entry_gap+d.rejected_effective_rr+d.trades_accepted],
+            ['accepted trades', d.trades_accepted===trades.length]
+          ];
+          const funnelFailures=funnelChecks.filter(([,ok])=>!ok).map(([name])=>name);
+          if(funnelFailures.length) throw new Error('Funnel counters do not reconcile: '+funnelFailures.join(', '));
           for(let i=0;i<trades.length;i++) {
             const t=trades[i];
             if(t.effective_rr!==undefined && Number(t.effective_rr)<1.5) throw new Error('Effective RR below floor at '+i);
@@ -139,6 +153,7 @@ jobs:
             if(m[k]===null || m[k]===undefined || Number.isNaN(Number(m[k]))) throw new Error('Invalid metric: '+k);
           }
           if(!m.exit_mechanisms || m.exit_mechanisms.sample_size!==m.trades) throw new Error('Exit diagnostics sample does not match trade count');
+          if(!m.funnel_diagnostics || m.funnel_diagnostics.trades_accepted!==m.trades) throw new Error('Funnel diagnostics missing or inconsistent in metrics');
           console.log('GOLD V2 FIVE-YEAR BASELINE PASS');
           console.log('COMMIT_SHA', process.env.GITHUB_SHA);
           console.log('RUN_ID', process.env.GITHUB_RUN_ID);
