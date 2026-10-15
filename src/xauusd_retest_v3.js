@@ -10,6 +10,18 @@ export function hasValidStopGeometry(side, entry, stop) {
   if (side === 'SELL') return Number(stop) > Number(entry);
   return false;
 }
+
+// Models the entry-distance guard at the first executable price after the signal bar.
+// A non-positive limit disables the guard; invalid prices/ATR fail closed.
+export function isXauEntryDistanceWithinLimit(signalClose, marketEntryPrice, atr14, maxDistanceAtr) {
+  const close = Number(signalClose);
+  const entry = Number(marketEntryPrice);
+  const atr = Number(atr14);
+  const limit = Number(maxDistanceAtr);
+  if (![close, entry, atr, limit].every(Number.isFinite) || !(atr > 0)) return false;
+  if (limit <= 0) return true;
+  return Math.abs(entry - close) <= limit * atr;
+}
 function agreement(barsIn,dir,count=5){const a=bars(barsIn).slice(-count);if(a.length<3)return 0;let g=0;for(let i=1;i<a.length;i+=1){const d=a[i].close-a[i-1].close;if((dir==='UP'&&d>0)||(dir==='DOWN'&&d<0))g++;}return g/(a.length-1);}
 function validBar(b){return Number.isFinite(b?.open)&&Number.isFinite(b?.high)&&Number.isFinite(b?.low)&&Number.isFinite(b?.close)&&b.high>=b.low&&b.high>=b.open&&b.high>=b.close&&b.low<=b.open&&b.low<=b.close;}
 

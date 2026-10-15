@@ -77,3 +77,14 @@ test('stop geometry matches executable BUY/SELL side',()=>{
   assert.equal(hasValidStopGeometry('BUY',NaN,99),false);
   assert.equal(hasValidStopGeometry('WAIT',100,99),false);
 });
+
+
+test('entry distance guard uses first executable market price, not signal close itself',()=>{
+  assert.equal(isXauEntryDistanceWithinLimit(100,100.20,1,0.25),true);
+  assert.equal(isXauEntryDistanceWithinLimit(100,100.251,1,0.25),false);
+  assert.equal(isXauEntryDistanceWithinLimit(100,99.75,1,0.25),true);
+  assert.equal(isXauEntryDistanceWithinLimit(100,99.749,1,0.25),false);
+  assert.equal(isXauEntryDistanceWithinLimit(100,140,1,0),true);
+  assert.equal(isXauEntryDistanceWithinLimit(100,101,0,0.25),false);
+  assert.equal(isXauEntryDistanceWithinLimit(NaN,101,1,0.25),false);
+});

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { findXauRetestSetupV3, hasValidStopGeometry } from '../src/xauusd_retest_v3.js';
+import { findXauRetestSetupV3, hasValidStopGeometry, isXauEntryDistanceWithinLimit } from '../src/xauusd_retest_v3.js';
 
 const CFG = {
   days: Number(process.env.XAU_V3_DAYS || 1825),
@@ -300,6 +300,17 @@ function simulate(m5, confirmationIndex, setup) {
   const atr = signalBar.atr14;
   const signalClose = signalBar.close;
   const rawNextOpen = entryBar.open;
+  if (!(atr > 0)) return null;
+  const marketEntryGapSigned = dir === 'BUY' ? rawNextOpen - signalClose : signalClose - rawNextOpen;
+  const marketEntryGapAtr = marketEntryGapSigned / atr;
+  const marketEntryGapAbsAtr = Math.abs(rawNextOpen - signalClose) / atr;
+
+  // Apply the configured maxEntryDistanceAtr to the first executable market price.
+  // Keep execution spread/slippage out of this gate so cost-scenario runs change only costs.
+  if (!isXauEntryDistanceWithinLimit(signalClose, rawNextOpen, atr, CFG.maxEntryDistanceAtr)) {
+    return { rejected: 'entry_distance_filter', diagnostics: { market_entry_gap_atr: marketEntryGapAtr, market_entry_gap_abs_atr: marketEntryGapAbsAtr } };
+  }
+
   const entry = dir === 'BUY'
     ? rawNextOpen + spread + slip
     : rawNextOpen - slip;
@@ -404,6 +415,9 @@ function simulate(m5, confirmationIndex, setup) {
     entry_price_modelled: entry,
     entry_gap_adverse_price: adverseEntryGap,
     entry_gap_adverse_atr: adverseEntryGap / atr,
+    entry_gap_adverse_market_price: marketEntryGapSigned,
+    entry_gap_adverse_market_atr: marketEntryGapAtr,
+    entry_gap_market_abs_atr: marketEntryGapAbsAtr,
     entry_vs_signal_entry_reference_adverse_atr: adverseExecutionGap / atr,
     stop_loss: stop,
     take_profit_execution_model: target,
@@ -577,6 +591,7 @@ async function main() {
     'signal_close','signal_atr','signal_entry_reference','setup_target_reference',
     'entry_bar_open_bid','entry_bar_high_bid','entry_bar_low_bid','entry_bar_close_bid',
     'entry_price_modelled','entry_gap_adverse_price','entry_gap_adverse_atr',
+    'entry_gap_adverse_market_price','entry_gap_adverse_market_atr','entry_gap_market_abs_atr',
     'entry_vs_signal_entry_reference_adverse_atr','stop_loss','take_profit_execution_model','risk_price',
     'stop_distance_signal_reference_atr','stop_distance_execution_atr','entry_bar_range_atr','entry_bar_stop_overshoot_atr',
     'exit_bar_open_bid','exit_bar_high_bid','exit_bar_low_bid','exit_bar_close_bid','exit_bar_range_atr',
