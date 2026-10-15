@@ -8,7 +8,7 @@ input ENUM_TIMEFRAMES ExportTimeframe = PERIOD_M5;
 input datetime        StartServerTime = D'2021.10.06 00:00';
 input datetime        EndServerTime   = D'2026.10.05 00:00'; // exclusive end
 input int             AllowedBoundaryGapDays = 7; // fail closed if first/last available bar is farther away
-input string          OutputFile      = "GOLD_M5_XM_Broker_History.csv";
+input string          OutputFile      = "GOLD_M5_XM_Broker_History_5Y.csv";
 
 int OnStart()
 {
@@ -58,7 +58,10 @@ int OnStart()
       return(0);
    }
 
-   int allowedGapSeconds = MathMax(1, AllowedBoundaryGapDays) * 86400;
+   int allowedGapDays = AllowedBoundaryGapDays;
+   if(allowedGapDays < 1)
+      allowedGapDays = 1;
+   int allowedGapSeconds = allowedGapDays * 86400;
    int leadingGapSeconds = (int)(firstAvailable - StartServerTime);
    int trailingGapSeconds = (int)(EndServerTime - lastAvailable);
    if(leadingGapSeconds > allowedGapSeconds || trailingGapSeconds > allowedGapSeconds)
