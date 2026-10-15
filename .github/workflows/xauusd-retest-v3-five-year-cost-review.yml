@@ -6,6 +6,9 @@ on:
     paths:
       - '.github/workflows/xauusd-retest-v3-five-year-cost-review.yml'
       - 'scripts/backtest-xauusd-retest-v3.mjs'
+      - 'scripts/fetch-xauusd-m5-chunk.py'
+      - 'scripts/assemble-xauusd-m5.py'
+      - 'config/gold-v2-data-window.json'
   workflow_dispatch:
 
 permissions:
@@ -17,7 +20,171 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      chunks: ${{ steps.plan.outputs.chunks }}
+      start_date: ${{ steps.plan.outputs.start_date }}
+      end_date: ${{ steps.plan.outputs.end_date }}
+      cache_version: ${{ steps.plan.outputs.cache_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build fixed five-year 14-day chunk plan
+        id: plan
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from datetime import date, timedelta
+
+          with open("config/gold-v2-data-window.json", "r", encoding="utf-8") as fh:
+              cfg = json.load(fh)
+          lookback_days = int(cfg["lookback_days"])
+          chunk_days = int(cfg["chunk_days"])
+          end_day = date.fromisoformat(str(cfg["end_date_utc"]))
+          if lookback_days != 1825 or chunk_days < 1 or chunk_days > 31:
+              raise SystemExit("Unexpected fixed research window configuration")
+          start_day = end_day - timedelta(days=lookback_days)
+          chunks, cursor, idx = [], start_day, 1
+          while cursor < end_day:
+              end = min(cursor + timedelta(days=chunk_days), end_day)
+              chunks.append({
+                  "index": idx, "id": f"{cursor:%Y%m%d}_{end:%Y%m%d}",
+                  "start": cursor.isoformat(), "end": end.isoformat()
+              })
+              cursor, idx = end, idx + 1
+          if len(chunks) > 256:
+              raise SystemExit(f"Unexpected chunk count: {len(chunks)}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"chunks={json.dumps(chunks, separators=(',', ':'))}\n")
+              fh.write(f"start_date={start_day.isoformat()}\n")
+              fh.write(f"end_date={end_day.isoformat()}\n")
+              fh.write(f"cache_version={cfg['cache_version']}\n")
+          print(json.dumps({
+              "lookback_days": lookback_days, "chunk_days": chunk_days,
+              "chunk_count": len(chunks), "cache_version": cfg["cache_version"],
+              "start_date": start_day.isoformat(), "end_date_exclusive": end_day.isoformat()
+          }, indent=2))
+          PY
+
+  prepare-chunks:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        chunk: ${{ fromJSON(needs.plan.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore completed M5 chunk
+        id: m5cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
+          key: xauusd-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+      - name: Restore raw M1 checkpoint
+        if: steps.m5cache.outputs.cache-hit != 'true'
+        id: m1cache
+        uses: actions/cache/restore@v4
+        with:
+          path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
+          key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
+          restore-keys: |
+            xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-
+      - name: Prepare chunk directories
+        run: |
+          mkdir -p "gold-xauusd-data/raw/${{ matrix.chunk.id }}"
+          mkdir -p gold-xauusd-data/chunks
+      - name: Validate downloader
+        if: steps.m5cache.outputs.cache-hit != 'true'
+        run: python3 scripts/fetch-xauusd-m5-chunk.py --self-test
+      - name: Download or resume this 14-day chunk
+        if: steps.m5cache.outputs.cache-hit != 'true'
+        run: |
+          python3 scripts/fetch-xauusd-m5-chunk.py \
+            --start-date "${{ matrix.chunk.start }}" \
+            --end-date "${{ matrix.chunk.end }}" \
+            --cache-dir "gold-xauusd-data/raw/${{ matrix.chunk.id }}" \
+            --output-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz" \
+            --manifest-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json" \
+            --request-delay 1.5 --timeout 30 --retries 8
+      - name: Save raw M1 checkpoint
+        if: always() && steps.m5cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
+          key: xauusd-m1-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
+      - name: Save completed M5 chunk
+        if: success() && steps.m5cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
+          key: xauusd-m5-${{ needs.plan.outputs.cache_version }}-${{ runner.os }}-${{ matrix.chunk.id }}
+      - name: Upload chunk for assembly
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-v3-chunk-${{ matrix.chunk.id }}
+          path: |
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
+          retention-days: 2
+          if-no-files-found: error
+
+  assemble-data:
+    needs: [plan, prepare-chunks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all chunks
+        uses: actions/download-artifact@v4
+        with:
+          pattern: xauusd-v3-chunk-*
+          path: gold-xauusd-data/chunks
+          merge-multiple: true
+      - name: Assemble and validate five-year XAUUSD M5 dataset
+        run: |
+          python3 scripts/assemble-xauusd-m5.py \
+            --input-dir gold-xauusd-data/chunks \
+            --output-file gold-xauusd-data/xauusd-m5.json.gz \
+            --manifest-file gold-xauusd-data/xauusd_m5_manifest.json \
+            --start-date "${{ needs.plan.outputs.start_date }}" \
+            --end-date "${{ needs.plan.outputs.end_date }}" \
+            --min-bars 200000
+      - name: Upload prepared five-year dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-v3-prepared-five-year-data
+          path: |
+            gold-xauusd-data/xauusd-m5.json.gz
+            gold-xauusd-data/xauusd_m5_manifest.json
+          retention-days: 2
+          if-no-files-found: error
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate strategy, EA guardrails, and unit tests
+        run: |
+          node scripts/validate-xauusd-retest-v3.mjs
+          node --check src/xauusd_retest_v3.js
+          node --check scripts/backtest-xauusd-retest-v3.mjs
+          node --test tests/xauusd_retest_v3.test.js
+
   review:
+    needs: [assemble-data, validate]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -37,31 +204,17 @@ jobs:
           - name: slippage_stress_055_020
             execution_spread: '0.55'
             slippage: '0.20'
-
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Validate V3 EA and tests
-        run: |
-          node scripts/validate-xauusd-retest-v3.mjs
-          node --check src/xauusd_retest_v3.js
-          node --check scripts/backtest-xauusd-retest-v3.mjs
-          node --test tests/xauusd_retest_v3.test.js
-      - name: Download fixed five-year prepared dataset
+      - name: Download freshly prepared five-year dataset
         uses: actions/download-artifact@v4
         with:
-          name: gold-xauusd-m5-1825d
+          name: xauusd-v3-prepared-five-year-data
           path: gold-xauusd-data
-          repository: ${{ github.repository }}
-          run-id: 37459802618
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Verify input exists and report digest
+      - name: Verify dataset and report digest
         run: |
           test -s gold-xauusd-data/xauusd-m5.json.gz
           sha256sum gold-xauusd-data/xauusd-m5.json.gz
@@ -115,3 +268,4 @@ jobs:
           name: xauusd-v3-five-year-${{ matrix.name }}
           path: xauusd-v3-five-year-output/
           retention-days: 30
+          if-no-files-found: warn
