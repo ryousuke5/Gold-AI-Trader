@@ -2,6 +2,21 @@
 
 Status: research-only, preregistered for future data. Do not use this protocol to enable live orders.
 
+## Broker-session source of truth
+
+The evaluated instrument is the existing XMTrading MT4 `GOLD` / XAUUSD, not `GOLD24-7`. XMTrading Labo publishes regular GOLD trading hours as 07:02–05:58 Japan time during summer time and 08:02–06:58 during winter time; the MetaTrader server clock switches between GMT+3 and GMT+2. This implies a daily server-time pause from about 23:58 to 01:02 and a normal Friday-close-to-Sunday-reopen interval of about 49 hours. See `docs/XM_GOLD_TRADING_SESSION_CALENDAR.md` for conversions and official sources.
+
+The 2026-10-01 XM October holiday notice did not show a GOLD-specific schedule adjustment in the published/indexed list. No November 2026 holiday-hours notice was found in the public news index as of 2026-10-15, so future special hours must be entered only when XM publishes the dated notice. Do not apply the separate MT5 `GOLD24-7` calendar to MT4 GOLD.
+
+## Finalized gap-handling protocol
+
+- A same-weekday 45–90-minute gap matching the regular XM GOLD maintenance window after accounting for Europe/Nicosia GMT+3/GMT+2 is `scheduled_daily_maintenance`; it is not a feed outage.
+- A Friday-to-Sunday gap of approximately 46–54 hours is `scheduled_weekend_closure`.
+- A gap documented by the dated XM holiday bulletin is a planned special closure, with the schedule URL recorded in the calendar override ledger.
+- Extended gaps, DST-transition mismatches, and non-recurring gaps not explained by the published schedule are classified as unverified and censored in the primary event outcome. Do not assume the event was closed at the previous candle close just because the next timestamp has a gap.
+- For confirmed daily/weekend pauses, keep the simulated position open across the closure and test the first observed reopen price against SL/TP, including conservative spread and slippage. An adverse SELL gap through SL is filled at the first observed open plus spread/slippage; a gap through TP is filled at TP plus spread/slippage, without price improvement. Keep prior-close forced exit only as a labelled legacy sensitivity.
+- The 60-minute outcome is a 60-minute clock-time outcome, not 12 bars of active trading; when the interval intersects a planned closure, the elapsed wall-clock interval must be used or the outcome censored. Do not count the closure as live price evolution.
+
 ## Historical audit result (dataset through 2026-10-04 UTC)
 
 The historical five-year window and its recent subperiods have already been inspected in prior reports. None of them is an untouched holdout now.
