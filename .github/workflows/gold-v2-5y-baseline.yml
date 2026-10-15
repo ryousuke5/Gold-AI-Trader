@@ -9,6 +9,7 @@ on:
       - 'scripts/run-gold-v2-rr-sensitivity.mjs'
       - 'scripts/analyze-gold-v2-candidate-quality.mjs'
       - 'scripts/run-gold-v2-sell-followthrough-study.mjs'
+      - 'scripts/run-gold-v2-sell-breakdown-universe-study.mjs'
       - 'scripts/compare-gold-v2-backtest-engines.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
       - 'src/trade_exit_diagnostics.js'
@@ -22,6 +23,7 @@ on:
       - 'scripts/run-gold-v2-rr-sensitivity.mjs'
       - 'scripts/analyze-gold-v2-candidate-quality.mjs'
       - 'scripts/run-gold-v2-sell-followthrough-study.mjs'
+      - 'scripts/run-gold-v2-sell-breakdown-universe-study.mjs'
       - 'scripts/compare-gold-v2-backtest-engines.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
       - 'src/trade_exit_diagnostics.js'
@@ -150,6 +152,7 @@ jobs:
           node --check scripts/run-gold-v2-rr-sensitivity.mjs
           node --check scripts/analyze-gold-v2-candidate-quality.mjs
           node --check scripts/run-gold-v2-sell-followthrough-study.mjs
+          node --check scripts/run-gold-v2-sell-breakdown-universe-study.mjs
           node --check scripts/compare-gold-v2-backtest-engines.mjs
           node --check scripts/report-gold-v2-backtest.mjs
           node --check src/gold_strategy_v2.js
@@ -253,6 +256,12 @@ jobs:
           GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
           GOLD_SELL_FOLLOWTHROUGH_OUTPUT_DIR: gold-backtest-output/sell-followthrough
         run: node scripts/run-gold-v2-sell-followthrough-study.mjs
+
+      - name: Analyze expanded SELL breakdown universe (research only)
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_SELL_BREAKDOWN_OUTPUT_DIR: gold-backtest-output/sell-breakdown-universe
+        run: node scripts/run-gold-v2-sell-breakdown-universe-study.mjs
 
       - name: Upload baseline artifacts
         if: always()
