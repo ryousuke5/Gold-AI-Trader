@@ -6,6 +6,13 @@ const file = process.argv[2] || process.env.GOLD_TRADES_FILE || 'gold-backtest-o
 const trades = JSON.parse(await fs.readFile(path.resolve(file), 'utf8'));
 if (!Array.isArray(trades) || !trades.length) throw new Error('No trades found');
 const initialEquity = Number(process.env.GOLD_BACKTEST_INITIAL_EQUITY || 100000);
+const funnelFile = path.join(path.dirname(path.resolve(file)), 'gold_v2_funnel_diagnostics.json');
+let funnelDiagnostics = null;
+try {
+  funnelDiagnostics = JSON.parse(await fs.readFile(funnelFile, 'utf8'));
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+}
 if (!(initialEquity > 0)) throw new Error('Invalid GOLD_BACKTEST_INITIAL_EQUITY');
 const ordered = [...trades].sort((a,b) => Number(a.exit_time) - Number(b.exit_time));
 for (let i = 1; i < ordered.length; i++) {
@@ -108,7 +115,8 @@ const out={
   short:side('SELL'),
   monthly:grouped(d=>d.toISOString().slice(0,7)),
   yearly:grouped(d=>d.toISOString().slice(0,4)),
-  exit_mechanisms:summarizeExitMechanisms(trades)
+  exit_mechanisms:summarizeExitMechanisms(trades),
+  funnel_diagnostics:funnelDiagnostics
 };
 console.log(JSON.stringify(out,null,2));
 await fs.writeFile(path.join(path.dirname(path.resolve(file)),'gold_v2_baseline_metrics.json'), JSON.stringify(out,null,2));
