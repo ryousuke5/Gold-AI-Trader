@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/backtest-gold-v2-resumable.mjs'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/compare-gold-v2-backtest-engines.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
       - 'src/trade_exit_diagnostics.js'
       - 'src/gold_strategy_v2.js'
@@ -13,6 +15,8 @@ on:
   push:
     paths:
       - 'scripts/backtest-gold-v2-resumable.mjs'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/compare-gold-v2-backtest-engines.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
       - 'src/trade_exit_diagnostics.js'
       - 'src/gold_strategy_v2.js'
@@ -34,6 +38,36 @@ jobs:
       GOLD_BACKTEST_INITIAL_EQUITY: 100000
       GOLD_BACKTEST_RISK_PCT: 0.25
       GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
+      GOLD_BACKTEST_SPREAD_PRICE: 0.50
+      GOLD_BACKTEST_SLIPPAGE_PRICE: 0.05
+      GOLD_BACKTEST_MAX_HOLD_BARS: 96
+      GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: 0.50
+      GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: 2
+      GOLD_BACKTEST_MAX_DRAWDOWN_PCT: 5
+      GOLD_BACKTEST_SERVER_TIMEZONE: Europe/Nicosia
+      GOLD_RANGE_LOOKBACK: 12
+      GOLD_MIN_RANGE_ATR: 0.8
+      GOLD_MAX_RANGE_ATR: 2.8
+      GOLD_BREAKOUT_ATR: 0.10
+      GOLD_MIN_BODY_ATR: 0.40
+      GOLD_MIN_CLOSE_LOCATION: 0.65
+      GOLD_MIN_VOLUME_RATIO: 1.10
+      GOLD_BUY_RSI_MIN: 52
+      GOLD_BUY_RSI_MAX: 75
+      GOLD_SELL_RSI_MIN: 25
+      GOLD_SELL_RSI_MAX: 48
+      GOLD_MAX_EXTENSION_ATR: 1.50
+      GOLD_STOP_BUFFER_ATR: 0.15
+      GOLD_MIN_STOP_ATR: 0.80
+      GOLD_MAX_STOP_ATR: 2.00
+      GOLD_TAKE_PROFIT_R: 2.00
+      GOLD_MIN_H1_RSI_BUY: 50
+      GOLD_MAX_H1_RSI_BUY: 72
+      GOLD_MIN_H1_RSI_SELL: 28
+      GOLD_MAX_H1_RSI_SELL: 50
+      GOLD_SESSION_START_UTC: 7
+      GOLD_SESSION_END_UTC: 20
+      GOLD_H1_TREND_MODE: strict
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -105,6 +139,8 @@ jobs:
       - name: Syntax checks
         run: |
           node --check scripts/backtest-gold-v2-resumable.mjs
+          node --check scripts/backtest-gold-v2.mjs
+          node --check scripts/compare-gold-v2-backtest-engines.mjs
           node --check scripts/report-gold-v2-backtest.mjs
           node --check src/gold_strategy_v2.js
           node --check src/trade_exit_diagnostics.js
@@ -113,6 +149,22 @@ jobs:
         env:
           GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
         run: node scripts/backtest-gold-v2-resumable.mjs
+
+      - name: Run ordinary engine against identical prepared data
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_BACKTEST_LOOKBACK_DAYS: 1825
+          GOLD_BACKTEST_INITIAL_EQUITY: 100000
+          GOLD_BACKTEST_RISK_PCT: 0.25
+          GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output/reference-engine
+        run: node scripts/backtest-gold-v2.mjs
+
+      - name: Compare ordinary and resumable engines
+        env:
+          GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
+          GOLD_REFERENCE_TRADES_CSV: gold-backtest-output/reference-engine/gold_v2_trades_baseline.csv
+          GOLD_RESUMABLE_TRADES_JSON: gold-backtest-output/gold_v2_resumed_trades.json
+        run: node scripts/compare-gold-v2-backtest-engines.mjs
 
       - name: Verify trade integrity
         run: |
