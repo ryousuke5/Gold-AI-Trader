@@ -40,7 +40,11 @@ test('Gold signal diagnostic log preserves H1 gate components without raw prices
         h1_down_failure_components: ['ema20_not_below_ema50'],
         range_atr: 1.4,
         min_range_atr: 0.8,
-        max_range_atr: 2.8
+        max_range_atr: 2.8,
+        extension_direction: 'UP',
+        extension_atr: 1.25,
+        max_extension_atr: 1.5,
+        extension_gate_passed: true
       }
     },
     risk: { approved: false },
@@ -63,6 +67,10 @@ test('Gold signal diagnostic log preserves H1 gate components without raw prices
     'rsi_outside_buy_band'
   ]);
   assert.equal(payload.range_atr, 1.4);
+  assert.equal(payload.extension_direction, 'UP');
+  assert.equal(payload.extension_atr, 1.25);
+  assert.equal(payload.max_extension_atr, 1.5);
+  assert.equal(payload.extension_gate_passed, true);
   assert.equal(payload.runtime_mode, 'ANALYSIS');
   assert.equal(payload.auto_trading_enabled, false);
   assert.equal(JSON.stringify(payload).includes('2504'), false);
@@ -82,6 +90,10 @@ test('Gold signal diagnostic log handles missing H1 diagnostics and malformed va
   assert.equal(payload.range_atr, null);
   assert.equal(payload.range_min_atr, null);
   assert.equal(payload.range_max_atr, null);
+  assert.equal(payload.extension_direction, null);
+  assert.equal(payload.extension_atr, null);
+  assert.equal(payload.max_extension_atr, null);
+  assert.equal(payload.extension_gate_passed, null);
   assert.equal(payload.reason, 'session_filter');
   assert.equal(payload.server_utc_offset_seconds, null);
   assert.equal(payload.runtime_mode, 'ANALYSIS');
