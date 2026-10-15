@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadBacktestM5FromFile } from './backtest-gold-v2.mjs';
+import { classifyXmGoldGap, hourMinuteUtc, UNVERIFIED_XM_GAP_CLASSES } from '../src/xm_gold_trading_calendar.js';
 
 const inputJson = path.resolve(process.env.GOLD_SELL_BREAKDOWN_JSON || 'gold-backtest-output/sell-breakdown-universe/gold_v2_sell_breakdown_universe.json');
 const dataFile = process.env.GOLD_BACKTEST_DATA_FILE;
@@ -25,49 +26,7 @@ const MAX_HOLD_BARS=Number(process.env.GOLD_BACKTEST_MAX_HOLD_BARS||96);
 const MIN_STOP_ATR=Number(process.env.GOLD_MIN_STOP_ATR||0.8);
 const MAX_STOP_ATR=Number(process.env.GOLD_MAX_STOP_ATR||2.0);
 
-function hourMinute(unixSeconds) {
-  const d=new Date(unixSeconds*1000);
-  return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
-}
-function dayInfo(unixSeconds) {
-  const d=new Date(unixSeconds*1000);
-  return {utc_day:d.getUTCDay(),utc_hour:d.getUTCHours(),utc_date:d.toISOString().slice(0,10)};
-}
-function nicosiaOffsetHours(unixSeconds) {
-  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Nicosia',timeZoneName:'shortOffset',hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date(unixSeconds*1000));
-  const label=parts.find(p=>p.type==='timeZoneName')?.value||'';
-  const match=/GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(label);
-  if(!match)throw new Error('Could not resolve Europe/Nicosia offset for '+new Date(unixSeconds*1000).toISOString()+': '+label);
-  const value=Number(match[2])+(Number(match[3]||0)/60);
-  return match[1]==='-'?-value:value;
-}
-function expectedXmGoldGapPair(unixSeconds) {
-  const offset=nicosiaOffsetHours(unixSeconds);
-  const startHour=((24-offset)%24+24)%24;
-  const endHour=(startHour+1)%24;
-  const pad=n=>String(n).padStart(2,'0');
-  return pad(startHour)+':00>'+pad(endHour)+':00';
-}
-function isSundayOfMonth(year, month, ordinal) {
-  const first=new Date(Date.UTC(year,month,1)).getUTCDay();
-  if(ordinal===-1) {
-    const last=new Date(Date.UTC(year,month+1,0));
-    return last.getUTCDate()-last.getUTCDay();
-  }
-  const firstSunday=1+((7-first)%7);
-  return firstSunday+(ordinal-1)*7;
-}
-function isDstTransitionReviewWindow(unixSeconds) {
-  const d=new Date(unixSeconds*1000);
-  const year=d.getUTCFullYear();
-  const dates=[
-    Date.UTC(year,2,isSundayOfMonth(year,2,2)),
-    Date.UTC(year,2,isSundayOfMonth(year,2,-1)),
-    Date.UTC(year,9,isSundayOfMonth(year,9,-1)),
-    Date.UTC(year,10,isSundayOfMonth(year,10,1))
-  ];
-  return dates.some(t=>Math.abs(unixSeconds*1000-t)<=7*86400*1000);
-}
+
 function median(values) {
   const a=values.filter(Number.isFinite).sort((x,y)=>x-y);
   if(!a.length)return null;
@@ -119,43 +78,20 @@ function gapCatalog(bars) {
   for(let i=1;i<bars.length;i++) {
     const delta=bars[i].time-bars[i-1].time;
     if(delta<=MIN_GAP_SECONDS)continue;
-    const gapStart=bars[i-1].time+300;
-    const gapEnd=bars[i].time;
-    const pair=hourMinute(gapStart)+'>'+hourMinute(gapEnd);
-    const prev=dayInfo(bars[i-1].time);
-    const next=dayInfo(bars[i].time);
-    pairCounts.set(pair,(pairCounts.get(pair)||0)+1);
+    const gap=classifyXmGoldGap(bars[i-1].time,bars[i].time,0);
+    pairCounts.set(gap.start_pair,(pairCounts.get(gap.start_pair)||0)+1);
     rows.push({
       previous_bar_time:bars[i-1].time,
       previous_bar_time_utc:new Date(bars[i-1].time*1000).toISOString(),
-      gap_start:gapStart,
-      gap_start_utc:new Date(gapStart*1000).toISOString(),
       next_bar_time:bars[i].time,
       next_bar_time_utc:new Date(bars[i].time*1000).toISOString(),
-      gap_seconds:delta-300,
-      delta_seconds:delta,
-      minutes_missing:Math.max(0,delta/60-5),
-      start_pair:pair,
-      previous_weekday:prev.utc_day,
-      next_weekday:next.utc_day,
-      server_offset_hours:nicosiaOffsetHours(gapStart)
+      ...gap
     });
   }
   for(const g of rows) {
-    const p=pairCounts.get(g.start_pair)||0;
-    g.pair_frequency=p;
-    const gapMinutes=g.delta_seconds/60;
-    const normalWeekend=g.previous_weekday===5&&g.next_weekday===0&&gapMinutes>=46*60&&gapMinutes<=54*60;
-    const sameUtcWeekday=g.previous_weekday===g.next_weekday&&g.previous_weekday>=1&&g.previous_weekday<=4;
-    const expectedPair=expectedXmGoldGapPair(g.gap_start);
-    g.expected_xm_gold_gap_pair=expectedPair;
-    if(normalWeekend) g.classification='scheduled_weekend_closure';
-    else if(g.delta_seconds>=18*3600) g.classification='holiday_extended_or_feed_gap_unverified';
-    else if(gapMinutes>=45&&gapMinutes<=90&&sameUtcWeekday&&g.start_pair===expectedPair) g.classification='scheduled_daily_maintenance';
-    else if(isDstTransitionReviewWindow(g.previous_bar_time)&&gapMinutes>=15&&gapMinutes<=180) g.classification='dst_transition_window_review';
-    else if(g.delta_seconds>=30*60&&p>=20) g.classification='recurring_window_gap_not_confirmed_by_xm_hours';
-    else if(g.delta_seconds>15*60) g.classification='irregular_feed_gap_or_session_change';
-    else g.classification='small_bar_gap';
+    Object.assign(g,classifyXmGoldGap(
+      g.previous_bar_time,g.next_bar_time,pairCounts.get(g.start_pair)||0
+    ));
   }
   return {rows,pairCounts};
 }
@@ -187,19 +123,14 @@ function simulate(e,cost,mode) {
       if(delta>MIN_GAP_SECONDS) {
         const gap=gapByPreviousTime.get(previous.time)||{
           previous_bar_time:previous.time,next_bar_time:b.time,delta_seconds:delta,classification:'unclassified_gap',
-          start_pair:hourMinute(previous.time+300)+'>'+hourMinute(b.time)
+          start_pair:hourMinuteUtc(previous.time+300)+'>'+hourMinuteUtc(b.time)
         };
         if(!firstGap) firstGap=gap;
         if(mode==='force_close_on_gap') {
           exit={reason:'DATA_GAP_CLOSE_PREV',time:previous.time,price:entry>stop?previous.close+cost.spread+cost.slippage:previous.close+cost.spread+cost.slippage,gap};
           break;
         }
-        if(mode==='censor_on_unclassified_gap' && [
-          'holiday_extended_or_feed_gap_unverified',
-          'dst_transition_window_review',
-          'recurring_window_gap_not_confirmed_by_xm_hours',
-          'irregular_feed_gap_or_session_change'
-        ].includes(gap.classification)) {
+        if(mode==='censor_on_unclassified_gap' && UNVERIFIED_XM_GAP_CLASSES.has(gap.classification)) {
           exit={reason:'CENSORED_UNVERIFIED_SESSION_GAP',time:previous.time,price:null,gap};
           break;
         }
