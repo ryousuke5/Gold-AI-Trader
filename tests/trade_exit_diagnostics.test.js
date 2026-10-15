@@ -13,6 +13,13 @@ test('classifies a later stop separately from a loss at the holding-time limit',
   assert.equal(classifyTradeExit({ exit_reason: 'TIME', holding_bars: 12, net_r: 0.4 }), 'TIME_EXIT_WIN');
 });
 
+test('classifies legacy backtest rows with identical entry and exit timestamps as entry-bar stops', () => {
+  assert.equal(
+    classifyTradeExit({ entry_time: 1748634600, exit_time: 1748634600, exit_reason: 'STOP', net_r: -1.2 }),
+    'ENTRY_BAR_STOP_LOSS'
+  );
+});
+
 test('summary compares entry-bar stops with timed losses using features, side, hour and excursions', () => {
   const result = summarizeExitMechanisms([
     { exit_reason: 'STOP', holding_bars: 1, net_r: -1, side: 'BUY', hour_utc: 8, range_atr: 1.1, breakout_atr: 0.2, body_atr: 0.7, extension_atr: 0.8, volume_ratio: 1.3, mfe_r: 0.2, mae_r: 1 },
