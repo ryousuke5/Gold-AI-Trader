@@ -1,3 +1,4 @@
+# Reuse pinned five-year input from successful run 38672403236; verify SHA and manifest before testing.
 # Research checkpoint: duplicate-function guard and fail-fast validation gate.
 # Research checkpoint: Bid/Ask-correct stop geometry patch (research branch only).
 name: XAUUSD Retest V3 Five-Year Cost Review
