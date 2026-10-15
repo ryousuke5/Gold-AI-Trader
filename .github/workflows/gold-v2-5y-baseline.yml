@@ -5,10 +5,15 @@ on:
     paths:
       - 'scripts/backtest-gold-v2-resumable.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
+      - 'src/trade_exit_diagnostics.js'
       - 'src/gold_strategy_v2.js'
       - '.github/workflows/gold-v2-5y-baseline.yml'
       - 'package.json'
   workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   baseline:
@@ -32,13 +37,72 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      # The direct Dukascopy fetch in the resumable script may return zero rows
+      # in GitHub-hosted runners. Reuse the validated, assembled 5-year dataset
+      # produced by the dedicated chunked research workflow instead.
+      - name: Find latest successful five-year dataset
+        id: dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow_runs_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/gold-v2-research.yml/runs?status=success&per_page=20"
+          run_ids="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${workflow_runs_url}" | jq -r '.workflow_runs[] | select(.conclusion == "success") | .id')"
+
+          for run_id in ${run_ids}; do
+            artifacts="$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100")"
+            artifact_name="$(printf '%s' "${artifacts}" | jq -r '.artifacts[] | select(.name == "gold-xauusd-m5-1825d" and .expired == false) | .name' | head -n 1)"
+            if [[ "${artifact_name}" == "gold-xauusd-m5-1825d" ]]; then
+              echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+              echo "Using prepared dataset from research run ${run_id}"
+              exit 0
+            fi
+          done
+
+          echo "No unexpired gold-xauusd-m5-1825d artifact was found in recent successful research runs." >&2
+          echo "Run .github/workflows/gold-v2-research.yml successfully first." >&2
+          exit 1
+
+      - name: Download validated five-year dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.dataset.outputs.run_id }}
+
+      - name: Validate dataset and manifest
+        run: |
+          set -euo pipefail
+          test -s gold-xauusd-data/xauusd-m5.json.gz
+          test -s gold-xauusd-data/xauusd_m5_manifest.json
+          gzip -t gold-xauusd-data/xauusd-m5.json.gz
+          jq -e '
+            .instrument == "XAUUSD" and
+            .provider == "Dukascopy Historical Data Feed" and
+            .requested_start_date_utc == "2021-10-06" and
+            .requested_end_date_exclusive_utc == "2026-10-05"
+          ' gold-xauusd-data/xauusd_m5_manifest.json
+          echo "Prepared five-year OHLC dataset passed manifest and gzip checks."
+
       - name: Syntax checks
         run: |
           node --check scripts/backtest-gold-v2-resumable.mjs
           node --check scripts/report-gold-v2-backtest.mjs
           node --check src/gold_strategy_v2.js
+          node --check src/trade_exit_diagnostics.js
 
       - name: Run Gold V2 five-year baseline
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
         run: node scripts/backtest-gold-v2-resumable.mjs
 
       - name: Verify trade integrity
@@ -55,6 +119,7 @@ jobs:
             for(const k of ['signal_time','entry_time','exit_time','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl']) if(!Number.isFinite(Number(t[k]))) throw new Error('Invalid trade field: '+k+' at '+i);
             if(!(t.exit_time>=t.entry_time)) throw new Error('Exit before entry at '+i);
             if(i && !(trades[i-1].exit_time < t.entry_time)) throw new Error('Overlapping trades at '+i);
+            if(!t.exit_class) throw new Error('Missing exit classification at '+i);
           }
           console.log('TRADE INTEGRITY PASS', {trades:trades.length});
           NODE
@@ -73,6 +138,7 @@ jobs:
           for(const k of ['profitFactor','expectancyPerTrade','maxDrawdownPct','maxConsecutiveLosses']) {
             if(m[k]===null || m[k]===undefined || Number.isNaN(Number(m[k]))) throw new Error('Invalid metric: '+k);
           }
+          if(!m.exit_mechanisms || m.exit_mechanisms.sample_size!==m.trades) throw new Error('Exit diagnostics sample does not match trade count');
           console.log('GOLD V2 FIVE-YEAR BASELINE PASS');
           console.log('COMMIT_SHA', process.env.GITHUB_SHA);
           console.log('RUN_ID', process.env.GITHUB_RUN_ID);
@@ -89,5 +155,3 @@ jobs:
           path: gold-backtest-output/
           if-no-files-found: warn
           retention-days: 30
-
-# Baseline trigger marker: rerun after report updates.
