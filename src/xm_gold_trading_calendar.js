@@ -35,13 +35,25 @@ export function nicosiaOffsetHours(unixSeconds) {
 }
 
 export function expectedXmGoldGapPair(unixSeconds) {
-  // The regular GOLD session closes at 23:58 and resumes at 01:02 server time.
-  // Five-minute candle labels usually express that as a gap from 00:00 to 01:00 server time.
+  // Expected rounded M5 label pair for a pause around the 23:59 server rollover.
   const offset = nicosiaOffsetHours(unixSeconds);
   const startHour = ((24 - offset) % 24 + 24) % 24;
   const endHour = (startHour + 1) % 24;
   const pad = (value) => String(value).padStart(2, '0');
   return pad(startHour) + ':00>' + pad(endHour) + ':00';
+}
+
+export function isNearXmGoldDailyRollover(unixSeconds, toleranceMinutes = 10) {
+  // Published GOLD hour guides differ by a few minutes in their prose/table.
+  // Match the repeated maintenance gap to XM's 23:59 server rollover without
+  // assuming that every feed timestamps candles at exactly the same minute.
+  const offset = nicosiaOffsetHours(unixSeconds);
+  const date = new Date(unixSeconds * 1000);
+  const currentMinutes = date.getUTCHours() * 60 + date.getUTCMinutes();
+  const rolloverUtcMinutes = ((23 * 60 + 59 - offset * 60) % 1440 + 1440) % 1440;
+  const raw = Math.abs(currentMinutes - rolloverUtcMinutes);
+  const circularDistance = Math.min(raw, 1440 - raw);
+  return circularDistance <= toleranceMinutes;
 }
 
 function sundayOfMonth(year, month, ordinal) {
@@ -102,7 +114,7 @@ export function classifyXmGoldGap(previousBarTime, nextBarTime, pairFrequency = 
     gapMinutes >= 45 &&
     gapMinutes <= 90 &&
     sameUtcWeekday &&
-    pair === expectedPair
+    isNearXmGoldDailyRollover(gapStart)
   ) {
     classification = 'scheduled_daily_maintenance';
   } else if (
