@@ -96,6 +96,16 @@ function compareMatched(reference, resumable) {
 const referenceTrades = parseCsv(await fs.readFile(referenceCsv, 'utf8'));
 const resumableTrades = JSON.parse(await fs.readFile(resumableJson, 'utf8'));
 if (!Array.isArray(resumableTrades)) throw new Error('Resumable trade output must be an array');
+const minimumEffectiveRR = Number(process.env.GOLD_BACKTEST_MIN_EFFECTIVE_RR || 1.50);
+if (!Number.isFinite(minimumEffectiveRR) || minimumEffectiveRR < 0) throw new Error('Invalid minimum effective RR');
+const belowFloorReference = referenceTrades.filter(trade => {
+  const rr = effectiveRr(trade);
+  return rr === null || rr + 1e-12 < minimumEffectiveRR;
+});
+const belowFloorResumable = resumableTrades.filter(trade => {
+  const rr = effectiveRr(trade);
+  return rr === null || rr + 1e-12 < minimumEffectiveRR;
+});
 
 const referenceByKey = new Map(referenceTrades.map(trade => [key(trade), trade]));
 const resumableByKey = new Map(resumableTrades.map(trade => [key(trade), trade]));
@@ -189,7 +199,11 @@ const result = {
     }
   },
   trade_identity: 'signal_time + entry_time',
-  unified_minimum_effective_rr: Number(process.env.GOLD_BACKTEST_MIN_EFFECTIVE_RR || 1.50),
+  unified_minimum_effective_rr: minimumEffectiveRR,
+  effective_rr_floor_violations: {
+    reference: belowFloorReference.length,
+    resumable: belowFloorResumable.length
+  },
   h1_aggregation_timezone: process.env.GOLD_BACKTEST_SERVER_TIMEZONE || 'Europe/Nicosia',
   funnel_diagnostics: {
     fields_compared: funnelFields.length + 2,
@@ -222,12 +236,17 @@ console.log('GOLD V2 ENGINE COMPARISON', JSON.stringify({
   resumable_only: resumableOnly.length,
   matched_outcomes_with_differences: mismatched.length,
   funnel_mismatches: funnelMismatches.length,
+  effective_rr_floor_violations: {
+    reference: belowFloorReference.length,
+    resumable: belowFloorResumable.length
+  },
   reference_only_below_rr_floor: referenceOnlyDetails.filter(row => row.below_effective_rr_floor_1_5).length,
   output: comparisonPath
 }));
 
 if (process.env.GOLD_REQUIRE_ENGINE_PARITY === 'true') {
-  const failed = referenceOnly.length > 0 || resumableOnly.length > 0 || mismatched.length > 0 || funnelMismatches.length > 0;
+  const failed = referenceOnly.length > 0 || resumableOnly.length > 0 || mismatched.length > 0
+    || funnelMismatches.length > 0 || belowFloorReference.length > 0 || belowFloorResumable.length > 0;
   if (failed) {
     throw new Error('GOLD engines are not yet at parity; inspect ' + comparisonPath);
   }
