@@ -383,11 +383,12 @@ function simulate(m5, confirmationIndex, setup) {
   const exitBarRange = exitBar.high - exitBar.low;
   const adverseEntryGap = dir === 'BUY' ? entry - signalClose : signalClose - entry;
   const adverseExecutionGap = dir === 'BUY' ? entry - signalEntryReference : signalEntryReference - entry;
+  // Stop trigger uses Bid for BUY exits and Ask for SELL exits.
   const entryBarStopOvershoot = dir === 'BUY'
     ? (stop - entryBar.low) / atr
-    : (entryBar.high - stop) / atr;
+    : (entryBar.high + spread - stop) / atr;
   const exitBarStopOvershoot = reason === 'STOP' || reason === 'STOP_AND_TARGET_SAME_BAR_CONSERVATIVE'
-    ? (dir === 'BUY' ? (stop - exitBar.low) / atr : (exitBar.high - stop) / atr)
+    ? (dir === 'BUY' ? (stop - exitBar.low) / atr : (exitBar.high + spread - stop) / atr)
     : null;
   const exitBarTargetOvershoot = reason === 'TARGET'
     ? (dir === 'BUY' ? (exitBar.high - target) / atr : (target - exitBar.low) / atr)
