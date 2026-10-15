@@ -20,6 +20,20 @@ For each group, the JSON report summarizes sample size, share, loss rate, total 
 
 This lets the reviewer check whether immediate stops are associated with larger entry gaps, weaker breakout bodies, extreme extension, or particular session hours, while time-exit losses can be compared by the same factors and by their adverse/favorable excursion before the time limit. Differences are descriptive, not causal proof; segment conclusions require enough trades and out-of-sample replication.
 
+## Backtest engine parity and admission conditions
+
+The ordinary and resumable runners are compared on the same prepared five-year M5 dataset. The comparison now applies the same `GOLD_BACKTEST_MIN_EFFECTIVE_RR` floor (default 1.50), the same entry-gap calculation (next M5 open versus signal close divided by signal ATR), and the same server-timezone H1 candle boundaries.
+
+The resumable runner uses `GOLD_BACKTEST_SERVER_TIMEZONE` when aggregating M5 bars into H1 candles, with `Europe/Nicosia` as the five-year workflow setting. The H1 aggregation version is part of the checkpoint identity so checkpoints created using the previous UTC-only aggregation are rejected instead of mixed with the current run.
+
+The comparison artifact, `gold_v2_engine_comparison.json`, verifies:
+- Matched and unmatched trade identities based on signal timestamp plus entry timestamp.
+- Side, setup type, entry/SL/TP, exit time/reason, net R, net PnL, effective RR, and entry-gap agreement.
+- Candidate-funnel counts and the setup-wait-reason breakdown between both engines.
+- No trade in either output falls below the shared effective-RR floor.
+
+The five-year workflow is configured to fail unless all of those parity checks reconcile. This is a research reproducibility check, not permission to activate live trading.
+
 ## Setup funnel diagnostics
 
 The resumable five-year runner also writes `gold_v2_funnel_diagnostics.json` and embeds the same object as `funnel_diagnostics` in `gold_v2_baseline_metrics.json`. Counters are stored in every checkpoint and restored on resume; the checkpoint identity includes a funnel schema version so old checkpoints cannot silently mix incomplete counters with new results.
@@ -51,7 +65,7 @@ GOLD_BACKTEST_DATA_FILE=/path/to/xauusd_m5.json node scripts/backtest-gold-v2-re
 GOLD_TRADES_FILE=gold-backtest-output/gold_v2_resumed_trades.json node scripts/report-gold-v2-backtest.mjs
 ```
 
-The report is written to `gold-backtest-output/gold_v2_baseline_metrics.json`; its `exit_mechanisms` section contains both requested loss groups. The resumable checkpoint identity includes an exit-diagnostics schema version, so a checkpoint produced by the earlier trade schema is not silently mixed with newly classified trades.
+The report is written to `gold-backtest-output/gold_v2_baseline_metrics.json`; its `exit_mechanisms` section contains both requested loss groups. The resumable checkpoint identity versions exit diagnostics, funnel diagnostics, H1 aggregation, and trade-admission rules, so a checkpoint from an earlier schema or H1 candle boundary cannot be silently mixed with current output.
 
 ## OHLC limitations and safety
 
