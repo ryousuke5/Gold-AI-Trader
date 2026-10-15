@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { findXauRetestSetupV3 } from '../src/xauusd_retest_v3.js';
+import { findXauRetestSetupV3, hasValidStopGeometry } from '../src/xauusd_retest_v3.js';
 
 const CFG = {
   days: Number(process.env.XAU_V3_DAYS || 1825),
@@ -298,6 +298,9 @@ function simulate(m5, confirmationIndex, setup) {
     ? m5[entryBarIndex].open + spread + slip
     : m5[entryBarIndex].open - slip;
   const stop = setup.stop_loss;
+  // A market order with SL already on the wrong side of the next-bar fill
+  // is not a valid executable setup. Do not count it as an immediate stop loss.
+  if (!hasValidStopGeometry(dir, entry, stop)) return { rejected: 'invalid_stop_geometry' };
   const risk = Math.abs(entry - stop);
   if (!(risk > 0)) return null;
   const stopAtr = risk / m5[confirmationIndex].atr14;
@@ -439,6 +442,10 @@ async function main() {
     const trade = simulate(m5, i, setup);
     if (!trade) {
       diagnostics.wait_by_reason.execution_validation = (diagnostics.wait_by_reason.execution_validation || 0) + 1;
+      continue;
+    }
+    if (trade.rejected) {
+      diagnostics.wait_by_reason[trade.rejected] = (diagnostics.wait_by_reason[trade.rejected] || 0) + 1;
       continue;
     }
 

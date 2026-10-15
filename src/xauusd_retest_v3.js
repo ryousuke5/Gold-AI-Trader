@@ -1,6 +1,15 @@
 const n=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f;
 function bars(b){return Array.isArray(b)?[...b].sort((a,c)=>Number(a.time)-Number(c.time)):[];}
 function wait(trend,reason,extra={}){return{candidate:'WAIT',trend,setup_type:'NONE',entry:0,stop_loss:0,take_profit:0,risk_reward:0,reasons:[reason],...extra};}
+
+// Match the MT4 EA's stop-side guard. Absolute distance alone is insufficient:
+// BUY requires SL below entry; SELL requires SL above entry.
+export function hasValidStopGeometry(side, entry, stop) {
+  if (!Number.isFinite(Number(entry)) || !Number.isFinite(Number(stop))) return false;
+  if (side === 'BUY') return Number(stop) < Number(entry);
+  if (side === 'SELL') return Number(stop) > Number(entry);
+  return false;
+}
 function agreement(barsIn,dir,count=5){const a=bars(barsIn).slice(-count);if(a.length<3)return 0;let g=0;for(let i=1;i<a.length;i+=1){const d=a[i].close-a[i-1].close;if((dir==='UP'&&d>0)||(dir==='DOWN'&&d<0))g++;}return g/(a.length-1);}
 function validBar(b){return Number.isFinite(b?.open)&&Number.isFinite(b?.high)&&Number.isFinite(b?.low)&&Number.isFinite(b?.close)&&b.high>=b.low&&b.high>=b.open&&b.high>=b.close&&b.low<=b.open&&b.low<=b.close;}
 
@@ -141,6 +150,7 @@ export function findXauRetestSetupV3(features={},options={}){
 
       const entry=direction==='BUY'?n(features.ask):n(features.bid);
       const stop=direction==='BUY'?retest.low-cfg.stopBufferAtr*atr:retest.high+cfg.stopBufferAtr*atr;
+      if(!hasValidStopGeometry(direction,entry,stop))continue;
       const stopDistance=Math.abs(entry-stop),stopAtr=stopDistance/atr;
       if (debug && retestIndex === debug.targetRetestIndex) debug.last.stop = { entry, stop, stopDistance, stopAtr };
       if(!(stopDistance>0&&stopAtr>=cfg.minStopAtr&&stopAtr<=cfg.maxStopAtr))continue;

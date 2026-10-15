@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findXauRetestSetupV3 } from '../src/xauusd_retest_v3.js';
+import { findXauRetestSetupV3, hasValidStopGeometry } from '../src/xauusd_retest_v3.js';
 
 function bar(time, open, high, low, close, volume=100){
   return {time,open,high,low,close,volume};
@@ -65,4 +65,15 @@ test('V3 does not reject a normal spread as pure entry drift',()=>{
   const setup=findXauRetestSetupV3(features(bars));
   assert.equal(setup.candidate,'BUY');
   assert.notEqual(setup.reasons?.[0],'entry_drift_filter');
+});
+
+test('stop geometry matches executable BUY/SELL side',()=>{
+  assert.equal(hasValidStopGeometry('BUY',100,99.5),true);
+  assert.equal(hasValidStopGeometry('BUY',100,100),false);
+  assert.equal(hasValidStopGeometry('BUY',100,100.5),false);
+  assert.equal(hasValidStopGeometry('SELL',100,100.5),true);
+  assert.equal(hasValidStopGeometry('SELL',100,100),false);
+  assert.equal(hasValidStopGeometry('SELL',100,99.5),false);
+  assert.equal(hasValidStopGeometry('BUY',NaN,99),false);
+  assert.equal(hasValidStopGeometry('WAIT',100,99),false);
 });
