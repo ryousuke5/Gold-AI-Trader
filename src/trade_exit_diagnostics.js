@@ -1,18 +1,3 @@
-const NUMERIC_FIELDS = [
-  'range_atr',
-  'breakout_atr',
-  'body_atr',
-  'close_location',
-  'volume_ratio',
-  'extension_atr',
-  'entry_gap_atr',
-  'mfe_r',
-  'mae_r',
-  'net_r',
-  'holding_minutes',
-  'holding_bars'
-];
-
 function finiteOrNull(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
@@ -23,18 +8,33 @@ function valueR(trade) {
   return finiteOrNull(trade?.net_r ?? trade?.result_r ?? trade?.r_multiple);
 }
 
+function timestampSeconds(value) {
+  const numeric = finiteOrNull(value);
+  if (numeric !== null) return numeric;
+  const parsed = Date.parse(String(value ?? ''));
+  return Number.isFinite(parsed) ? parsed / 1000 : null;
+}
+
+function exitIsAtEntryTimestamp(trade) {
+  const entry = timestampSeconds(trade?.entry_time);
+  const exit = timestampSeconds(trade?.exit_time);
+  return entry !== null && exit !== null && Math.abs(exit - entry) < 1;
+}
+
 function holdingBars(trade) {
   const explicit = finiteOrNull(trade?.holding_bars ?? trade?.hold_bars);
   if (explicit !== null && explicit >= 0) return explicit;
   const index = finiteOrNull(trade?.exit_bar_index);
-  return index !== null && index >= 0 ? index + 1 : null;
+  if (index !== null && index >= 0) return index + 1;
+  if (exitIsAtEntryTimestamp(trade)) return 1;
+  return null;
 }
 
 export function classifyTradeExit(trade = {}) {
   const reason = String(trade?.exit_reason ?? '').trim().toUpperCase();
   const r = valueR(trade);
   const bars = holdingBars(trade);
-  const entryBar = trade?.entry_bar_exit === true || (bars !== null && bars <= 1);
+  const entryBar = trade?.entry_bar_exit === true || exitIsAtEntryTimestamp(trade) || (bars !== null && bars <= 1);
 
   if (['STOP', 'STOP_LOSS', 'SL', 'SL_FIRST_ASSUMPTION',
        'STOP_AND_TARGET_SAME_BAR_CONSERVATIVE'].includes(reason)) {
