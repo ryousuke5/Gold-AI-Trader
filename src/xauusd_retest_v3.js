@@ -11,6 +11,33 @@ export function hasValidStopGeometry(side, entry, stop) {
   return false;
 }
 
+// Stop price is expressed in executable quote space. BUY SL triggers on Bid,
+// while SELL SL triggers on Ask; therefore SELL stop levels include signal spread.
+export function calculateXauRetestStopPrice(side, retestHigh, retestLow, atr14, spreadPrice, stopBufferAtr) {
+  if ([retestHigh, retestLow, atr14, spreadPrice, stopBufferAtr].some(v => v === null || v === undefined || v === '')) return null;
+  const high = Number(retestHigh);
+  const low = Number(retestLow);
+  const atr = Number(atr14);
+  const spread = Number(spreadPrice);
+  const buffer = Number(stopBufferAtr);
+  if (![high, low, atr, spread, buffer].every(Number.isFinite) ||
+      !(atr > 0) || high < low || spread < 0 || buffer < 0) return null;
+  if (side === 'BUY') return low - buffer * atr;
+  if (side === 'SELL') return high + spread + buffer * atr;
+  return null;
+}
+
+export function hasValidExecutableStopGeometry(side, bid, ask, stop) {
+  if (stop === null || stop === undefined || stop === '') return false;
+  const b = Number(bid);
+  const a = Number(ask);
+  const s = Number(stop);
+  if (![b, a, s].every(Number.isFinite) || !(b > 0) || a < b) return false;
+  if (side === 'BUY') return s < b;
+  if (side === 'SELL') return s > a;
+  return false;
+}
+
 // Models the entry-distance guard at the first executable price after the signal bar.
 // A non-positive limit disables the guard; invalid prices/ATR fail closed.
 export function isXauEntryDistanceWithinLimit(signalClose, marketEntryPrice, atr14, maxDistanceAtr) {
@@ -160,15 +187,17 @@ export function findXauRetestSetupV3(features={},options={}){
       const volumeRatio=avgVolume>0?n(confirmation.volume)/avgVolume:0;
       if(cfg.useVolumeFilter&&avgVolume>0&&volumeRatio<cfg.minVolumeRatio)continue;
 
-      const entry=direction==='BUY'?n(features.ask):n(features.bid);
-      const stop=direction==='BUY'?retest.low-cfg.stopBufferAtr*atr:retest.high+cfg.stopBufferAtr*atr;
-      if(!hasValidStopGeometry(direction,entry,stop))continue;
+      const bid=n(features.bid),ask=n(features.ask);
+       const entry=direction==='BUY'?ask:bid;
+      const stop=calculateXauRetestStopPrice(direction,retest.high,retest.low,atr,spread,cfg.stopBufferAtr);
+      if(!hasValidExecutableStopGeometry(direction,bid,ask,stop))continue;
       const stopDistance=Math.abs(entry-stop),stopAtr=stopDistance/atr;
       if (debug && retestIndex === debug.targetRetestIndex) debug.last.stop = { entry, stop, stopDistance, stopAtr };
       if(!(stopDistance>0&&stopAtr>=cfg.minStopAtr&&stopAtr<=cfg.maxStopAtr))continue;
 
       const target=direction==='BUY'?entry+stopDistance*cfg.takeProfitR:entry-stopDistance*cfg.takeProfitR;
-      const spreadAdjustedDistance=Math.max(0,Math.abs(n(features.bid)-confirmation.close));
+       if(direction==='BUY' ? !(target>bid) : !(target<ask))continue;
+      const spreadAdjustedDistance=Math.max(0,Math.abs(bid-confirmation.close));
       if(cfg.maxEntryDistanceAtr>0&&spreadAdjustedDistance>cfg.maxEntryDistanceAtr*atr)continue;
 
       selected={

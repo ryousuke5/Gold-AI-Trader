@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { findXauRetestSetupV3, hasValidStopGeometry, isXauEntryDistanceWithinLimit } from '../src/xauusd_retest_v3.js';
+import { findXauRetestSetupV3, hasValidExecutableStopGeometry, isXauEntryDistanceWithinLimit } from '../src/xauusd_retest_v3.js';
 
 const CFG = {
   days: Number(process.env.XAU_V3_DAYS || 1825),
@@ -315,13 +315,17 @@ function simulate(m5, confirmationIndex, setup) {
     ? rawNextOpen + spread + slip
     : rawNextOpen - slip;
   const stop = setup.stop_loss;
+  const entryBid = rawNextOpen;
+  const entryAsk = rawNextOpen + spread;
   const signalEntryReference = setup.entry;
   const setupTargetReference = setup.take_profit;
   const diagnostics = setup.diagnostics || {};
 
   // A market order with SL already on the wrong side of the next-bar fill
   // is not a valid executable setup. Do not count it as an immediate stop loss.
-  if (!hasValidStopGeometry(dir, entry, stop)) return { rejected: 'invalid_stop_geometry' };
+  if (!hasValidExecutableStopGeometry(dir, entryBid, entryAsk, stop)) {
+    return { rejected: 'invalid_stop_geometry', diagnostics: { entry_bid: entryBid, entry_ask: entryAsk, stop_loss: stop } };
+  }
 
   const risk = Math.abs(entry - stop);
   if (!(risk > 0) || !(atr > 0)) return null;
@@ -330,6 +334,9 @@ function simulate(m5, confirmationIndex, setup) {
   const target = dir === 'BUY'
     ? entry + risk * setup.risk_reward
     : entry - risk * setup.risk_reward;
+  if (dir === 'BUY' ? !(target > entryBid) : !(target < entryAsk)) {
+    return { rejected: 'invalid_target_geometry', diagnostics: { entry_bid: entryBid, entry_ask: entryAsk, target } };
+  }
 
   const end = Math.min(m5.length - 1, entryBarIndex + CFG.maxHoldBars);
   let resultR = 0;

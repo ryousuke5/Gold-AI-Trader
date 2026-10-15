@@ -477,21 +477,24 @@ double CalculateLots(string sym, double entry, double stop)
    return NormalizeLot(sym, rawLots);
 }
 
-bool StopsMeetBrokerRules(string sym, int type, double entry, double stop, double target)
+bool StopsMeetBrokerRules(string sym, int type, double stop, double target)
 {
    double point = MarketInfo(sym, MODE_POINT);
+   double bid = MarketInfo(sym, MODE_BID);
+   double ask = MarketInfo(sym, MODE_ASK);
    double stopLevel = MarketInfo(sym, MODE_STOPLEVEL) * point;
    double freezeLevel = MarketInfo(sym, MODE_FREEZELEVEL) * point;
    double required = MathMax(stopLevel, freezeLevel);
 
-   if(point <= 0.0)
+   if(point <= 0.0 || bid <= 0.0 || ask <= 0.0 || ask < bid)
       return false;
 
+   // BUY positions close on Bid; SELL positions close on Ask.
    if(type == OP_BUY)
-      return entry - stop > required && target - entry > required;
+      return bid - stop > required && target - bid > required;
 
    if(type == OP_SELL)
-      return stop - entry > required && entry - target > required;
+      return stop - ask > required && ask - target > required;
 
    return false;
 }
@@ -875,7 +878,7 @@ int GetSignal(string sym, double &entry, double &stop, double &target, double &a
 
          stop = type == OP_BUY
             ? retestLow - StopBufferAtr * m5Atr
-            : retestHigh + StopBufferAtr * m5Atr;
+            : retestHigh + spread + StopBufferAtr * m5Atr;
 
          double stopDistance = MathAbs(entry - stop);
          double stopAtr = stopDistance / m5Atr;
@@ -887,7 +890,7 @@ int GetSignal(string sym, double &entry, double &stop, double &target, double &a
             ? entry + TakeProfitR * stopDistance
             : entry - TakeProfitR * stopDistance;
 
-         if(!StopsMeetBrokerRules(sym, type, entry, stop, target))
+         if(!StopsMeetBrokerRules(sym, type, stop, target))
             continue;
 
          if(!PriceDriftAllowed(sym, confirmationClose, m5Atr))
@@ -1023,7 +1026,7 @@ bool ExecuteSignal(string sym, int signalType, double entry, double stop, double
    stop = NormalizePrice(sym, stop);
    target = NormalizePrice(sym, target);
 
-   if(!StopsMeetBrokerRules(sym, signalType, sendPrice, stop, target))
+   if(!StopsMeetBrokerRules(sym, signalType, stop, target))
    {
       Print("XAUUSD EA: broker stop/freeze rules failed again at execution time.");
       return false;

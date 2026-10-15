@@ -16,6 +16,8 @@ const checks=[
  ['path invalidation',/MaxPenetrationAtr/],
  ['reclaim confirmation',/confirmationClose > level \+ ConfirmBufferAtr/],
  ['ATR stop',/StopBufferAtr/],
+ ['SELL stop accounts for Bid-to-Ask spread',/retestHigh\s*\+\s*spread\s*\+\s*StopBufferAtr\s*\*\s*m5Atr/],
+ ['broker stop guard uses executable-side Bid/Ask',/return bid - stop > required && target - bid > required[\s\S]*return stop - ask > required && ask - target > required/],
  ['risk sizing',/CalculateLots/],
  ['daily loss guard',/MaxDailyLossPercent/],
  ['account drawdown guard',/MaxAccountDrawdownPercent/],
