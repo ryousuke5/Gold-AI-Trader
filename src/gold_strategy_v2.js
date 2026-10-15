@@ -108,6 +108,9 @@ export function buildGoldV2Setup(features = {}, config = {}) {
   const breakoutDistanceUp = signal.close - range.high;
   const breakoutDistanceDown = range.low - signal.close;
 
+  // Diagnostic-only extension measurements: keep the current rejection threshold unchanged.
+  let extensionDiagnostics = {};
+
   if (trendUp) {
     if (breakoutDistanceUp < cfg.breakoutAtr * m5.atr14) {
       return { candidate: 'WAIT', trend: 'UP', reason: 'breakout_trigger_filter', diagnostics: rangeDiagnostics };
@@ -121,8 +124,15 @@ export function buildGoldV2Setup(features = {}, config = {}) {
     if (signal.close < m5.ema20) {
       return { candidate: 'WAIT', trend: 'UP', reason: 'm5_ema_alignment_filter', diagnostics: rangeDiagnostics };
     }
-    if ((signal.close - m5.ema20) / m5.atr14 > cfg.maxExtensionAtr) {
-      return { candidate: 'WAIT', trend: 'UP', reason: 'extension_filter', diagnostics: rangeDiagnostics };
+    const extensionAtr = (signal.close - m5.ema20) / m5.atr14;
+    extensionDiagnostics = {
+      extension_direction: 'UP',
+      extension_atr: extensionAtr,
+      max_extension_atr: cfg.maxExtensionAtr,
+      extension_gate_passed: extensionAtr <= cfg.maxExtensionAtr
+    };
+    if (!extensionDiagnostics.extension_gate_passed) {
+      return { candidate: 'WAIT', trend: 'UP', reason: 'extension_filter', diagnostics: { ...rangeDiagnostics, ...extensionDiagnostics } };
     }
   } else if (trendDown) {
     if (breakoutDistanceDown < cfg.breakoutAtr * m5.atr14) {
@@ -137,8 +147,15 @@ export function buildGoldV2Setup(features = {}, config = {}) {
     if (signal.close > m5.ema20) {
       return { candidate: 'WAIT', trend: 'DOWN', reason: 'm5_ema_alignment_filter', diagnostics: rangeDiagnostics };
     }
-    if ((m5.ema20 - signal.close) / m5.atr14 > cfg.maxExtensionAtr) {
-      return { candidate: 'WAIT', trend: 'DOWN', reason: 'extension_filter', diagnostics: rangeDiagnostics };
+    const extensionAtr = (m5.ema20 - signal.close) / m5.atr14;
+    extensionDiagnostics = {
+      extension_direction: 'DOWN',
+      extension_atr: extensionAtr,
+      max_extension_atr: cfg.maxExtensionAtr,
+      extension_gate_passed: extensionAtr <= cfg.maxExtensionAtr
+    };
+    if (!extensionDiagnostics.extension_gate_passed) {
+      return { candidate: 'WAIT', trend: 'DOWN', reason: 'extension_filter', diagnostics: { ...rangeDiagnostics, ...extensionDiagnostics } };
     }
   } else {
     return { candidate: 'WAIT', trend: 'RANGE', reason: 'breakout_trigger_filter' };
@@ -155,7 +172,7 @@ export function buildGoldV2Setup(features = {}, config = {}) {
   const stopDistance = Math.abs(referenceEntry - stop);
   const stopAtr = stopDistance / m5.atr14;
   if (stopAtr < cfg.minStopAtr || stopAtr > cfg.maxStopAtr) {
-    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'stop_distance_filter', diagnostics: rangeDiagnostics };
+    return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'stop_distance_filter', diagnostics: { ...rangeDiagnostics, ...extensionDiagnostics } };
   }
 
   const target = side === 'BUY'
@@ -171,6 +188,7 @@ export function buildGoldV2Setup(features = {}, config = {}) {
     take_profit: target,
     risk_reward: cfg.takeProfitR,
     diagnostics: {
+      ...extensionDiagnostics,
       hour_utc: hour,
       range_high: range.high,
       range_low: range.low,
