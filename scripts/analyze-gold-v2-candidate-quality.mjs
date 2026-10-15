@@ -199,6 +199,8 @@ for (const scenario of scenarios) {
     scenario,
     candidate_count: events.length,
     trade_count: trades.length,
+    signals_evaluated: Number(funnel.signals_evaluated),
+    funnel_diagnostics: funnel,
     decision_counts: counts,
     wait_reasons_top: Object.entries(funnel.setup_wait_reasons || {})
       .sort((a, b) => Number(b[1]) - Number(a[1]))
