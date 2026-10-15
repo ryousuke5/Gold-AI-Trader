@@ -383,12 +383,12 @@ function simulate(m5, confirmationIndex, setup) {
     : null;
 
   return {
-    signal_time: new Date(signalBar.time + 300).toISOString(),
-    entry_time: new Date(entryBar.time).toISOString(),
+    signal_time: new Date((signalBar.time + 300) * 1000).toISOString(),
+    entry_time: new Date(entryBar.time * 1000).toISOString(),
     direction: dir,
     result_r: resultR,
     exit_reason: reason,
-    exit_bar_close_time: new Date(exitBar.time + 300).toISOString(),
+    exit_bar_close_time: new Date((exitBar.time + 300) * 1000).toISOString(),
     hold_bars: exitIndex - entryBarIndex,
     breakout_time: new Date((diagnostics.breakout_time) * 1000).toISOString(),
     retest_time: new Date((diagnostics.retest_time) * 1000).toISOString(),
