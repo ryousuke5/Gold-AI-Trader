@@ -12,6 +12,7 @@ on:
       - 'scripts/backtest-gold-v2.mjs'
       - 'scripts/backtest-gold-v2-resumable.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
+      - 'scripts/test-gold-v2-funnel-resume.mjs'
       - 'tests/gold_strategy_v2.test.js'
       - 'tests/gold_signal_diagnostics.test.js'
       - 'tests/trade_exit_diagnostics.test.js'
@@ -33,6 +34,7 @@ on:
       - 'scripts/backtest-gold-v2.mjs'
       - 'scripts/backtest-gold-v2-resumable.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
+      - 'scripts/test-gold-v2-funnel-resume.mjs'
       - 'tests/gold_strategy_v2.test.js'
       - 'tests/gold_signal_diagnostics.test.js'
       - 'tests/trade_exit_diagnostics.test.js'
@@ -69,3 +71,5 @@ jobs:
           node --check scripts/report-gold-v2-backtest.mjs
       - name: Run complete test suite
         run: npm test
+      - name: Smoke-test GOLD funnel checkpoint resume
+        run: node scripts/test-gold-v2-funnel-resume.mjs
