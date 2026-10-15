@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { summarizeExitMechanisms } from '../src/trade_exit_diagnostics.js';
 
 const file = process.argv[2] || process.env.GOLD_TRADES_FILE || 'gold-backtest-output/gold_v2_resumed_trades.json';
 const trades = JSON.parse(await fs.readFile(path.resolve(file), 'utf8'));
@@ -106,7 +107,8 @@ const out={
   long:side('BUY'),
   short:side('SELL'),
   monthly:grouped(d=>d.toISOString().slice(0,7)),
-  yearly:grouped(d=>d.toISOString().slice(0,4))
+  yearly:grouped(d=>d.toISOString().slice(0,4)),
+  exit_mechanisms:summarizeExitMechanisms(trades)
 };
 console.log(JSON.stringify(out,null,2));
 await fs.writeFile(path.join(path.dirname(path.resolve(file)),'gold_v2_baseline_metrics.json'), JSON.stringify(out,null,2));
