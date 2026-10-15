@@ -70,7 +70,7 @@ jobs:
           PY
 
   prepare-chunks:
-    needs: plan
+    needs: [plan, validate]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -140,7 +140,7 @@ jobs:
           if-no-files-found: error
 
   assemble-data:
-    needs: [plan, prepare-chunks]
+    needs: [plan, prepare-chunks, validate]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

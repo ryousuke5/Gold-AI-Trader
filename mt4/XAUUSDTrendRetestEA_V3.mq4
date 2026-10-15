@@ -529,31 +529,6 @@ bool CooldownAllowed()
 //---------------------------------------------------------
 // Signal engine
 //---------------------------------------------------------
-int H1SlopeAgreement(string sym, int direction)
-{
-   int good = 0;
-   int total = 0;
-
-   for(int shift = 1; shift < 6; shift++)
-   {
-      double currentClose = iClose(sym, TrendTimeframe, shift);
-      double previousClose = iClose(sym, TrendTimeframe, shift + 1);
-      if(currentClose <= 0.0 || previousClose <= 0.0)
-         continue;
-
-      total++;
-      double delta = currentClose - previousClose;
-      if((direction == 1 && delta > 0.0) ||
-         (direction == -1 && delta < 0.0))
-         good++;
-   }
-
-   if(total <= 0)
-      return 0;
-
-   return (int)MathRound((double)good / (double)total * 100.0);
-}
-
 bool RetestOhlcValid(string sym, int shift)
 {
    if(shift < 1)

@@ -32,6 +32,15 @@ const checks=[
  ['live order execution',/OrderSend\s*\(/],
  ['orders off by default',/AllowAutoOrders\s*=\s*false/]
 ];
+const signatures = [...source.matchAll(/^(?:int|bool|double|void|string|datetime)\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*\{/gm)]
+  .map((match) => `${match[1]}(${match[2].replace(/\s+/g, ' ').trim()})`);
+const seen = new Set();
+const duplicateSignatures = [];
+for (const signature of signatures) {
+  if (seen.has(signature)) duplicateSignatures.push(signature);
+  seen.add(signature);
+}
 const failures=checks.filter(([,rx])=>!rx.test(source)).map(([name])=>name);
+if(duplicateSignatures.length) failures.push(`duplicate function signatures: ${[...new Set(duplicateSignatures)].join(', ')}`);
 if(failures.length){console.error(JSON.stringify({ok:false,failures},null,2));process.exit(1);}
-console.log(JSON.stringify({ok:true,file,checks:checks.length},null,2));
+console.log(JSON.stringify({ok:true,file,checks:checks.length,uniqueFunctionSignatures:signatures.length},null,2));
