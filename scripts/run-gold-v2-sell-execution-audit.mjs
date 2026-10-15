@@ -260,6 +260,7 @@ for(const cost of costs) {
       h1_rsi14:e.h1_rsi14,h1_close_vs_ema20_atr:e.h1_close_vs_ema20_atr,
       h1_ema20_vs_ema50_atr:e.h1_ema20_vs_ema50_atr,h1_ema50_vs_ema200_atr:e.h1_ema50_vs_ema200_atr,
       strict_bear_stack:e.strict_bear_stack,
+      m5_rsi14:e.m5_rsi14,
       range_atr:e.range_atr,breakout_atr:e.breakout_atr,body_atr:e.body_atr,bearish_body_atr:e.bearish_body_atr,
       volume_ratio:e.volume_ratio,close_location:e.close_location,extension_atr:e.extension_atr,
       ...geometry,
@@ -284,7 +285,8 @@ for(const cost of costs) {
   const discrepancies={
     reference_stop_atr_max_abs:Math.max(0,...geometryRows.map(r=>Math.abs(r.stop_atr_difference_vs_stored??0))),
     effective_rr_max_abs_for_baseline_source:Math.max(0,...geometryRows.map(r=>cost.name==='baseline'?Math.abs(r.effective_rr_difference_vs_stored??0):0)),
-    current_isolated_reason_mismatches:geometryRows.filter((r,ix)=>r.existing_isolated_reason!==({DATA_GAP:'DATA_GAP_CLOSE_PREV',STOP:'STOP',TARGET:'TARGET',TIME:'TIME'}[r.existing_isolated_reason]||r.existing_isolated_reason)).length
+    current_isolated_reason_mismatches:geometryRows.filter(r=>r.force_close_reason!==({DATA_GAP:'DATA_GAP_CLOSE_PREV'}[r.existing_isolated_reason]||r.existing_isolated_reason)).length,
+    current_net_R_max_abs_difference:Math.max(0,...geometryRows.map(r=>Math.abs((r.existing_isolated_net_R??0)-(r.force_close_net_R??0))))
   };
   perCost[cost.name]={
     costs:{spread:cost.spread,slippage:cost.slippage},
@@ -317,7 +319,8 @@ for(const cost of costs) {
       stop_distance_pass:geometryRows.filter(r=>r.stop_distance_gate_pass).length,
       effective_rr_pass:geometryRows.filter(r=>r.effective_rr_gate_pass).length,
       entry_gap_pass:geometryRows.filter(r=>r.entry_gap_atr<=0.5).length,
-      approximate_all_entry_gates:geometryRows.filter(r=>r.stop_distance_gate_pass&&r.effective_rr_gate_pass&&r.entry_gap_atr<=0.5&&r.breakout_atr>=0.1&&r.body_atr>=0.4&&r.volume_ratio>=1.1&&r.close_location<=0.35&&r.m5_rsi14>=25&&r.m5_rsi14<=48&&r.extension_atr<=1.5).length
+      approximate_all_entry_gates:geometryRows.filter(r=>r.stop_distance_gate_pass&&r.effective_rr_gate_pass&&r.entry_gap_atr<=0.5&&r.breakout_atr>=0.1&&r.body_atr>=0.4&&r.volume_ratio>=1.1&&r.close_location<=0.35&&r.m5_rsi14>=25&&r.m5_rsi14<=48&&r.extension_atr<=1.5).length,
+      strict_h1_plus_approximate_all_entry_gates:geometryRows.filter(r=>r.strict_bear_stack&&r.stop_distance_gate_pass&&r.effective_rr_gate_pass&&r.entry_gap_atr<=0.5&&r.breakout_atr>=0.1&&r.body_atr>=0.4&&r.volume_ratio>=1.1&&r.close_location<=0.35&&r.m5_rsi14>=25&&r.m5_rsi14<=48&&r.extension_atr<=1.5).length
     },
     annual:group(geometryRows,r=>r.year_utc,items=>({
       n:items.length,
@@ -328,6 +331,8 @@ for(const cost of costs) {
     geometry_integrity:{
       maximum_abs_reference_stop_atr_difference:discrepancies.reference_stop_atr_max_abs,
       maximum_abs_effective_rr_difference_against_baseline_stored:discrepancies.effective_rr_max_abs_for_baseline_source,
+      current_isolated_reason_mismatches:cost.name==='baseline'?discrepancies.current_isolated_reason_mismatches:null,
+      current_net_R_max_abs_difference:cost.name==='baseline'?discrepancies.current_net_R_max_abs_difference:null,
       all_stop_distances_recomputed_from_signal_close_and_stop:geometryRows.every(r=>Math.abs(r.stop_atr_ref-Math.abs((events.find(e=>e.signal_time_utc===r.signal_time_utc)?.signal_close??0)-(events.find(e=>e.signal_time_utc===r.signal_time_utc)?.stop_loss??0))/(events.find(e=>e.signal_time_utc===r.signal_time_utc)?.signal_atr??1))<1e-8)
     }
   };
@@ -365,6 +370,12 @@ if(!result.costs.baseline.geometry_integrity.all_stop_distances_recomputed_from_
 }
 if(result.costs.baseline.geometry_integrity.maximum_abs_reference_stop_atr_difference>1e-7) {
   throw new Error('Stored stop_atr does not reconcile with signal-close-to-stop geometry.');
+}
+if(result.costs.baseline.geometry_integrity.current_isolated_reason_mismatches!==0) {
+  throw new Error('Reconstructed baseline gap/exit reasons do not match stored event outcomes.');
+}
+if(result.costs.baseline.geometry_integrity.current_net_R_max_abs_difference>1e-7) {
+  throw new Error('Reconstructed baseline net R does not match stored event outcomes.');
 }
 await fs.writeFile(path.join(outputDir,'gold_v2_sell_execution_geometry_gap_audit.json'),JSON.stringify(result,null,2));
 
