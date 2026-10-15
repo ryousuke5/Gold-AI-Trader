@@ -18,12 +18,26 @@ test('XM GOLD daily pause maps to 21:00–22:00 UTC during server GMT+3 season',
   assert.equal(gap.classification, 'scheduled_daily_maintenance');
 });
 
+test('XM GOLD daily pause tolerates the other published hour-guide labels in summer', () => {
+  const previous = ts('2026-07-08T20:50:00Z');
+  const reopen = ts('2026-07-08T22:05:00Z');
+  const gap = classifyXmGoldGap(previous, reopen);
+  assert.equal(gap.classification, 'scheduled_daily_maintenance');
+});
+
 test('XM GOLD daily pause maps to 22:00–23:00 UTC during server GMT+2 season', () => {
   const start = ts('2026-12-09T21:55:00Z');
   const next = ts('2026-12-09T23:00:00Z');
   const gap = classifyXmGoldGap(start, next);
   assert.equal(nicosiaOffsetHours(ts('2026-12-09T22:00:00Z')), 2);
   assert.equal(expectedXmGoldGapPair(ts('2026-12-09T22:00:00Z')), '22:00>23:00');
+  assert.equal(gap.classification, 'scheduled_daily_maintenance');
+});
+
+test('XM GOLD daily pause tolerates the other published hour-guide labels in winter', () => {
+  const previous = ts('2026-12-09T21:50:00Z');
+  const reopen = ts('2026-12-09T23:05:00Z');
+  const gap = classifyXmGoldGap(previous, reopen);
   assert.equal(gap.classification, 'scheduled_daily_maintenance');
 });
 
