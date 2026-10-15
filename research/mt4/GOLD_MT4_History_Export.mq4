@@ -1,5 +1,5 @@
 #property strict
-#property show_inputs
+#property script_show_inputs
 #property version   "1.00"
 #property description "Research-only exporter for broker-native MT4 M5 bars. Never sends, modifies, or closes orders."
 
