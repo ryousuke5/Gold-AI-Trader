@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'gold-v2-funnel-resume-'));
 
 function priceAt(index) {
-  return 2000 + 0.01 * index + 4 * Math.sin(index * 0.025) + 1.5 * Math.sin(index * 0.11);
+  return 2000 + 0.002 * index + 0.2 * Math.sin(index * 0.1) + 0.5 * Math.floor(index / 40) - 0.4 * Math.floor(index / 100);
 }
 
 function validateFunnel(diagnostics, tradesLength) {
@@ -69,6 +69,7 @@ function runBacktest(dataFile, outputDir, stopAfter) {
         GOLD_MAX_RANGE_ATR: '100',
         GOLD_BREAKOUT_ATR: '0.01',
         GOLD_MIN_BODY_ATR: '0.05',
+        GOLD_MIN_CLOSE_LOCATION: '0.5',
         GOLD_MIN_VOLUME_RATIO: '0.1',
         GOLD_BUY_RSI_MIN: '1',
         GOLD_BUY_RSI_MAX: '99',
@@ -115,7 +116,7 @@ try {
       high: Math.max(open, close) + wick,
       low: Math.min(open, close) - wick,
       close,
-      volume: 100 + (i % 11) * 9 + (i % 47 === 0 ? 80 : 0)
+      volume: 100 + (i % 11) * 9 + (i % 40 === 0 ? 300 : 0)
     });
   }
 
