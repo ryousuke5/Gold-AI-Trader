@@ -108,8 +108,8 @@ test('entry distance guard uses first executable market price, not signal close 
 
 
 test('SELL stop includes signal spread because its stop trigger uses Ask',()=>{
-  assert.equal(calculateXauRetestStopPrice('SELL',101,99,2,0.55,0.12),101.79);
-  assert.equal(calculateXauRetestStopPrice('BUY',101,99,2,0.55,0.12),98.76);
+  assert.ok(Math.abs(calculateXauRetestStopPrice('SELL',101,99,2,0.55,0.12)-101.79)<1e-9);
+  assert.ok(Math.abs(calculateXauRetestStopPrice('BUY',101,99,2,0.55,0.12)-98.76)<1e-9);
   assert.equal(calculateXauRetestStopPrice('SELL',101,99,0,0.55,0.12),null);
   assert.equal(calculateXauRetestStopPrice('WAIT',101,99,2,0.55,0.12),null);
 });
