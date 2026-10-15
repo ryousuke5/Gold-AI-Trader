@@ -452,6 +452,62 @@ function score(report) {
   return (s.profit_factor-1)*10 + s.expectancy_R*10 - s.max_drawdown_pct*0.5;
 }
 
+function buildForwardFollowThrough({ bars, startIndex, side, entry, signalAtr, stopDistance, stop, target, spread }) {
+  const horizons = [3, 6, 12, 18, 24];
+  const result = {};
+  for (const horizonBars of horizons) {
+    const horizonMinutes = horizonBars * 5;
+    const window = bars.slice(startIndex, startIndex + horizonBars);
+    const observed = [];
+    let previous = null;
+    for (const bar of window) {
+      if (previous && bar.time - previous.time !== 300) break;
+      observed.push(bar);
+      previous = bar;
+    }
+    const complete = observed.length === horizonBars;
+    if (!observed.length) {
+      result[String(horizonMinutes)] = { horizon_minutes: horizonMinutes, horizon_bars: horizonBars, complete: false, observed_bars: 0, reason: 'NO_FORWARD_BARS' };
+      continue;
+    }
+    const lowest = Math.min(...observed.map(b => b.low));
+    const highest = Math.max(...observed.map(b => b.high));
+    const last = observed.at(-1);
+    const favourableMove = side === 'SELL' ? entry - (lowest + spread) : highest - entry;
+    const adverseMove = side === 'SELL' ? highest + spread - entry : entry - lowest;
+    const closeMove = side === 'SELL' ? entry - (last.close + spread) : last.close - entry;
+    let firstBarrier = null;
+    for (const bar of observed) {
+      const stopHit = side === 'SELL' ? bar.high + spread >= stop : bar.low <= stop;
+      const targetHit = side === 'SELL' ? bar.low + spread <= target : bar.high >= target;
+      if (stopHit) {
+        firstBarrier = { reason: 'STOP', time: bar.time, time_utc: new Date(bar.time * 1000).toISOString(), both_touched: targetHit };
+        break;
+      }
+      if (targetHit) {
+        firstBarrier = { reason: 'TARGET', time: bar.time, time_utc: new Date(bar.time * 1000).toISOString(), both_touched: false };
+        break;
+      }
+    }
+    result[String(horizonMinutes)] = {
+      horizon_minutes: horizonMinutes,
+      horizon_bars: horizonBars,
+      complete,
+      observed_bars: observed.length,
+      close_time_utc: new Date(last.time * 1000).toISOString(),
+      favourable_excursion_atr: Math.max(0, favourableMove / Math.max(1e-9, signalAtr)),
+      adverse_excursion_atr: Math.max(0, adverseMove / Math.max(1e-9, signalAtr)),
+      close_move_atr: closeMove / Math.max(1e-9, signalAtr),
+      favourable_excursion_R: Math.max(0, favourableMove / Math.max(1e-9, stopDistance)),
+      adverse_excursion_R: Math.max(0, adverseMove / Math.max(1e-9, stopDistance)),
+      close_move_R: closeMove / Math.max(1e-9, stopDistance),
+      first_barrier: firstBarrier,
+      note: 'Fixed-horizon OHLC path study; does not stop the measurement at a simulated stop/target. Not tradable PnL.'
+    };
+  }
+  return result;
+}
+
 async function runOne(rawM5, rawH1, config, strategy) {
   const m5=rawM5, h1=rawH1;
   const m5Ind=addIndicators(m5), h1Ind=addIndicators(h1);
@@ -614,6 +670,17 @@ async function runOne(rawM5, rawH1, config, strategy) {
       pretrade_rejection: pretradeRejection,
       margin_to_rr_floor: Number.isFinite(effectiveRR) ? effectiveRR-config.minEffectiveRR : null
     };
+    candidateEvent.forward_followthrough = buildForwardFollowThrough({
+      bars: m5Ind,
+      startIndex: i+1,
+      side: setup.candidate,
+      entry: modeledEntry,
+      signalAtr: signal.atr14,
+      stopDistance,
+      stop: setup.stop_loss,
+      target: setup.take_profit,
+      spread: config.spreadPrice
+    });
 
     const future=m5Ind.slice(i+1);
     const trade=simulateTrade({
