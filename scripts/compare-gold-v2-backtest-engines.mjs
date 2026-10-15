@@ -9,6 +9,8 @@ const resumableJson = path.resolve(
   process.env.GOLD_RESUMABLE_TRADES_JSON || path.join(outputDir, 'gold_v2_resumed_trades.json')
 );
 const comparisonPath = path.join(outputDir, 'gold_v2_engine_comparison.json');
+const referenceReportPath = path.join(outputDir, 'reference-engine/gold_v2_backtest_report.json');
+const resumableDiagnosticsPath = path.join(outputDir, 'gold_v2_funnel_diagnostics.json');
 
 function parseCsv(text) {
   const lines = text.trim().split(/\r?\n/);
@@ -70,6 +72,20 @@ function compareMatched(reference, resumable) {
       resumable: resR,
       absolute_difference: refR === null || resR === null ? null : Math.abs(refR - resR)
     },
+    net_pnl: {
+      reference: asNumber(reference.net_pnl),
+      resumable: asNumber(resumable.net_pnl),
+      absolute_difference: asNumber(reference.net_pnl) === null || asNumber(resumable.net_pnl) === null
+        ? null
+        : Math.abs(asNumber(reference.net_pnl) - asNumber(resumable.net_pnl))
+    },
+    entry_gap_atr: {
+      reference: asNumber(reference.entry_gap_atr),
+      resumable: asNumber(resumable.entry_gap_atr),
+      absolute_difference: asNumber(reference.entry_gap_atr) === null || asNumber(resumable.entry_gap_atr) === null
+        ? null
+        : Math.abs(asNumber(reference.entry_gap_atr) - asNumber(resumable.entry_gap_atr))
+    },
     effective_rr: {
       reference: effectiveRr(reference),
       resumable: effectiveRr(resumable)
@@ -95,6 +111,10 @@ const mismatched = matchedOutcomes.filter(row =>
   || row.exit_time.reference !== row.exit_time.resumable
   || row.net_r.absolute_difference === null
   || row.net_r.absolute_difference > 1e-9
+  || row.net_pnl.absolute_difference === null
+  || row.net_pnl.absolute_difference > 1e-7
+  || row.entry_gap_atr.absolute_difference === null
+  || row.entry_gap_atr.absolute_difference > 1e-9
   || Object.values(row.prices).some(v =>
     v.absolute_difference === null || v.absolute_difference > 1e-9
   )
@@ -109,9 +129,50 @@ const referenceOnlyDetails = referenceOnly.map(k => {
     exit_reason: trade.exit_reason,
     net_r: asNumber(trade.net_r),
     effective_rr: rr,
-    below_resumable_rr_floor_1_5: rr !== null && rr < 1.5
+    below_effective_rr_floor_1_5: rr !== null && rr < 1.5
   };
 });
+const referenceReport = JSON.parse(await fs.readFile(referenceReportPath, 'utf8'));
+const resumableFunnel = JSON.parse(await fs.readFile(resumableDiagnosticsPath, 'utf8'));
+const referenceFunnel = referenceReport.results?.baseline?.funnel_diagnostics;
+if (!referenceFunnel || !resumableFunnel) throw new Error('Missing funnel diagnostics from one or both backtest engines');
+
+const funnelFields = [
+  'bars_scanned',
+  'bars_skipped_while_in_trade',
+  'invalid_m5_feature_bars',
+  'invalid_h1_feature_bars',
+  'signals_evaluated',
+  'candidates',
+  'candidates_buy',
+  'candidates_sell',
+  'candidates_other',
+  'risk_gate_checks',
+  'risk_gate_blocked_candidates',
+  'risk_gate_passed',
+  'rejected_next_bar_gap',
+  'trade_attempts',
+  'rejected_invalid_geometry',
+  'rejected_entry_gap',
+  'rejected_effective_rr',
+  'trades_accepted'
+];
+const funnelMismatches = [];
+for (const field of funnelFields) {
+  const referenceValue = Number(referenceFunnel[field]);
+  const resumableValue = Number(resumableFunnel[field]);
+  if (!Number.isFinite(referenceValue) || !Number.isFinite(resumableValue) || referenceValue !== resumableValue) {
+    funnelMismatches.push({ field, reference: referenceFunnel[field], resumable: resumableFunnel[field] });
+  }
+}
+function canonicalObject(value) {
+  return JSON.stringify(Object.fromEntries(Object.entries(value || {}).sort(([a], [b]) => a.localeCompare(b))));
+}
+for (const field of ['setup_wait_reasons', 'risk_gate_blocks']) {
+  if (canonicalObject(referenceFunnel[field]) !== canonicalObject(resumableFunnel[field])) {
+    funnelMismatches.push({ field, reference: referenceFunnel[field], resumable: resumableFunnel[field] });
+  }
+}
 const result = {
   generated_at: new Date().toISOString(),
   data_source: 'same prepared XAUUSD M5 dataset and default risk/cost/strategy parameters; no strategy or execution settings are modified by this comparison step',
@@ -128,6 +189,13 @@ const result = {
     }
   },
   trade_identity: 'signal_time + entry_time',
+  unified_minimum_effective_rr: Number(process.env.GOLD_BACKTEST_MIN_EFFECTIVE_RR || 1.50),
+  h1_aggregation_timezone: process.env.GOLD_BACKTEST_SERVER_TIMEZONE || 'Europe/Nicosia',
+  funnel_diagnostics: {
+    fields_compared: funnelFields.length + 2,
+    mismatch_count: funnelMismatches.length,
+    mismatches: funnelMismatches
+  },
   counts: {
     matched: sharedKeys.length,
     reference_only: referenceOnly.length,
@@ -138,9 +206,10 @@ const result = {
   resumable_only_keys: resumableOnly,
   matched_trade_comparisons: matchedOutcomes,
   interpretation: [
-    'The reference engine does not currently enforce the resumable engine’s minimum effective-RR floor, so trade-count differences can be expected and are surfaced rather than treated as parity.',
-    'Shared trade identities should also match side, entry/SL/TP, exit time/reason, and net R before the engines are treated as reconciled.',
-    'This output is research diagnostics only; it does not alter strategy parameters or real execution.'
+    'Both engines must use the same effective-RR floor, entry-gap calculation, H1 aggregation timezone, risk/cost settings, and data before parity is accepted.',
+    'Shared trade identities are compared on side, setup type, entry/SL/TP, exit time/reason, net R, net PnL, and entry gap.',
+    'Funnel counters and setup wait-reason distributions are compared independently of trade identities.',
+    'This output is research diagnostics only; it does not alter live execution or the strategy thresholds.'
   ]
 };
 
@@ -152,6 +221,15 @@ console.log('GOLD V2 ENGINE COMPARISON', JSON.stringify({
   reference_only: referenceOnly.length,
   resumable_only: resumableOnly.length,
   matched_outcomes_with_differences: mismatched.length,
-  reference_only_below_rr_floor: referenceOnlyDetails.filter(row => row.below_resumable_rr_floor_1_5).length,
+  funnel_mismatches: funnelMismatches.length,
+  reference_only_below_rr_floor: referenceOnlyDetails.filter(row => row.below_effective_rr_floor_1_5).length,
   output: comparisonPath
 }));
+
+if (process.env.GOLD_REQUIRE_ENGINE_PARITY === 'true') {
+  const failed = referenceOnly.length > 0 || resumableOnly.length > 0 || mismatched.length > 0 || funnelMismatches.length > 0;
+  if (failed) {
+    throw new Error('GOLD engines are not yet at parity; inspect ' + comparisonPath);
+  }
+  console.log('GOLD V2 ENGINE PARITY PASS');
+}
