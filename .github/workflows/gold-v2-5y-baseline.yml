@@ -1,6 +1,15 @@
 name: Gold V2 5Y Baseline
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/backtest-gold-v2-resumable.mjs'
+      - 'scripts/report-gold-v2-backtest.mjs'
+      - 'src/trade_exit_diagnostics.js'
+      - 'src/gold_strategy_v2.js'
+      - '.github/workflows/gold-v2-5y-baseline.yml'
+      - 'package.json'
   push:
     paths:
       - 'scripts/backtest-gold-v2-resumable.mjs'
