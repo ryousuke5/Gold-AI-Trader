@@ -15,7 +15,7 @@ The 2026-10-01 XM October holiday notice did not show a GOLD-specific schedule a
 - A gap documented by the dated XM holiday bulletin is a planned special closure, with the schedule URL recorded in the calendar override ledger.
 - Extended gaps, DST-transition mismatches, and non-recurring gaps not explained by the published schedule are classified as unverified and censored in the primary event outcome. Do not assume the event was closed at the previous candle close just because the next timestamp has a gap.
 - For confirmed daily/weekend pauses, keep the simulated position open across the closure and test the first observed reopen price against SL/TP, including conservative spread and slippage. An adverse SELL gap through SL is filled at the first observed open plus spread/slippage; a gap through TP is filled at TP plus spread/slippage, without price improvement. Keep prior-close forced exit only as a labelled legacy sensitivity.
-- The 60-minute outcome is a 60-minute clock-time outcome, not 12 bars of active trading; when the interval intersects a planned closure, the elapsed wall-clock interval must be used or the outcome censored. Do not count the closure as live price evolution.
+- The 60-minute fixed-horizon price-path outcome is defined as 12 consecutive M5 bars after entry. If any timestamp gap occurs before the 12th bar, mark that horizon incomplete/censored; do not fill missing prices or treat a closed market as live price evolution. This is a contiguous active-market horizon, not a 60-minute wall-clock return. The separate gap-aware barrier model handles planned closures, holds through the pause, and tests the reopening price.
 
 ## Historical audit result (dataset through 2026-10-04 UTC)
 
