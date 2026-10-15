@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'gold-v2-funnel-resume-'));
 
 function priceAt(index) {
-  return 2000 + 0.002 * index + 0.2 * Math.sin(index * 0.1) + 0.5 * Math.floor(index / 40) - 0.4 * Math.floor(index / 100);
+  return 2000 + 0.002 * index + 0.2 * Math.sin(index * 0.1) + 1.5 * Math.floor(index / 40) - 0.4 * Math.floor(index / 100);
 }
 
 function validateFunnel(diagnostics, tradesLength) {
