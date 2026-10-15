@@ -3,6 +3,7 @@ import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
+import { classifyTradeExit, summarizeExitMechanisms } from '../src/trade_exit_diagnostics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -287,18 +288,25 @@ function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
   const stop=setup.stop_loss, target=setup.take_profit;
   if(!(entry>0 && stop>0 && target>0)) return null;
   const stopDistance=Math.abs(entry-stop);
-  if(!(stopDistance>0) || Math.abs(entry-setup.entry_reference)/Math.max(0.000001, Number(signalBar.atr14))>config.maxEntryGapAtr) return null;
+  const entryGapAtr=Math.abs(entry-setup.entry_reference)/Math.max(1e-9, Number(signalBar.atr14));
+  if(!(stopDistance>0) || entryGapAtr>config.maxEntryGapAtr) return null;
   const riskCash=equity*(config.riskPct/100);
-  let exitTime=futureBars[Math.min(futureBars.length-1,config.maxHoldBars-1)]?.time ?? nextBar.time;
-  let exitPrice=futureBars[Math.min(futureBars.length-1,config.maxHoldBars-1)]?.close ?? nextBar.close;
+  const fallbackIndex=Math.max(0,Math.min(futureBars.length-1,config.maxHoldBars-1));
+  let exitTime=futureBars[fallbackIndex]?.time ?? nextBar.time;
+  let exitPrice=futureBars[fallbackIndex]?.close ?? nextBar.close;
   let exitReason='TIME';
   const scan=futureBars.slice(0,config.maxHoldBars);
-  let previousBar = null;
-  for(const bar of scan) {
-    if(previousBar && bar.time - previousBar.time > 900) {
+  let exitBarIndex=Math.max(0,scan.length-1);
+  let previousBar=null;
+  let stopAndTargetSameBar=false;
+
+  for(let index=0;index<scan.length;index++) {
+    const bar=scan[index];
+    if(previousBar && bar.time-previousBar.time>900) {
       exitTime=previousBar.time;
       exitReason='DATA_GAP';
       exitPrice=side==='BUY' ? previousBar.close-slip : previousBar.close+spread+slip;
+      exitBarIndex=index-1;
       break;
     }
     const stopHit=side==='BUY' ? bar.low<=stop : bar.high+spread>=stop;
@@ -307,29 +315,57 @@ function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
       exitTime=bar.time;
       exitReason='STOP';
       exitPrice=side==='BUY' ? stop-slip : stop+spread+slip;
+      exitBarIndex=index;
+      stopAndTargetSameBar=targetHit;
       break;
     }
     if(targetHit) {
       exitTime=bar.time;
       exitReason='TARGET';
       exitPrice=side==='BUY' ? target-slip : target+spread+slip;
+      exitBarIndex=index;
       break;
     }
     previousBar=bar;
   }
+
   const pnlPrice=side==='BUY' ? exitPrice-entry : entry-exitPrice;
   const netR=pnlPrice/stopDistance;
   const netPnl=riskCash*netR;
-  const grossR=side==='BUY' ? (exitPrice+ (side==='BUY'?0:0) - nextBar.open)/stopDistance : (nextBar.open-exitPrice)/stopDistance;
-  return {
+  const inspectedBars=scan.slice(0,Math.min(scan.length,Math.max(0,exitBarIndex)+1));
+  let mfeR=0, maeR=0;
+  for(const bar of inspectedBars) {
+    const favorablePrice=side==='BUY' ? bar.high : bar.low+spread;
+    const adversePrice=side==='BUY' ? bar.low : bar.high+spread;
+    const favorable=side==='BUY' ? (favorablePrice-entry)/stopDistance : (entry-favorablePrice)/stopDistance;
+    const adverse=side==='BUY' ? (entry-adversePrice)/stopDistance : (adversePrice-entry)/stopDistance;
+    if(Number.isFinite(favorable)) mfeR=Math.max(mfeR,favorable);
+    if(Number.isFinite(adverse)) maeR=Math.max(maeR,adverse);
+  }
+  const holdingBars=Math.max(1,exitBarIndex+1);
+  const diagnostics=setup.diagnostics||{};
+  const trade={
     signal_time:signalBar.time, entry_time:nextBar.time, exit_time:exitTime, side,
     setup_type:setup.setup_type, entry, stop_loss:stop, take_profit:target,
     risk_cash:riskCash, net_r:netR, net_pnl:netPnl, exit_reason:exitReason,
     holding_minutes:Math.max(0,(exitTime-nextBar.time)/60),
-    range_atr:setup.diagnostics?.range_atr ?? null,
-    breakout_atr:setup.diagnostics?.breakout_atr ?? null,
-    volume_ratio:setup.diagnostics?.volume_ratio ?? null
+    holding_bars:holdingBars,
+    exit_bar_index:exitBarIndex,
+    entry_bar_exit:exitBarIndex===0,
+    stop_and_target_same_bar:stopAndTargetSameBar,
+    range_atr:diagnostics.range_atr ?? null,
+    breakout_atr:diagnostics.breakout_atr ?? null,
+    body_atr:diagnostics.body_atr ?? null,
+    close_location:diagnostics.close_location ?? null,
+    volume_ratio:diagnostics.volume_ratio ?? null,
+    extension_atr:diagnostics.extension_atr ?? null,
+    hour_utc:Number.isFinite(Number(diagnostics.hour_utc)) ? Number(diagnostics.hour_utc) : new Date(signalBar.time*1000).getUTCHours(),
+    entry_gap_atr:entryGapAtr,
+    mfe_r:mfeR,
+    mae_r:maeR
   };
+  trade.exit_class=classifyTradeExit(trade);
+  return trade;
 }
 
 function summarize(trades, initialEquity) {
@@ -357,7 +393,8 @@ function summarize(trades, initialEquity) {
     expectancy_R:expectancyR, total_R:totalR,
     max_drawdown:maxDD, max_drawdown_pct:maxDDPct,
     avg_holding_minutes:trades.length?holds/trades.length:0,
-    stop_exits:stop,target_exits:target, by_side:bySide
+    stop_exits:stop,target_exits:target, by_side:bySide,
+    exit_mechanisms:summarizeExitMechanisms(trades)
   };
 }
 
@@ -381,7 +418,7 @@ function annualSummary(trades, initialEquity) {
 }
 
 function toCsv(trades) {
-  const headers=['signal_time','entry_time','exit_time','side','setup_type','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl','exit_reason','holding_minutes','range_atr','breakout_atr','volume_ratio'];
+  const headers=['signal_time','entry_time','exit_time','side','setup_type','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl','exit_reason','exit_class','holding_minutes','holding_bars','entry_bar_exit','stop_and_target_same_bar','hour_utc','range_atr','breakout_atr','body_atr','close_location','volume_ratio','extension_atr','entry_gap_atr','mfe_r','mae_r'];
   return headers.join(',')+'\n'+trades.map(t=>headers.map(h=>String(t[h]??'')).join(',')).join('\n')+'\n';
 }
 
