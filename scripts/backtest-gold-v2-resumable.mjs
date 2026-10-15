@@ -141,7 +141,7 @@ function trade(signal,next,future,setup,e,diagnostics){
     if(Number.isFinite(adverse))maeR=Math.max(maeR,adverse);
   }
 
-  const diagnostics=setup.diagnostics||{};
+  const setupDiagnostics=setup.diagnostics||{};
   const item={
     signal_time:signal.time,
     entry_time:next.time,
@@ -162,15 +162,15 @@ function trade(signal,next,future,setup,e,diagnostics){
     net_pnl:risk*r,
     exit_reason:reason,
     stop_and_target_same_bar:stopAndTargetSameBar,
-    hour_utc:Number.isFinite(Number(diagnostics.hour_utc))
-      ? Number(diagnostics.hour_utc)
+    hour_utc:Number.isFinite(Number(setupDiagnostics.hour_utc))
+      ? Number(setupDiagnostics.hour_utc)
       : new Date((signal.time+300)*1000).getUTCHours(),
-    range_atr:diagnostics.range_atr??null,
-    breakout_atr:diagnostics.breakout_atr??null,
-    body_atr:diagnostics.body_atr??null,
-    close_location:diagnostics.close_location??null,
-    volume_ratio:diagnostics.volume_ratio??null,
-    extension_atr:diagnostics.extension_atr??null,
+    range_atr:setupDiagnostics.range_atr??null,
+    breakout_atr:setupDiagnostics.breakout_atr??null,
+    body_atr:setupDiagnostics.body_atr??null,
+    close_location:setupDiagnostics.close_location??null,
+    volume_ratio:setupDiagnostics.volume_ratio??null,
+    extension_atr:setupDiagnostics.extension_atr??null,
     mfe_r:mfeR,
     mae_r:maeR
   };
