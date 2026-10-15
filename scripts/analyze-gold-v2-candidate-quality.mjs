@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const inputDir = path.resolve(process.env.GOLD_BACKTEST_OUTPUT_DIR || 'gold-backtest-output');
-const outputDir = path.resolve(process.env.GOLD_CANDIDATE_DIAGNOSTICS_DIR || inputDir);
+const researchRoot = path.resolve(process.env.GOLD_BACKTEST_OUTPUT_DIR || 'gold-backtest-output');
+const inputDir = path.resolve(process.env.GOLD_CANDIDATE_INPUT_DIR || path.join(researchRoot, 'reference-engine'));
+const outputDir = path.resolve(process.env.GOLD_CANDIDATE_DIAGNOSTICS_DIR || researchRoot);
 await fs.mkdir(outputDir, { recursive: true });
 
 function parseCsvLine(line) {
