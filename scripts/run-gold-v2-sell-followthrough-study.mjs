@@ -221,11 +221,11 @@ function candidateFeatureRow(event, variant) {
   };
   for (const minutes of [15,30,60,90,120]) {
     const x=ft[String(minutes)]||{};
-    row[\`close_move_\${minutes}m_R\`]=x.close_move_R ?? null;
-    row[\`MFE_\${minutes}m_R\`]=x.favourable_excursion_R ?? null;
-    row[\`MAE_\${minutes}m_R\`]=x.adverse_excursion_R ?? null;
-    row[\`first_barrier_\${minutes}m\`]=x.first_barrier?.reason ?? null;
-    row[\`complete_\${minutes}m\`]=x.complete ?? false;
+    row[`close_move_${minutes}m_R`]=x.close_move_R ?? null;
+    row[`MFE_${minutes}m_R`]=x.favourable_excursion_R ?? null;
+    row[`MAE_${minutes}m_R`]=x.adverse_excursion_R ?? null;
+    row[`first_barrier_${minutes}m`]=x.first_barrier?.reason ?? null;
+    row[`complete_${minutes}m`]=x.complete ?? false;
   }
   return row;
 }
