@@ -51,7 +51,50 @@ function ema(v,p){const o=new Array(v.length).fill(null),a=2/(p+1);let x=null;fo
 function rsi(c,p){const o=new Array(c.length).fill(null);if(c.length<=p)return o;let g=0,l=0;for(let i=1;i<=p;i++){const d=c[i]-c[i-1];g+=Math.max(0,d);l+=Math.max(0,-d);}let ag=g/p,al=l/p;o[p]=al===0?100:100-100/(1+ag/al);for(let i=p+1;i<c.length;i++){const d=c[i]-c[i-1];ag=(ag*(p-1)+Math.max(0,d))/p;al=(al*(p-1)+Math.max(0,-d))/p;o[i]=al===0?100:100-100/(1+ag/al);}return o;}
 function atr(b,p){const o=new Array(b.length).fill(null),tr=new Array(b.length).fill(0);if(b.length<=p)return o;for(let i=0;i<b.length;i++)tr[i]=i?Math.max(b[i].high-b[i].low,Math.abs(b[i].high-b[i-1].close),Math.abs(b[i].low-b[i-1].close)):b[i].high-b[i].low;let s=0;for(let i=1;i<=p;i++)s+=tr[i];let x=s/p;o[p]=x;for(let i=p+1;i<b.length;i++){x=(x*(p-1)+tr[i])/p;o[i]=x;}return o;}
 function indicators(b){const c=b.map(x=>x.close),e20=ema(c,20),e50=ema(c,50),e200=ema(c,200),r=rsi(c,14),a=atr(b,14);return b.map((x,i)=>({...x,ema20:e20[i],ema50:e50[i],ema200:e200[i],rsi14:r[i],atr14:a[i]}));}
-function h1(m){const map=new Map();for(const b of m){const t=Math.floor(b.time/3600)*3600,x=map.get(t);if(!x)map.set(t,{time:t,open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume});else{x.high=Math.max(x.high,b.high);x.low=Math.min(x.low,b.low);x.close=b.close;x.volume+=b.volume;}}return [...map.values()].sort((a,b)=>a.time-b.time);}
+function localDateTimeParts(timestampSeconds, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(new Date(timestampSeconds * 1000));
+  const out = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') out[part.type] = Number(part.value);
+  }
+  return out;
+}
+
+function zonedHourStartUtc(timestampSeconds, timeZone) {
+  const p = localDateTimeParts(timestampSeconds, timeZone);
+  const localAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  const offsetSeconds = Math.round((localAsUtc - timestampSeconds * 1000) / 1000);
+  const localHourAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, 0, 0);
+  return Math.floor((localHourAsUtc - offsetSeconds * 1000) / 1000);
+}
+
+function h1(m) {
+  const map = new Map();
+  for (const b of m) {
+    const t = CONFIG.serverTimezone === 'UTC'
+      ? Math.floor(b.time / 3600) * 3600
+      : zonedHourStartUtc(b.time, CONFIG.serverTimezone);
+    const x = map.get(t);
+    if (!x) {
+      map.set(t, { time: t, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume });
+    } else {
+      x.high = Math.max(x.high, b.high);
+      x.low = Math.min(x.low, b.low);
+      x.close = b.close;
+      x.volume += b.volume;
+    }
+  }
+  return [...map.values()].sort((a, b) => a.time - b.time);
+}
 function h1idx(h,t){let lo=0,hi=h.length-1,b=-1;while(lo<=hi){const m=(lo+hi)>>1;if(h[m].time+3600<=t){b=m;lo=m+1;}else hi=m-1;}return b;}
 function recent(b,i,n=80){return b.slice(Math.max(0,i-n+1),i+1).map(x=>({...x,time:x.time+300}));}
 function gate(state,e,t){const d=new Date(t*1000).toISOString().slice(0,10);if(state.day!==d){state.day=d;state.dayStartEquity=e;}state.peak=Math.max(state.peak,e);const daily=(e-state.dayStartEquity)/state.dayStartEquity*100,dd=(state.peak-e)/state.peak*100;const reasons=[];if(daily<=-CONFIG.maxDailyLossPct)reasons.push('daily_loss_limit');if(dd>=CONFIG.maxDrawdownPct)reasons.push('drawdown_limit');return{allowed:!reasons.length,reasons};}
@@ -243,7 +286,9 @@ async function main() {
     config: CONFIG,
     strategy: STRATEGY,
     exit_diagnostics_version: 1,
-    funnel_diagnostics_version: 1
+    funnel_diagnostics_version: 1,
+    h1_aggregation_version: 2,
+    entry_admission_version: 2
   });
   if (cp && cp.identity !== identity) {
     throw Error('Checkpoint identity mismatch; refusing unsafe resume');
