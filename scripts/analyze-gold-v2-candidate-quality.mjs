@@ -48,11 +48,15 @@ const oosStart = latest - 730 * 86400;
 const isStart = oosStart - 1095 * 86400;
 const recentStart = latest - 365 * 86400;
 
+function periodsOf(event) {
+  const tags = [];
+  if (event.signal_time >= isStart && event.signal_time < oosStart) tags.push('IS_1095d');
+  if (event.signal_time >= oosStart) tags.push('OOS_730d');
+  if (event.signal_time >= recentStart) tags.push('recent365');
+  return tags.length ? tags : ['outside_IS_OOS_window'];
+}
 function periodOf(event) {
-  if (event.signal_time >= recentStart) return 'recent365';
-  if (event.signal_time >= oosStart) return 'OOS_730d';
-  if (event.signal_time >= isStart) return 'IS_1095d';
-  return 'outside_IS_OOS_window';
+  return periodsOf(event).join(' + ');
 }
 
 function num(value) {
@@ -95,6 +99,13 @@ function grouped(events, groupFn) {
     actual: metrics(items, x => x.actual_outcome),
     rr_only_shadow: metrics(items, x => x.counterfactual_rr_only_outcome)
   }));
+}
+function groupedByMultipleTags(events, tagFn) {
+  const expanded = [];
+  for (const event of events) {
+    for (const tag of tagFn(event)) expanded.push({ ...event, __tag: tag });
+  }
+  return grouped(expanded, e => e.__tag);
 }
 
 function flattenEvent(e, scenario) {
@@ -192,7 +203,8 @@ for (const scenario of scenarios) {
     } else {
       event.shadow_simulation_status = 'NOT_APPLICABLE';
     }
-    event.period = periodOf(event);
+    event.periods = periodsOf(event);
+    event.period = event.periods.join(' + ');
   }
 
   all[scenario] = {
@@ -209,7 +221,7 @@ for (const scenario of scenarios) {
       by_side: grouped(events, e => e.side),
       by_utc_hour: grouped(events, e => String(e.hour_utc).padStart(2, '0') + ':00'),
       by_year: grouped(events, e => e.year_utc),
-      by_period: grouped(events, e => e.period),
+      by_period: groupedByMultipleTags(events, e => e.periods || periodsOf(e)),
       accepted_actual_outcomes: metrics(events, e => e.actual_outcome),
       rr_rejected_counterfactual_only: metrics(events, e => e.counterfactual_rr_only_outcome)
     },
@@ -315,7 +327,7 @@ for (const e of baseline.events) {
     f(actual.net_r), actual.exit_reason ?? '—', f(shadow.net_r), shadow.exit_reason ?? '—'
   ].join(' | ') + ' |');
 }
-markdown.push('', '## Actual accepted outcomes by side / hour / year (baseline costs)', '',
+markdown.push('', '## Actual accepted outcomes by side / hour / year / window (baseline costs)', '', 'Window labels overlap intentionally: recent365 is contained within OOS_730d; these rows are not additive.', '',
   '| Group | Candidates | Decision counts | Actual outcomes | Mean R | PF |',
   '|---|---:|---|---:|---:|---:|');
 for (const dimension of ['by_side', 'by_utc_hour', 'by_year', 'by_period']) {
