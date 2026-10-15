@@ -33,6 +33,41 @@ function dayInfo(unixSeconds) {
   const d=new Date(unixSeconds*1000);
   return {utc_day:d.getUTCDay(),utc_hour:d.getUTCHours(),utc_date:d.toISOString().slice(0,10)};
 }
+function nicosiaOffsetHours(unixSeconds) {
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Nicosia',timeZoneName:'shortOffset',hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date(unixSeconds*1000));
+  const label=parts.find(p=>p.type==='timeZoneName')?.value||'';
+  const match=/GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(label);
+  if(!match)throw new Error('Could not resolve Europe/Nicosia offset for '+new Date(unixSeconds*1000).toISOString()+': '+label);
+  const value=Number(match[2])+(Number(match[3]||0)/60);
+  return match[1]==='-'?-value:value;
+}
+function expectedXmGoldGapPair(unixSeconds) {
+  const offset=nicosiaOffsetHours(unixSeconds);
+  const startHour=((24-offset)%24+24)%24;
+  const endHour=(startHour+1)%24;
+  const pad=n=>String(n).padStart(2,'0');
+  return pad(startHour)+':00>'+pad(endHour)+':00';
+}
+function isSundayOfMonth(year, month, ordinal) {
+  const first=new Date(Date.UTC(year,month,1)).getUTCDay();
+  if(ordinal===-1) {
+    const last=new Date(Date.UTC(year,month+1,0));
+    return last.getUTCDate()-last.getUTCDay();
+  }
+  const firstSunday=1+((7-first)%7);
+  return firstSunday+(ordinal-1)*7;
+}
+function isDstTransitionReviewWindow(unixSeconds) {
+  const d=new Date(unixSeconds*1000);
+  const year=d.getUTCFullYear();
+  const dates=[
+    Date.UTC(year,2,isSundayOfMonth(year,2,2)),
+    Date.UTC(year,2,isSundayOfMonth(year,2,-1)),
+    Date.UTC(year,9,isSundayOfMonth(year,9,-1)),
+    Date.UTC(year,10,isSundayOfMonth(year,10,1))
+  ];
+  return dates.some(t=>Math.abs(unixSeconds*1000-t)<=7*86400*1000);
+}
 function median(values) {
   const a=values.filter(Number.isFinite).sort((x,y)=>x-y);
   if(!a.length)return null;
@@ -87,6 +122,8 @@ function gapCatalog(bars) {
     const gapStart=bars[i-1].time+300;
     const gapEnd=bars[i].time;
     const pair=hourMinute(gapStart)+'>'+hourMinute(gapEnd);
+    const prev=dayInfo(bars[i-1].time);
+    const next=dayInfo(bars[i].time);
     pairCounts.set(pair,(pairCounts.get(pair)||0)+1);
     rows.push({
       previous_bar_time:bars[i-1].time,
@@ -99,16 +136,25 @@ function gapCatalog(bars) {
       delta_seconds:delta,
       minutes_missing:Math.max(0,delta/60-5),
       start_pair:pair,
-      previous_weekday:dayInfo(bars[i-1].time).utc_day,
-      next_weekday:dayInfo(bars[i].time).utc_day
+      previous_weekday:prev.utc_day,
+      next_weekday:next.utc_day,
+      server_offset_hours:nicosiaOffsetHours(gapStart)
     });
   }
   for(const g of rows) {
     const p=pairCounts.get(g.start_pair)||0;
     g.pair_frequency=p;
-    if(g.delta_seconds>=18*3600) g.classification='long_closure_weekend_or_holiday';
-    else if(g.delta_seconds>=30*60 && p>=20) g.classification='recurring_time_window_gap_schedule_like';
-    else if(g.delta_seconds>15*60) g.classification='irregular_or_uncertain_gap';
+    const gapMinutes=g.delta_seconds/60;
+    const normalWeekend=g.previous_weekday===5&&g.next_weekday===0&&gapMinutes>=46*60&&gapMinutes<=54*60;
+    const sameUtcWeekday=g.previous_weekday===g.next_weekday&&g.previous_weekday>=1&&g.previous_weekday<=4;
+    const expectedPair=expectedXmGoldGapPair(g.gap_start);
+    g.expected_xm_gold_gap_pair=expectedPair;
+    if(normalWeekend) g.classification='scheduled_weekend_closure';
+    else if(g.delta_seconds>=18*3600) g.classification='holiday_extended_or_feed_gap_unverified';
+    else if(gapMinutes>=45&&gapMinutes<=90&&sameUtcWeekday&&g.start_pair===expectedPair) g.classification='scheduled_daily_maintenance';
+    else if(isDstTransitionReviewWindow(g.previous_bar_time)&&gapMinutes>=15&&gapMinutes<=180) g.classification='dst_transition_window_review';
+    else if(g.delta_seconds>=30*60&&p>=20) g.classification='recurring_window_gap_not_confirmed_by_xm_hours';
+    else if(g.delta_seconds>15*60) g.classification='irregular_feed_gap_or_session_change';
     else g.classification='small_bar_gap';
   }
   return {rows,pairCounts};
@@ -148,8 +194,13 @@ function simulate(e,cost,mode) {
           exit={reason:'DATA_GAP_CLOSE_PREV',time:previous.time,price:entry>stop?previous.close+cost.spread+cost.slippage:previous.close+cost.spread+cost.slippage,gap};
           break;
         }
-        if(mode==='censor_on_unclassified_gap' && gap.classification==='irregular_or_uncertain_gap') {
-          exit={reason:'CENSORED_UNCLASSIFIED_GAP',time:previous.time,price:null,gap};
+        if(mode==='censor_on_unclassified_gap' && [
+          'holiday_extended_or_feed_gap_unverified',
+          'dst_transition_window_review',
+          'recurring_window_gap_not_confirmed_by_xm_hours',
+          'irregular_feed_gap_or_session_change'
+        ].includes(gap.classification)) {
+          exit={reason:'CENSORED_UNVERIFIED_SESSION_GAP',time:previous.time,price:null,gap};
           break;
         }
         // Hold-across-gap stress model: check the first available price for a barrier crossing.
@@ -352,15 +403,37 @@ const result={
     total_gaps_over_15m:gaps.length,
     classifications:Object.fromEntries([...new Set(gaps.map(g=>g.classification))].sort().map(k=>[k,gaps.filter(g=>g.classification===k).length])),
     common_pairs:gapSummary.slice(0,80),
-    examples:gaps.filter(g=>g.classification==='recurring_time_window_gap_schedule_like').slice(0,30),
-    note:'A repeated UTC time-window is schedule-like, not proof of an exchange holiday calendar. A precise session calendar and provider completeness contract are required to certify a gap.'
+    examples:gaps.filter(g=>g.classification==='scheduled_daily_maintenance').slice(0,30),
+    xm_regular_session:{
+      symbol:'GOLD / XAUUSD on MT4 (legacy regular session; not GOLD24-7)',
+      summer_japan:'07:02 to 05:58 next day, Monday-Friday',
+      winter_japan:'08:02 to 06:58 next day, Monday-Friday',
+      server_timezone:'Europe/Nicosia seasonal offset: GMT+3 summer, GMT+2 winter',
+      daily_break_server:'23:58 close to 01:02 reopen',
+      derived_utc_daily_break_summer:'about 20:58 to 22:02 UTC; M5 labels commonly 20:55 then 22:00',
+      derived_utc_daily_break_winter:'about 21:58 to 23:02 UTC; M5 labels commonly 21:55 then 23:00',
+      weekly_closure:'Friday close to Sunday reopen; about 49 hours',
+      sources:['https://fxplus.xmtrading.com/media/2025110701.html','https://fxplus.xmtrading.com/trading-hours/','https://fxplus.xmtrading.com/news/n2026100101.html','https://fxplus.xmtrading.com/news/n2026091801.html']
+    },
+    holiday_calendar_check:{
+      checked_at_utc:'2026-10-15',
+      october_notice_date:'2026-10-01',
+      october_notice_gold_specific_change_found:false,
+      november_2026_notice_found:false,
+      note:'No GOLD-specific October schedule change was visible in the published/indexed XM October bulletin. This does not rule out exceptional interruptions; use the dated XM notice for each future month.'
+    },
+    note:'Confirmed daily maintenance and normal Friday-to-Sunday closures are expected market closures, not feed failures. Unpublished long closures, DST-transition mismatches, and non-recurring gaps are unverified and are censored in the primary event-study model rather than priced at the prior close.'
   },
   costs:perCost,
   holdout_warning:'The five-year price sample and its recent windows have already been examined in prior reports. Annual/late-period results here are retrospective audits, not an untouched OOS test. A genuinely untouched holdout must use data not used for these prior hypotheses or a pre-registered prospective window.',
   interpretation_limits:[
-    'DATA_GAP in the original study is triggered by a bar timestamp difference >15 minutes. This can conflate recurring session closures, weekends/holidays, and abnormal missing data.',
+    'XM regular GOLD session hours confirm a roughly 64-minute daily break plus a roughly 49-hour Friday-to-Sunday closure. These are scheduled trading pauses, not data-feed outages.',
+    'A position cannot be assumed closed at the previous M5 close merely because a gap is visible afterward. The gap-aware hold model is primary for scheduled pauses and checks stop/target gaps at the first observed reopen price.',
+    'A holiday extension, DST-transition anomaly, or other gap without a matching documented XM session window is unverified: censor its primary event outcome and record it for calendar review.',
+    'The 2026-10-01 official October holiday notice had no GOLD-specific schedule change visible in the published/indexed list; as of 2026-10-15 a November 2026 holiday-hours notice was not found. This is not a guarantee against exceptional outages.',
+    'GOLD24-7 is a separate product announced for MT5; its weekend session must not be applied to the current MT4 GOLD/XAUUSD model.',
     'The hold-across-gap sensitivity handles an adverse SELL open beyond stop at the next observed open; target gaps are conservatively filled at the target. Intra-bar sequencing is still unknown.',
-    'Censoring irregular gaps removes outcomes where the path cannot be responsibly inferred; its sample differs by design.',
+    'Censoring unverified gaps removes outcomes where the path cannot be responsibly inferred; its sample differs by design.',
     'All event outcomes are isolated and may overlap; their aggregate is not portfolio PF, expectancy, drawdown or a trading track record.',
     'The approximate all-gates count is a diagnostic proxy. The exact strategy engine remains authoritative for executable trade counts.'
   ]
@@ -396,7 +469,7 @@ const md=[
   '',
   '## Main question',
   '',
-  'The earlier event study marked any time difference >15 minutes between M5 bars as DATA_GAP and exited at the previous close. This audit separates recurring schedule-like windows from irregular gaps and compares three explicit handling scenarios: (1) current forced-close-on-gap model, (2) conservative gap-aware hold model, and (3) censor irregular gaps and do not invent an exit price.',
+  'XMTrading’s normal GOLD MT4 schedule confirms a recurring ~64-minute daily maintenance break and a ~49-hour Friday-to-Sunday closure. A previous-close exit inferred only after observing a gap is not the primary execution assumption. This audit compares (1) legacy prior-close exit as a sensitivity, (2) gap-aware holding across confirmed schedule windows, and (3) censoring gaps not explained by the published session or a dated holiday-calendar override.',
   '',
   'The event universe contains '+events.length+' isolated SELL events; those events can overlap and do not form a portfolio.',
   '',
@@ -410,7 +483,7 @@ const md=[
   '|---|---:|---:|---:|---:|',
   ...gapSummary.slice(0,30).map(g=>'| '+g.start_pair+' ('+g.classification+') | '+g.count+' | '+f(g.minutes_missing.min)+' | '+f(g.minutes_missing.p50)+' | '+f(g.minutes_missing.max)+' |'),
   '',
-  'Schedule-like gaps are identified by repetition only; this report does not certify a broker/exchange calendar.',
+  'Daily maintenance labels are matched against XMTrading’s published regular GOLD hours and Europe/Nicosia GMT+3/GMT+2 offset. Normal Friday-to-Sunday closures are identified by the observed weekday pattern and ~49-hour duration. Longer/irregular gaps remain unverified unless the dated XM holiday bulletin documents them.',
   '',
   '## Execution outcome sensitivity by cost assumption',
   '',
@@ -454,7 +527,7 @@ md.push(
   '',
   'The official strategy stop-distance gate is checked against the signal close, not the next-bar entry fill. The audit separately records reference stop distance and entry-fill stop distance, then recomputes effective RR using the modeled entry. They are related but are not interchangeable.',
   '',
-  'The current DATA_GAP method is not automatically the right economic assumption: when a repeating closure is the cause, closing at the previous candle close is an imposed simulation rule; holding across it requires modelling reopen gaps. For irregular missing data, censoring is often more defensible than assigning an artificial close.',
+  'Primary gap premise: maintain an open simulated position across the confirmed daily maintenance break and normal weekend closure; test stop/target against the next observed open using spread/slippage. Do not infer that the position closed at the previous candle close. For any gap not explained by the published regular session or a dated XM calendar override, censor the primary event outcome until the gap is resolved.',
   '',
   '## Holdout status and guardrails',
   '',
