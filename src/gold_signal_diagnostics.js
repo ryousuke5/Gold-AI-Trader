@@ -86,6 +86,12 @@ export function buildGoldSignalDiagnosticLog({
     h1,
     range_atr: numberOrNull(diagnostics.range_atr),
     range_min_atr: numberOrNull(diagnostics.min_range_atr),
-    range_max_atr: numberOrNull(diagnostics.max_range_atr)
+    range_max_atr: numberOrNull(diagnostics.max_range_atr),
+    extension_direction: boundedString(diagnostics.extension_direction, 8),
+    extension_atr: numberOrNull(diagnostics.extension_atr),
+    max_extension_atr: numberOrNull(diagnostics.max_extension_atr),
+    extension_gate_passed: typeof diagnostics.extension_gate_passed === 'boolean'
+      ? diagnostics.extension_gate_passed
+      : null
   };
 }
