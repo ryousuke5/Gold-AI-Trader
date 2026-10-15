@@ -17,6 +17,7 @@ const BASE_CONFIG = {
   maxDrawdownPct: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_DRAWDOWN_PCT || 5)),
   maxHoldBars: Math.max(1, Math.floor(Number(process.env.GOLD_BACKTEST_MAX_HOLD_BARS || 96))),
   maxEntryGapAtr: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_ENTRY_GAP_ATR || 0.50)),
+  minEffectiveRR: Math.max(0.5, Number(process.env.GOLD_BACKTEST_MIN_EFFECTIVE_RR || 1.50)),
   maxBarsWithoutSetup: 0,
   serverTimezone: process.env.GOLD_BACKTEST_SERVER_TIMEZONE || 'Europe/Nicosia'
 };
@@ -281,15 +282,37 @@ function applyRiskGate(state, equity, timestamp, config) {
   return {allowed:!reasons.length,reasons,daily,dd};
 }
 
-function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
+function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config,diagnostics}) {
   const spread=config.spreadPrice, slip=config.slippagePrice;
   const side=setup.candidate;
   const entry=side==='BUY' ? nextBar.open+spread+slip : nextBar.open-slip;
   const stop=setup.stop_loss, target=setup.take_profit;
-  if(!(entry>0 && stop>0 && target>0)) return null;
+
+  if (![entry,stop,target].every(Number.isFinite) || !(entry>0 && stop>0 && target>0)) {
+    diagnostics.rejected_invalid_geometry++;
+    return null;
+  }
+
   const stopDistance=Math.abs(entry-stop);
-  const entryGapAtr=Math.abs(entry-setup.entry_reference)/Math.max(1e-9, Number(signalBar.atr14));
-  if(!(stopDistance>0) || entryGapAtr>config.maxEntryGapAtr) return null;
+  if (!(stopDistance>0)) {
+    diagnostics.rejected_invalid_geometry++;
+    return null;
+  }
+
+  // Match the resumable engine: entry gap uses the next bar open versus the signal close,
+  // not the spread/slippage-adjusted fill.
+  const entryGapAtr=Math.abs(nextBar.open-signalBar.close)/Math.max(1e-9,Number(signalBar.atr14));
+  if (!(Number.isFinite(entryGapAtr) && entryGapAtr<=config.maxEntryGapAtr)) {
+    diagnostics.rejected_entry_gap++;
+    return null;
+  }
+
+  const effectiveRR=Math.abs(target-entry)/stopDistance;
+  if (!(Number.isFinite(effectiveRR) && effectiveRR>=config.minEffectiveRR)) {
+    diagnostics.rejected_effective_rr++;
+    return null;
+  }
+
   const riskCash=equity*(config.riskPct/100);
   const fallbackIndex=Math.max(0,Math.min(futureBars.length-1,config.maxHoldBars-1));
   let exitTime=futureBars[fallbackIndex]?.time ?? nextBar.time;
@@ -343,23 +366,24 @@ function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
     if(Number.isFinite(adverse)) maeR=Math.max(maeR,adverse);
   }
   const holdingBars=Math.max(1,exitBarIndex+1);
-  const diagnostics=setup.diagnostics||{};
+  const diagnosticsForSetup=setup.diagnostics||{};
   const trade={
     signal_time:signalBar.time, entry_time:nextBar.time, exit_time:exitTime, side,
     setup_type:setup.setup_type, entry, stop_loss:stop, take_profit:target,
     risk_cash:riskCash, net_r:netR, net_pnl:netPnl, exit_reason:exitReason,
+    effective_rr:effectiveRR,
     holding_minutes:Math.max(0,(exitTime-nextBar.time)/60),
     holding_bars:holdingBars,
     exit_bar_index:exitBarIndex,
     entry_bar_exit:exitBarIndex===0,
     stop_and_target_same_bar:stopAndTargetSameBar,
-    range_atr:diagnostics.range_atr ?? null,
-    breakout_atr:diagnostics.breakout_atr ?? null,
-    body_atr:diagnostics.body_atr ?? null,
-    close_location:diagnostics.close_location ?? null,
-    volume_ratio:diagnostics.volume_ratio ?? null,
-    extension_atr:diagnostics.extension_atr ?? null,
-    hour_utc:Number.isFinite(Number(diagnostics.hour_utc)) ? Number(diagnostics.hour_utc) : new Date(signalBar.time*1000).getUTCHours(),
+    range_atr:diagnosticsForSetup.range_atr ?? null,
+    breakout_atr:diagnosticsForSetup.breakout_atr ?? null,
+    body_atr:diagnosticsForSetup.body_atr ?? null,
+    close_location:diagnosticsForSetup.close_location ?? null,
+    volume_ratio:diagnosticsForSetup.volume_ratio ?? null,
+    extension_atr:diagnosticsForSetup.extension_atr ?? null,
+    hour_utc:Number.isFinite(Number(diagnosticsForSetup.hour_utc)) ? Number(diagnosticsForSetup.hour_utc) : new Date(signalBar.time*1000).getUTCHours(),
     entry_gap_atr:entryGapAtr,
     mfe_r:mfeR,
     mae_r:maeR
@@ -418,7 +442,7 @@ function annualSummary(trades, initialEquity) {
 }
 
 function toCsv(trades) {
-  const headers=['signal_time','entry_time','exit_time','side','setup_type','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl','exit_reason','exit_class','holding_minutes','holding_bars','entry_bar_exit','stop_and_target_same_bar','hour_utc','range_atr','breakout_atr','body_atr','close_location','volume_ratio','extension_atr','entry_gap_atr','mfe_r','mae_r'];
+  const headers=['signal_time','entry_time','exit_time','side','setup_type','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl','exit_reason','exit_class','holding_minutes','holding_bars','entry_bar_exit','stop_and_target_same_bar','hour_utc','range_atr','breakout_atr','body_atr','close_location','volume_ratio','extension_atr','entry_gap_atr','effective_rr','mfe_r','mae_r'];
   return headers.join(',')+'\n'+trades.map(t=>headers.map(h=>String(t[h]??'')).join(',')).join('\n')+'\n';
 }
 
@@ -437,20 +461,52 @@ async function runOne(rawM5, rawH1, config, strategy) {
   let equity=config.initialEquity;
   const trades=[];
   const state={day:null,dayStartEquity:equity,peak:equity};
-  const blocks={};
-  const setupWaitReasons={};
+  const diagnostics={
+    schema_version:1,
+    bars_scanned:0,
+    bars_skipped_while_in_trade:0,
+    invalid_m5_feature_bars:0,
+    invalid_h1_feature_bars:0,
+    signals_evaluated:0,
+    setup_wait_reasons:{},
+    candidates:0,
+    candidates_buy:0,
+    candidates_sell:0,
+    candidates_other:0,
+    risk_gate_checks:0,
+    risk_gate_blocked_candidates:0,
+    risk_gate_blocks:{},
+    risk_gate_passed:0,
+    rejected_next_bar_gap:0,
+    trade_attempts:0,
+    rejected_invalid_geometry:0,
+    rejected_entry_gap:0,
+    rejected_effective_rr:0,
+    trades_accepted:0
+  };
   let nextAvailable=0;
-  let signalsEvaluated=0, candidates=0, candidatesBuy=0, candidatesSell=0, rejectedEntryGap=0, rejectedNextBarGap=0;
+
   for(let i=first;i<m5Ind.length-1;i++) {
     const signal=m5Ind[i];
     if(signal.time<start) continue;
-    signalsEvaluated++;
-    if(i<nextAvailable) continue;
-    if(![signal.ema20,signal.ema50,signal.rsi14,signal.atr14].every(Number.isFinite)) continue;
+    diagnostics.bars_scanned++;
+    if(i<nextAvailable) {
+      diagnostics.bars_skipped_while_in_trade++;
+      continue;
+    }
+    if(![signal.ema20,signal.ema50,signal.rsi14,signal.atr14].every(Number.isFinite)) {
+      diagnostics.invalid_m5_feature_bars++;
+      continue;
+    }
     const signalTime = signal.time + 300;
     const h1i=latestCompletedH1Index(h1Ind,signalTime);
     const h=h1Ind[h1i];
-    if(!h || ![h.close,h.ema20,h.ema50,h.ema200,h.rsi14,h.atr14].every(Number.isFinite)) continue;
+    if(!h || ![h.close,h.ema20,h.ema50,h.ema200,h.rsi14,h.atr14].every(Number.isFinite)) {
+      diagnostics.invalid_h1_feature_bars++;
+      continue;
+    }
+
+    diagnostics.signals_evaluated++;
     const setup=buildGoldV2Setup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
@@ -458,27 +514,50 @@ async function runOne(rawM5, rawH1, config, strategy) {
     },strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
-      setupWaitReasons[reason]=(setupWaitReasons[reason]||0)+1;
+      diagnostics.setup_wait_reasons[reason]=(diagnostics.setup_wait_reasons[reason]||0)+1;
       continue;
     }
-    candidates++;
-    if(setup.candidate==='BUY') candidatesBuy++;
-    if(setup.candidate==='SELL') candidatesSell++;
+
+    diagnostics.candidates++;
+    if(setup.candidate==='BUY') diagnostics.candidates_buy++;
+    else if(setup.candidate==='SELL') diagnostics.candidates_sell++;
+    else diagnostics.candidates_other++;
+
     const gate=applyRiskGate(state,equity,signalTime,config);
-    if(!gate.allowed) { for(const r of gate.reasons) blocks[r]=(blocks[r]||0)+1; continue; }
+    diagnostics.risk_gate_checks++;
+    if(!gate.allowed) {
+      diagnostics.risk_gate_blocked_candidates++;
+      for(const reason of gate.reasons) {
+        diagnostics.risk_gate_blocks[reason]=(diagnostics.risk_gate_blocks[reason]||0)+1;
+      }
+      continue;
+    }
+    diagnostics.risk_gate_passed++;
+
     const next=m5Ind[i+1];
     if(next.time-signal.time!==300) {
-      rejectedNextBarGap++;
+      diagnostics.rejected_next_bar_gap++;
       continue;
     }
-    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind.slice(i+1),setup,equity,config});
-    if(!trade) { rejectedEntryGap++; continue; }
-    trades.push(trade); equity+=trade.net_pnl;
+
+    diagnostics.trade_attempts++;
+    const trade=simulateTrade({
+      signalBar:signal,
+      nextBar:next,
+      futureBars:m5Ind.slice(i+1),
+      setup,
+      equity,
+      config,
+      diagnostics
+    });
+    if(!trade) continue;
+    diagnostics.trades_accepted++;
+    trades.push(trade);
+    equity+=trade.net_pnl;
     const exitIndex=m5Ind.findIndex((b,idx)=>idx>i+1 && b.time>trade.exit_time);
     nextAvailable=exitIndex<0?m5Ind.length:exitIndex;
   }
-  // Fixed 3y IS / 2y OOS split anchored to the dataset's latest available bar.
-  // These windows are evaluation-only and do not alter candidate generation.
+
   const oos730 = periodSummary(trades, config.initialEquity, 730, latest);
   const oosStart = latest - 730 * 86400;
   const is1095 = periodSummary(trades, config.initialEquity, 1095, oosStart);
@@ -498,12 +577,16 @@ async function runOne(rawM5, rawH1, config, strategy) {
   };
   return {
     summary,recent365,is1095,oos730,annual:yearly,positiveYears,qualityGate,trades,
-    signals_evaluated:signalsEvaluated,
-    candidates,candidates_buy:candidatesBuy,candidates_sell:candidatesSell,
-    setup_wait_reasons:setupWaitReasons,
-    risk_gate_blocks:blocks,
-    rejected_next_bar_gap:rejectedNextBarGap,
-    rejected_entry_gap:rejectedEntryGap
+    signals_evaluated:diagnostics.signals_evaluated,
+    candidates:diagnostics.candidates,
+    candidates_buy:diagnostics.candidates_buy,
+    candidates_sell:diagnostics.candidates_sell,
+    setup_wait_reasons:diagnostics.setup_wait_reasons,
+    risk_gate_blocks:diagnostics.risk_gate_blocks,
+    rejected_next_bar_gap:diagnostics.rejected_next_bar_gap,
+    rejected_entry_gap:diagnostics.rejected_entry_gap,
+    rejected_effective_rr:diagnostics.rejected_effective_rr,
+    funnel_diagnostics:diagnostics
   };
 }
 
@@ -565,7 +648,7 @@ async function main() {
       requested_end:requestedEnd.toISOString()
     },
     prepared_data_file:dataFile||null,
-    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side'},
+    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side',maximum_entry_gap_atr:config.maxEntryGapAtr,minimum_effective_reward_risk:config.minEffectiveRR},
     strategy_parameters:strategy,
     data_quality:dataQuality(rawM5),
     cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{spread_price:costScenarios(config).find(c=>c.name===name).spreadPrice,slippage_price:costScenarios(config).find(c=>c.name===name).slippagePrice}])),
@@ -573,7 +656,8 @@ async function main() {
       summary:r.summary,recent365:r.recent365,is1095:r.is1095,oos730:r.oos730,annual:r.annual,positiveYears:r.positiveYears,qualityGate:r.qualityGate,
       signals_evaluated:r.signals_evaluated,candidates:r.candidates,candidates_buy:r.candidates_buy,candidates_sell:r.candidates_sell,
       setup_wait_reasons:r.setup_wait_reasons,risk_gate_blocks:r.risk_gate_blocks,
-      rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap
+      rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap,rejected_effective_rr:r.rejected_effective_rr,
+      funnel_diagnostics:r.funnel_diagnostics
     }])),
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
