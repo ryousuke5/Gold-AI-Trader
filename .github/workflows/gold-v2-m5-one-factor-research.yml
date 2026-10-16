@@ -201,13 +201,15 @@ jobs:
               folder = scenario_dir / window / "close_ema20_rsi"
               report_path = folder / "gold_v2_backtest_report.json"
               gap_path = folder / "gap-policy-comparison" / "gold_v2_gap_policy_comparison.json"
-              event_path = folder / "gap-policy-comparison" / "gold_v2_candidate_events_baseline_xm_account_schedule_aware.json"
-              if not report_path.exists() or not gap_path.exists() or not event_path.exists():
+              if not report_path.exists() or not gap_path.exists():
                 raise SystemExit(f"Missing output for {variant}/{window}: {folder}")
               report = json.loads(report_path.read_text(encoding="utf-8"))
               gap = json.loads(gap_path.read_text(encoding="utf-8"))
-              events = json.loads(event_path.read_text(encoding="utf-8"))
               for cost_model in ("baseline", "conservative"):
+                event_path = folder / "gap-policy-comparison" / f"gold_v2_candidate_events_{cost_model}_xm_account_schedule_aware.json"
+                if not event_path.exists():
+                  raise SystemExit(f"Missing candidate events: {event_path}")
+                events = json.loads(event_path.read_text(encoding="utf-8"))
                 cost_row = gap["costs"][cost_model]
                 aware = cost_row["xm_account_schedule_aware"]
                 summary = aware["summary"]
