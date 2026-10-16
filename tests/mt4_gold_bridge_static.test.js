@@ -33,3 +33,12 @@ test('MT4 GOLD bridge treats stale-bar rejection as terminal for that candle onl
   assert.ok(source.includes('g_retrySeconds = 30;'));
   assert.ok(!source.includes('OrderSend('));
 });
+
+test('MT4 GOLD bridge converts MODE_TICKSIZE points into quote-price units', () => {
+  assert.match(source, /double tickSizePoints\s*=\s*MarketInfo\(sym, MODE_TICKSIZE\);/);
+  assert.match(source, /double tickSize\s*=\s*tickSizePoints\s*\*\s*point;/);
+  assert.match(source, /"tick_size_points".*JsonNumber\(tickSizePoints/);
+  assert.match(source, /"tick_size".*JsonNumber\(tickSize, digits\)/);
+  assert.ok(source.includes('tickSizePrice='));
+  assert.ok(source.includes('tickSizePoints='));
+});
