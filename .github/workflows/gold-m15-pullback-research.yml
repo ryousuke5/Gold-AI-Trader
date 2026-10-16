@@ -10,6 +10,7 @@ on:
     paths:
       - 'scripts/backtest-gold-m15-trend-pullback.mjs'
       - 'scripts/backtest-gold-m15-breakout-retest.mjs'
+      - 'scripts/backtest-gold-m15-range-reversion.mjs'
       - '.github/workflows/gold-m15-pullback-research.yml'
       - 'package.json'
   workflow_dispatch:
@@ -79,8 +80,10 @@ jobs:
         run: |
           node --check scripts/backtest-gold-m15-trend-pullback.mjs
           node --check scripts/backtest-gold-m15-breakout-retest.mjs
+          node --check scripts/backtest-gold-m15-range-reversion.mjs
           node scripts/backtest-gold-m15-trend-pullback.mjs --self-test
           node scripts/backtest-gold-m15-breakout-retest.mjs --self-test
+          node scripts/backtest-gold-m15-range-reversion.mjs --self-test
       - name: Run fixed five-year and recent-730-day M15 pullback tests on validated M5 history
         env:
           GOLD_M15_PULLBACK_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
@@ -114,5 +117,22 @@ jobs:
         with:
           name: gold-m15-breakout-retest-research
           path: gold-m15-breakout-retest-output/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Run fixed five-year and recent-730-day M15 range-reversion tests
+        env:
+          GOLD_M15_RANGE_REVERSION_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_M15_RANGE_REVERSION_OUTPUT_DIR: gold-m15-range-reversion-output
+          GOLD_RANGE_REVERSION_INITIAL_EQUITY: '100000'
+          GOLD_RANGE_REVERSION_RISK_PCT: '0.25'
+          GOLD_RESEARCH_END_UTC: '2026-10-05T00:00:00Z'
+        run: node scripts/backtest-gold-m15-range-reversion.mjs
+      - name: Upload M15 range-reversion research results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-m15-range-reversion-research
+          path: gold-m15-range-reversion-output/
           retention-days: 30
           if-no-files-found: warn
