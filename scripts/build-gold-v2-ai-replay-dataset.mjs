@@ -65,15 +65,20 @@ function executableOutcome(signal,next,future,setup){
 }
 async function load(){if(!INPUT)throw Error('GOLD_BACKTEST_DATA_FILE is required for deterministic replay build');const raw=await fs.readFile(path.resolve(INPUT));const text=INPUT.endsWith('.gz')?gunzipSync(raw).toString('utf8'):raw.toString('utf8');return JSON.parse(text).map(b=>({time:Number(b.time),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close),volume:Number(b.volume)||0})).filter(b=>Number.isFinite(b.time)&&b.open>0&&b.high>=b.low&&b.high>=b.open&&b.high>=b.close&&b.low<=b.open&&b.low<=b.close).sort((a,b)=>a.time-b.time);}
 function sha256(s){return crypto.createHash('sha256').update(s).digest('hex');}
+function parseUtc(value,name){if(!value)return null;const ms=Date.parse(value);if(!Number.isFinite(ms))throw new Error(name+' must be a valid ISO 8601 timestamp');return Math.floor(ms/1000);}
 const raw=await load();if(raw.length<200000)throw Error('Insufficient data: '+raw.length);
 const m=indicators(raw),h=indicators(h1(raw));const sourceFingerprint=sha256(raw.map(b=>[b.time,b.open,b.high,b.low,b.close,b.volume].join('|')).join('\n'));
+const endEpoch=parseUtc(END,'GOLD_BACKTEST_END_UTC')??(Number(raw.at(-1).time)+300);
+const startEpoch=parseUtc(START,'GOLD_BACKTEST_START_UTC')??(endEpoch-CONFIG.lookbackDays*86400);
+if(!(startEpoch<endEpoch))throw new Error('Backtest period must satisfy START < END');
+const period={start_utc:new Date(startEpoch*1000).toISOString(),end_utc:new Date(endEpoch*1000).toISOString(),start_epoch_seconds:startEpoch,end_epoch_seconds:endEpoch,start_inclusive:true,end_exclusive:true};
 await fs.mkdir(OUT,{recursive:true});
 const file=path.join(OUT,'gold_v2_ai_replay_dataset.jsonl');
 const manifest=path.join(OUT,'manifest.json');
 const checkpoint=path.join(OUT,'build_checkpoint.json');
 const stopAfter=Math.max(0,Number(process.env.GOLD_AI_REPLAY_BUILD_STOP_AFTER_CANDIDATES||0));
 let cp=null;try{cp=JSON.parse(await fs.readFile(checkpoint,'utf8'));}catch{}
-const identity=sha256(JSON.stringify({sourceFingerprint,config:CONFIG,strategy:STRATEGY}));
+const identity=sha256(JSON.stringify({sourceFingerprint,period:{start_epoch_seconds:startEpoch,end_epoch_seconds:endEpoch},config:CONFIG,strategy:STRATEGY}));
 if(cp&&cp.identity!==identity)throw new Error('Replay build checkpoint identity mismatch; refusing unsafe resume');
 if(!cp)await fs.writeFile(file,'');
 let candidates=cp?.candidates||0,eligible=cp?.eligible||0,wins=cp?.wins||0,losses=cp?.losses||0;
@@ -81,7 +86,9 @@ let processedCandidates=0;
 const existingIds=new Set();
 if(cp){try{for(const line of (await fs.readFile(file,'utf8')).split(/\r?\n/).filter(Boolean)){try{existingIds.add(String(JSON.parse(line).candidate_id));}catch{}}}catch{}}
 for(let i=cp?.next_index??250;i<m.length-1;i++){
-  const s=m[i],st=s.time+300,hi=h1idx(h,st),hv=h[hi];
+  const s=m[i],st=s.time+300;
+  if(st<startEpoch||st>=endEpoch)continue;
+  const hi=h1idx(h,st),hv=h[hi];
   if(!hv||![s.ema20,s.ema50,s.rsi14,s.atr14,hv.close,hv.ema20,hv.ema50,hv.ema200,hv.rsi14,hv.atr14].every(Number.isFinite))continue;
   const recentM5=recent(m,i,Math.max(80,STRATEGY.rangeLookback+1));
   const features={m5:{ema20:s.ema20,ema50:s.ema50,rsi14:s.rsi14,atr14:s.atr14},h1:{close:hv.close,ema20:hv.ema20,ema50:hv.ema50,ema200:hv.ema200,rsi14:hv.rsi14,atr14:hv.atr14},recentM5};
@@ -95,7 +102,7 @@ for(let i=cp?.next_index??250;i<m.length-1;i++){
   if(processedCandidates>0&&(processedCandidates%100===0||(stopAfter>0&&processedCandidates>=stopAfter)))await fs.writeFile(checkpoint,JSON.stringify({schema_version:1,identity,next_index:i+1,candidates,eligible,wins,losses,updated_at:new Date().toISOString()},null,2));
   if(stopAfter>0&&processedCandidates>=stopAfter){await fs.writeFile(checkpoint,JSON.stringify({schema_version:1,identity,next_index:i+1,candidates,eligible,wins,losses,updated_at:new Date().toISOString(),status:'PAUSED'},null,2));console.log('PAUSED_FOR_TEST',i+1);process.exit(0);}
 }
-const meta={schema_version:1,created_at:new Date().toISOString(),source_data:{path:path.resolve(INPUT),rows:raw.length,content_sha256:sourceFingerprint},period:{start_utc:START||null,end_utc:END||null},config:CONFIG,strategy:STRATEGY,counts:{candidates,eligible,wins,losses}};
+const meta={schema_version:1,created_at:new Date().toISOString(),source_data:{path:path.resolve(INPUT),rows:raw.length,content_sha256:sourceFingerprint},period,config:CONFIG,strategy:STRATEGY,execution_policy:{m5_bar_seconds:300,entry:'next M5 bar open',max_hold_bars:CONFIG.maxHoldBars,data_gap_exit_seconds:900,data_gap_exit:'DATA_GAP at previous available bar close; existing spread/slippage rules retained'},counts:{candidates,eligible,wins,losses}};
 await fs.writeFile(manifest,JSON.stringify(meta,null,2));
 await fs.writeFile(checkpoint,JSON.stringify({schema_version:1,identity,next_index:m.length,candidates,eligible,wins,losses,updated_at:new Date().toISOString(),status:'COMPLETE'},null,2));
 console.log(JSON.stringify(meta,null,2));
