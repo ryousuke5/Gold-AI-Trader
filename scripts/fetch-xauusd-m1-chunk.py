@@ -461,7 +461,8 @@ def main() -> None:
     atomic_write_gzip_json(output_file, m5)
     digest = hashlib.sha256(output_file.read_bytes()).hexdigest()
     m1_output_file = Path(args.m1_output_file)
-    atomic_write_gzip_json(m1_output_file, dedup_m1)
+    # Use only active M1 bars; inactive zero-volume flat placeholders are not market observations.
+    atomic_write_gzip_json(m1_output_file, active_m1)
     m1_digest = hashlib.sha256(m1_output_file.read_bytes()).hexdigest()
 
     manifest = {
@@ -487,7 +488,7 @@ def main() -> None:
         "max_m5_gap_seconds": max_gap,
         "output_sha256": digest,
         "m1_output_sha256": m1_digest,
-        "m1_output_rows": len(dedup_m1),
+        "m1_output_rows": len(active_m1),
         "m1_output_file": str(m1_output_file),
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
