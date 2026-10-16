@@ -31,6 +31,7 @@ const RULES = {
   allowed_input_timeframes: ['M1 BID OHLC', 'M5 BID OHLC'],
   aggregation_quality: 'M1 input uses active-minute coverage and gap checks; M5 input requires complete contiguous M5 bars inside each M15/H1 bucket',
   same_bar_stop_and_target: 'STOP first (conservative)',
+  data_gap_policy: 'If the next observed M15 bar starts after a gap, flatten at the prior observed bar close with modeled spread/slippage, label GAP_FLAT, and do not assume any intragap price path.',
   live_orders_enabled: false
 };
 
@@ -434,16 +435,18 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
 
     const riskCash = equity * RISK_PCT / 100;
     let exitTime = null, exitPrice = null, exitReason = 'TIME_EXIT', exitIndex = i + 1;
-    let localCensor = null;
     const lastPossible = Math.min(i + 16, m15.length - 1);
     for (let j = i + 1; j <= lastPossible; j++) {
       if (j > i + 1 && m15[j].time - m15[j - 1].time !== 900) {
-        localCensor = {
-          signal_time_utc: new Date(signal.time * 1000).toISOString(),
-          prior_bar_utc: new Date(m15[j - 1].time * 1000).toISOString(),
-          gap_bar_utc: new Date(m15[j].time * 1000).toISOString(),
-          gap_seconds: m15[j].time - m15[j - 1].time
-        };
+        // Do not invent price movement through an unobserved interval. This rule
+        // assumes a pre-planned flatten at the prior observed close before the gap.
+        const prior = m15[j - 1];
+        exitTime = prior.time + 900;
+        exitIndex = j - 1;
+        exitReason = 'GAP_FLAT';
+        exitPrice = side === 'BUY'
+          ? prior.close - cost.slippage
+          : prior.close + cost.spread + cost.slippage;
         break;
       }
       const bar = m15[j];
@@ -463,12 +466,6 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
         exitPrice = side === 'BUY' ? target - cost.slippage : target + cost.spread + cost.slippage;
         break;
       }
-    }
-    if (localCensor) {
-      censoredTrades++;
-      validWindow = false;
-      censorDetail = localCensor;
-      break;
     }
     if (exitTime === null) {
       if (lastPossible < i + 16) {
@@ -533,7 +530,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
     data_range_valid: dataRangeValid,
     session_coverage: coverage,
     censored_trades: censoredTrades,
-    censor_detail: censorDetail,
+    gap_flat_trades: trades.filter(t => t.exit_reason === 'GAP_FLAT').length,
     by_side: {}
   };
   for (const side of ['BUY', 'SELL']) {
@@ -696,7 +693,7 @@ async function main() {
   md.push('', '## Data and interpretation limits', '',
     '- Source is Dukascopy BID OHLC (direct M5 history in the standalone workflow), not historical XM Ask/tick data. Costs are modeled using recent observed XM spread reference values and a conservative alternative.',
     '- M15/H1 bars are derived from contiguous source bars; the M1 path applies active-minute coverage and gap checks, while the direct M5 path rejects incomplete M15/H1 buckets.',
-    '- If an open trade crosses an invalid/missing M15 interval, the window is censored and marked invalid rather than inventing an exit. A censored window cannot pass the quality gate.',
+    '- If an open trade encounters a gap in observed M15 bars, it is closed at the prior observed bar close with modeled spread/slippage and marked GAP_FLAT; no intragap OHLC or price is fabricated. This is a conservative execution assumption, not confirmation of XM fills.',
     '- Separate 5-year and recent-730-day equity/trade-state runs share the same underlying history; the 730-day slice is not an untouched holdout for future tuning.',
     '- The metrics are research outputs only. Passing this initial gate would still require an untouched holdout and XM forward/paper execution before any consideration of live orders.', '');
   await fs.writeFile(path.join(OUTPUT_DIR, 'gold_m15_trend_pullback_summary.md'), md.join('\n'));
