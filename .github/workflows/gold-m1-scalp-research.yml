@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/fetch-xauusd-m1-chunk.py'
       - 'scripts/backtest-gold-m1-scalp.mjs'
+      - 'scripts/backtest-gold-m15-trend-pullback.mjs'
       - '.github/workflows/gold-m1-scalp-research.yml'
   workflow_dispatch:
 
@@ -52,7 +53,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 2
       matrix:
         chunk: ${{ fromJSON(needs.plan.outputs.chunks) }}
     steps:
@@ -84,7 +85,7 @@ jobs:
             --output-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz" \
             --m1-output-file "gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.json.gz" \
             --manifest-file "gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.manifest.json" \
-            --request-delay 1.5 --timeout 30 --retries 8
+            --request-delay 2.5 --timeout 30 --retries 8
           gzip -t "gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.json.gz"
       - name: Save newly downloaded M1 checkpoint
         if: always() && steps.m1cache.outputs.cache-hit != 'true'
@@ -201,5 +202,25 @@ jobs:
         with:
           name: gold-m1-scalp-research
           path: gold-m1-scalp-output/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Validate M15 trend pullback backtester
+        run: node --check scripts/backtest-gold-m15-trend-pullback.mjs
+      - name: Run M15 trend pullback unit checks
+        run: node scripts/backtest-gold-m15-trend-pullback.mjs --self-test
+      - name: Run five-year and independent recent-730d M15 pullback tests
+        env:
+          GOLD_M15_PULLBACK_DATA_FILE: gold-xauusd-data/xauusd-m1.json.gz
+          GOLD_M15_PULLBACK_OUTPUT_DIR: gold-m15-trend-pullback-output
+          GOLD_PULLBACK_INITIAL_EQUITY: '100000'
+          GOLD_PULLBACK_RISK_PCT: '0.25'
+        run: node scripts/backtest-gold-m15-trend-pullback.mjs
+      - name: Upload M15 trend pullback results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-m15-trend-pullback-research
+          path: gold-m15-trend-pullback-output/
           retention-days: 30
           if-no-files-found: warn
