@@ -42,6 +42,29 @@ test('GOLD V2 accepts a valid in-session compression breakout', () => {
   assert.equal(result.risk_reward, 2);
 });
 
+test('GOLD V2 accepts extension exactly at the configured maximum and records the metric', () => {
+  const f = baseFeatures();
+  f.m5.ema20 = 2501.0; // (2504.0 - 2501.0) / 2.0 = 1.50 ATR
+  const result = buildGoldV2Setup(f);
+  assert.equal(result.candidate, 'BUY');
+  assert.equal(result.diagnostics.extension_direction, 'UP');
+  assert.equal(result.diagnostics.extension_atr, 1.5);
+  assert.equal(result.diagnostics.max_extension_atr, 1.5);
+  assert.equal(result.diagnostics.extension_gate_passed, true);
+});
+
+test('GOLD V2 records the measured extension when the existing gate rejects an overextended setup', () => {
+  const f = baseFeatures();
+  f.m5.ema20 = 2500.0; // (2504.0 - 2500.0) / 2.0 = 2.00 ATR
+  const result = buildGoldV2Setup(f);
+  assert.equal(result.candidate, 'WAIT');
+  assert.equal(result.reason, 'extension_filter');
+  assert.equal(result.diagnostics.extension_direction, 'UP');
+  assert.equal(result.diagnostics.extension_atr, 2.0);
+  assert.equal(result.diagnostics.max_extension_atr, 1.5);
+  assert.equal(result.diagnostics.extension_gate_passed, false);
+});
+
 test('GOLD V2 rejects a weak volume expansion', () => {
   const f = baseFeatures();
   f.recentM5.at(-1).volume = 105;

@@ -3,8 +3,127 @@ import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
+import { classifyTradeExit, summarizeExitMechanisms } from '../src/trade_exit_diagnostics.js';
+import { classifyXmGoldGap, UNVERIFIED_XM_GAP_CLASSES } from '../src/xm_gold_trading_calendar.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const GAP_POLICY_LEGACY = 'legacy_prior_close';
+const GAP_POLICY_XM = 'xm_account_schedule_aware';
+const XM_MT4_GOLD_SESSION_SPEC = {
+  source: 'User-provided XM MT4 GOLD Symbol Specification screenshot, 2026-10-15',
+  quote_hours_server_time: {
+    monday_thursday: '01:00-23:59',
+    friday: '01:00-23:58',
+    saturday_sunday: 'closed'
+  },
+  trade_hours_server_time: {
+    monday_friday: '01:02-23:58',
+    saturday_sunday: 'closed'
+  },
+  daily_trade_pause_server_time: '23:58-01:02 (about 64 minutes)',
+  friday_to_monday_trade_pause_server_time: 'Friday 23:58-Monday 01:02 (about 49 hours 4 minutes)',
+  server_utc_offset: 'UTC+3 in the supplied 2026-10-15 terminal log; use Europe/Nicosia seasonal offset for historic UTC mapping',
+  note: 'Historical data bars are from Dukascopy; timestamp gap classification is approximate around M5 bar labels. Never treat undocumented feed gaps as confirmed broker closure.'
+};
+
+function resolveXmGapAtReopen({ previousBar, reopenBar, side, stop, target, spread, slippage }) {
+  const classification = classifyXmGoldGap(previousBar.time, reopenBar.time);
+  const auditBase = {
+    policy: GAP_POLICY_XM,
+    classification: classification.classification,
+    previous_bar_time: previousBar.time,
+    previous_bar_time_utc: new Date(previousBar.time * 1000).toISOString(),
+    reopen_bar_time: reopenBar.time,
+    reopen_bar_time_utc: new Date(reopenBar.time * 1000).toISOString(),
+    gap_seconds: classification.delta_seconds,
+    minutes_missing: classification.minutes_missing,
+    server_offset_hours: classification.server_offset_hours,
+    reopening_bid_open: reopenBar.open,
+    spread_price: spread,
+    slippage_price: slippage
+  };
+  const confirmedClosure =
+    classification.classification === 'scheduled_daily_maintenance' ||
+    classification.classification === 'scheduled_weekend_closure';
+
+  if (!confirmedClosure || UNVERIFIED_XM_GAP_CLASSES.has(classification.classification)) {
+    return {
+      action: 'CENSOR',
+      classification: classification.classification,
+      audit: { ...auditBase, action: 'CENSOR_UNVERIFIED_GAP' }
+    };
+  }
+
+  const askOpen = reopenBar.open + spread;
+  const stopGap = side === 'BUY' ? reopenBar.open <= stop : askOpen >= stop;
+  const targetGap = side === 'BUY' ? reopenBar.open >= target : askOpen <= target;
+
+  // Stop orders can suffer gap-through slippage: use the first observed reopening price.
+  if (stopGap) {
+    const exitPrice = side === 'BUY' ? reopenBar.open - slippage : askOpen + slippage;
+    return {
+      action: 'EXIT',
+      exitReason: 'STOP',
+      exitPrice,
+      classification: classification.classification,
+      audit: { ...auditBase, action: 'GAP_THROUGH_STOP', exit_price: exitPrice }
+    };
+  }
+
+  // A resting take-profit limit is credited no better than its target, plus modeled costs.
+  if (targetGap) {
+    const exitPrice = side === 'BUY' ? target - slippage : target + spread + slippage;
+    return {
+      action: 'EXIT',
+      exitReason: 'TARGET',
+      exitPrice,
+      classification: classification.classification,
+      audit: { ...auditBase, action: 'GAP_THROUGH_TARGET', exit_price: exitPrice }
+    };
+  }
+
+  return {
+    action: 'CARRY',
+    classification: classification.classification,
+    audit: { ...auditBase, action: 'CARRY_OVER_CONFIRMED_CLOSURE' }
+  };
+}
+
+function validateXmGapPolicyResolver() {
+  const ts = (value) => Math.floor(Date.parse(value) / 1000);
+  const previous = { time: ts('2026-07-08T20:55:00Z') };
+  const reopenTime = ts('2026-07-08T22:00:00Z');
+  const barAt = (time, open) => ({ time, open, high: open + 0.4, low: open - 0.4, close: open });
+  const common = { previousBar: previous, side: 'BUY', stop: 98, target: 102, spread: 0.5, slippage: 0.05 };
+
+  const carry = resolveXmGapAtReopen({ ...common, reopenBar: barAt(reopenTime, 100) });
+  if (carry.action !== 'CARRY' || carry.classification !== 'scheduled_daily_maintenance') {
+    throw new Error('XM GOLD daily maintenance carry-over self-test failed');
+  }
+  const gapStop = resolveXmGapAtReopen({ ...common, reopenBar: barAt(reopenTime, 97) });
+  if (gapStop.action !== 'EXIT' || gapStop.exitReason !== 'STOP' || Math.abs(gapStop.exitPrice - 96.95) > 1e-9) {
+    throw new Error('XM GOLD gap-through stop self-test failed');
+  }
+  const gapTarget = resolveXmGapAtReopen({ ...common, reopenBar: barAt(reopenTime, 103) });
+  if (gapTarget.action !== 'EXIT' || gapTarget.exitReason !== 'TARGET' || Math.abs(gapTarget.exitPrice - 101.95) > 1e-9) {
+    throw new Error('XM GOLD gap-through target self-test failed');
+  }
+  const unverified = resolveXmGapAtReopen({
+    ...common,
+    previousBar: { time: ts('2026-07-08T18:25:00Z') },
+    reopenBar: barAt(ts('2026-07-08T19:30:00Z'), 100)
+  });
+  if (unverified.action !== 'CENSOR') throw new Error('Unverified feed gap must be censored, not force-closed');
+  const weekend = resolveXmGapAtReopen({
+    ...common,
+    previousBar: { time: ts('2026-07-10T20:55:00Z') },
+    reopenBar: barAt(ts('2026-07-12T22:00:00Z'), 100)
+  });
+  if (weekend.action !== 'CARRY' || weekend.classification !== 'scheduled_weekend_closure') {
+    throw new Error('XM GOLD weekend carry-over self-test failed');
+  }
+}
 
 const BASE_CONFIG = {
   lookbackDays: Math.max(365, Number(process.env.GOLD_BACKTEST_LOOKBACK_DAYS || 1825)),
@@ -16,6 +135,7 @@ const BASE_CONFIG = {
   maxDrawdownPct: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_DRAWDOWN_PCT || 5)),
   maxHoldBars: Math.max(1, Math.floor(Number(process.env.GOLD_BACKTEST_MAX_HOLD_BARS || 96))),
   maxEntryGapAtr: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_ENTRY_GAP_ATR || 0.50)),
+  minEffectiveRR: Math.max(0.5, Number(process.env.GOLD_BACKTEST_MIN_EFFECTIVE_RR || 1.50)),
   maxBarsWithoutSetup: 0,
   serverTimezone: process.env.GOLD_BACKTEST_SERVER_TIMEZONE || 'Europe/Nicosia'
 };
@@ -105,7 +225,7 @@ function atr(bars, period) {
   return out;
 }
 
-function addIndicators(bars) {
+export function addIndicators(bars) {
   const closes = bars.map((b) => b.close);
   const e20 = ema(closes, 20), e50 = ema(closes, 50), e200 = ema(closes, 200);
   const r = rsi(closes, 14), a = atr(bars, 14);
@@ -134,7 +254,7 @@ function zonedHourStartUtc(timestampSeconds, timeZone) {
   return Math.floor((localHourAsUtc-offsetSeconds*1000)/1000);
 }
 
-function aggregateM5ToH1(m5, timeZone='UTC') {
+export function aggregateM5ToH1(m5, timeZone='UTC') {
   const buckets = new Map();
   for (const bar of m5) {
     const hour = timeZone==='UTC' ? Math.floor(bar.time/3600)*3600 : zonedHourStartUtc(bar.time,timeZone);
@@ -165,7 +285,7 @@ function normalizeDukascopy(rows) {
   ).sort((a,b)=>a.time-b.time);
 }
 
-async function loadBacktestM5FromFile(filePath) {
+export async function loadBacktestM5FromFile(filePath) {
   const resolved = path.resolve(filePath);
   const bytes = await fs.readFile(resolved);
   const raw = resolved.endsWith('.gz') ? gunzipSync(bytes).toString('utf8') : bytes.toString('utf8');
@@ -253,13 +373,13 @@ function dataQuality(bars) {
   };
 }
 
-function recentBars(bars, index, count=80) {
+export function recentBars(bars, index, count=80) {
   return bars.slice(Math.max(0,index-count+1),index+1).map((b)=>({
     time:b.time+300, open:b.open, high:b.high, low:b.low, close:b.close, volume:b.volume
   }));
 }
 
-function latestCompletedH1Index(h1, signalTime) {
+export function latestCompletedH1Index(h1, signalTime) {
   let lo=0, hi=h1.length-1, best=-1;
   while(lo<=hi) {
     const mid=Math.floor((lo+hi)/2);
@@ -280,26 +400,90 @@ function applyRiskGate(state, equity, timestamp, config) {
   return {allowed:!reasons.length,reasons,daily,dd};
 }
 
-function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
+function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config,diagnostics,ignoreEffectiveRrGate=false}) {
   const spread=config.spreadPrice, slip=config.slippagePrice;
   const side=setup.candidate;
   const entry=side==='BUY' ? nextBar.open+spread+slip : nextBar.open-slip;
   const stop=setup.stop_loss, target=setup.take_profit;
-  if(!(entry>0 && stop>0 && target>0)) return null;
+
+  if (![entry,stop,target].every(Number.isFinite) || !(entry>0 && stop>0 && target>0)) {
+    diagnostics.rejected_invalid_geometry++;
+    return null;
+  }
+
   const stopDistance=Math.abs(entry-stop);
-  if(!(stopDistance>0) || Math.abs(entry-setup.entry_reference)/Math.max(0.000001, Number(signalBar.atr14))>config.maxEntryGapAtr) return null;
+  if (!(stopDistance>0)) {
+    diagnostics.rejected_invalid_geometry++;
+    return null;
+  }
+
+  // Match the resumable engine: entry gap uses the next bar open versus the signal close,
+  // not the spread/slippage-adjusted fill.
+  const entryGapAtr=Math.abs(nextBar.open-signalBar.close)/Math.max(1e-9,Number(signalBar.atr14));
+  if (!(Number.isFinite(entryGapAtr) && entryGapAtr<=config.maxEntryGapAtr)) {
+    diagnostics.rejected_entry_gap++;
+    return null;
+  }
+
+  const effectiveRR=Math.abs(target-entry)/stopDistance;
+  if (!Number.isFinite(effectiveRR) || (!ignoreEffectiveRrGate && effectiveRR<config.minEffectiveRR)) {
+    if (!ignoreEffectiveRrGate) diagnostics.rejected_effective_rr++;
+    return null;
+  }
+
   const riskCash=equity*(config.riskPct/100);
-  let exitTime=futureBars[Math.min(futureBars.length-1,config.maxHoldBars-1)]?.time ?? nextBar.time;
-  let exitPrice=futureBars[Math.min(futureBars.length-1,config.maxHoldBars-1)]?.close ?? nextBar.close;
+  const fallbackIndex=Math.max(0,Math.min(futureBars.length-1,config.maxHoldBars-1));
+  let exitTime=futureBars[fallbackIndex]?.time ?? nextBar.time;
+  let exitPrice=futureBars[fallbackIndex]?.close ?? nextBar.close;
   let exitReason='TIME';
   const scan=futureBars.slice(0,config.maxHoldBars);
-  let previousBar = null;
-  for(const bar of scan) {
-    if(previousBar && bar.time - previousBar.time > 900) {
-      exitTime=previousBar.time;
-      exitReason='DATA_GAP';
-      exitPrice=side==='BUY' ? previousBar.close-slip : previousBar.close+spread+slip;
-      break;
+  let exitBarIndex=Math.max(0,scan.length-1);
+  let previousBar=null;
+  let stopAndTargetSameBar=false;
+  let gapExitDetail=null;
+  const gapAudit=[];
+
+  for(let index=0;index<scan.length;index++) {
+    const bar=scan[index];
+    if(previousBar && bar.time-previousBar.time>900) {
+      if (config.gapPolicy === GAP_POLICY_XM) {
+        const resolution = resolveXmGapAtReopen({
+          previousBar, reopenBar: bar, side, stop, target, spread, slippage: slip
+        });
+        gapAudit.push(resolution.audit);
+        diagnostics.gap_classifications[resolution.classification] =
+          (diagnostics.gap_classifications[resolution.classification] || 0) + 1;
+        if (resolution.action === 'CENSOR') {
+          diagnostics.trades_censored_unverified_gap++;
+          return { censored: true, censor_detail: resolution.audit };
+        }
+        if (resolution.action === 'EXIT') {
+          exitTime=bar.time;
+          exitReason=resolution.exitReason;
+          exitPrice=resolution.exitPrice;
+          exitBarIndex=index;
+          gapExitDetail=resolution.audit;
+          break;
+        }
+        // A confirmed XM maintenance/weekend closure: remain in the position.
+        // Continue below to test the first reopening candle's observed OHLC.
+      } else {
+        const classification = classifyXmGoldGap(previousBar.time, bar.time);
+        gapAudit.push({
+          policy: GAP_POLICY_LEGACY,
+          classification: classification.classification,
+          previous_bar_time_utc: new Date(previousBar.time * 1000).toISOString(),
+          reopen_bar_time_utc: new Date(bar.time * 1000).toISOString(),
+          action: 'LEGACY_FORCE_CLOSE_AT_PREVIOUS_CLOSE'
+        });
+        diagnostics.gap_classifications[classification.classification] =
+          (diagnostics.gap_classifications[classification.classification] || 0) + 1;
+        exitTime=previousBar.time;
+        exitReason='DATA_GAP';
+        exitPrice=side==='BUY' ? previousBar.close-slip : previousBar.close+spread+slip;
+        exitBarIndex=index-1;
+        break;
+      }
     }
     const stopHit=side==='BUY' ? bar.low<=stop : bar.high+spread>=stop;
     const targetHit=side==='BUY' ? bar.high>=target : bar.low+spread<=target;
@@ -307,29 +491,60 @@ function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
       exitTime=bar.time;
       exitReason='STOP';
       exitPrice=side==='BUY' ? stop-slip : stop+spread+slip;
+      exitBarIndex=index;
+      stopAndTargetSameBar=targetHit;
       break;
     }
     if(targetHit) {
       exitTime=bar.time;
       exitReason='TARGET';
       exitPrice=side==='BUY' ? target-slip : target+spread+slip;
+      exitBarIndex=index;
       break;
     }
     previousBar=bar;
   }
+
   const pnlPrice=side==='BUY' ? exitPrice-entry : entry-exitPrice;
   const netR=pnlPrice/stopDistance;
   const netPnl=riskCash*netR;
-  const grossR=side==='BUY' ? (exitPrice+ (side==='BUY'?0:0) - nextBar.open)/stopDistance : (nextBar.open-exitPrice)/stopDistance;
-  return {
+  const inspectedBars=scan.slice(0,Math.min(scan.length,Math.max(0,exitBarIndex)+1));
+  let mfeR=0, maeR=0;
+  for(const bar of inspectedBars) {
+    const favorablePrice=side==='BUY' ? bar.high : bar.low+spread;
+    const adversePrice=side==='BUY' ? bar.low : bar.high+spread;
+    const favorable=side==='BUY' ? (favorablePrice-entry)/stopDistance : (entry-favorablePrice)/stopDistance;
+    const adverse=side==='BUY' ? (entry-adversePrice)/stopDistance : (adversePrice-entry)/stopDistance;
+    if(Number.isFinite(favorable)) mfeR=Math.max(mfeR,favorable);
+    if(Number.isFinite(adverse)) maeR=Math.max(maeR,adverse);
+  }
+  const holdingBars=Math.max(1,exitBarIndex+1);
+  const diagnosticsForSetup=setup.diagnostics||{};
+  const trade={
     signal_time:signalBar.time, entry_time:nextBar.time, exit_time:exitTime, side,
     setup_type:setup.setup_type, entry, stop_loss:stop, take_profit:target,
     risk_cash:riskCash, net_r:netR, net_pnl:netPnl, exit_reason:exitReason,
+    effective_rr:effectiveRR,
     holding_minutes:Math.max(0,(exitTime-nextBar.time)/60),
-    range_atr:setup.diagnostics?.range_atr ?? null,
-    breakout_atr:setup.diagnostics?.breakout_atr ?? null,
-    volume_ratio:setup.diagnostics?.volume_ratio ?? null
+    holding_bars:holdingBars,
+    exit_bar_index:exitBarIndex,
+    entry_bar_exit:exitBarIndex===0,
+    stop_and_target_same_bar:stopAndTargetSameBar,
+    range_atr:diagnosticsForSetup.range_atr ?? null,
+    breakout_atr:diagnosticsForSetup.breakout_atr ?? null,
+    body_atr:diagnosticsForSetup.body_atr ?? null,
+    close_location:diagnosticsForSetup.close_location ?? null,
+    volume_ratio:diagnosticsForSetup.volume_ratio ?? null,
+    extension_atr:diagnosticsForSetup.extension_atr ?? null,
+    hour_utc:Number.isFinite(Number(diagnosticsForSetup.hour_utc)) ? Number(diagnosticsForSetup.hour_utc) : new Date(signalBar.time*1000).getUTCHours(),
+    entry_gap_atr:entryGapAtr,
+    mfe_r:mfeR,
+    mae_r:maeR,
+    gap_audit:gapAudit,
+    gap_exit:gapExitDetail
   };
+  trade.exit_class=classifyTradeExit(trade);
+  return trade;
 }
 
 function summarize(trades, initialEquity) {
@@ -357,7 +572,8 @@ function summarize(trades, initialEquity) {
     expectancy_R:expectancyR, total_R:totalR,
     max_drawdown:maxDD, max_drawdown_pct:maxDDPct,
     avg_holding_minutes:trades.length?holds/trades.length:0,
-    stop_exits:stop,target_exits:target, by_side:bySide
+    stop_exits:stop,target_exits:target, by_side:bySide,
+    exit_mechanisms:summarizeExitMechanisms(trades)
   };
 }
 
@@ -381,7 +597,7 @@ function annualSummary(trades, initialEquity) {
 }
 
 function toCsv(trades) {
-  const headers=['signal_time','entry_time','exit_time','side','setup_type','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl','exit_reason','holding_minutes','range_atr','breakout_atr','volume_ratio'];
+  const headers=['signal_time','entry_time','exit_time','side','setup_type','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl','exit_reason','exit_class','holding_minutes','holding_bars','entry_bar_exit','stop_and_target_same_bar','hour_utc','range_atr','breakout_atr','body_atr','close_location','volume_ratio','extension_atr','entry_gap_atr','effective_rr','mfe_r','mae_r'];
   return headers.join(',')+'\n'+trades.map(t=>headers.map(h=>String(t[h]??'')).join(',')).join('\n')+'\n';
 }
 
@@ -389,6 +605,62 @@ function score(report) {
   const s=report.summary;
   if(!s.trades) return -Infinity;
   return (s.profit_factor-1)*10 + s.expectancy_R*10 - s.max_drawdown_pct*0.5;
+}
+
+function buildForwardFollowThrough({ bars, startIndex, side, entry, signalAtr, stopDistance, stop, target, spread }) {
+  const horizons = [3, 6, 12, 18, 24];
+  const result = {};
+  for (const horizonBars of horizons) {
+    const horizonMinutes = horizonBars * 5;
+    const window = bars.slice(startIndex, startIndex + horizonBars);
+    const observed = [];
+    let previous = null;
+    for (const bar of window) {
+      if (previous && bar.time - previous.time !== 300) break;
+      observed.push(bar);
+      previous = bar;
+    }
+    const complete = observed.length === horizonBars;
+    if (!observed.length) {
+      result[String(horizonMinutes)] = { horizon_minutes: horizonMinutes, horizon_bars: horizonBars, complete: false, observed_bars: 0, reason: 'NO_FORWARD_BARS' };
+      continue;
+    }
+    const lowest = Math.min(...observed.map(b => b.low));
+    const highest = Math.max(...observed.map(b => b.high));
+    const last = observed.at(-1);
+    const favourableMove = side === 'SELL' ? entry - (lowest + spread) : highest - entry;
+    const adverseMove = side === 'SELL' ? highest + spread - entry : entry - lowest;
+    const closeMove = side === 'SELL' ? entry - (last.close + spread) : last.close - entry;
+    let firstBarrier = null;
+    for (const bar of observed) {
+      const stopHit = side === 'SELL' ? bar.high + spread >= stop : bar.low <= stop;
+      const targetHit = side === 'SELL' ? bar.low + spread <= target : bar.high >= target;
+      if (stopHit) {
+        firstBarrier = { reason: 'STOP', time: bar.time, time_utc: new Date(bar.time * 1000).toISOString(), both_touched: targetHit };
+        break;
+      }
+      if (targetHit) {
+        firstBarrier = { reason: 'TARGET', time: bar.time, time_utc: new Date(bar.time * 1000).toISOString(), both_touched: false };
+        break;
+      }
+    }
+    result[String(horizonMinutes)] = {
+      horizon_minutes: horizonMinutes,
+      horizon_bars: horizonBars,
+      complete,
+      observed_bars: observed.length,
+      close_time_utc: new Date(last.time * 1000).toISOString(),
+      favourable_excursion_atr: Math.max(0, favourableMove / Math.max(1e-9, signalAtr)),
+      adverse_excursion_atr: Math.max(0, adverseMove / Math.max(1e-9, signalAtr)),
+      close_move_atr: closeMove / Math.max(1e-9, signalAtr),
+      favourable_excursion_R: Math.max(0, favourableMove / Math.max(1e-9, stopDistance)),
+      adverse_excursion_R: Math.max(0, adverseMove / Math.max(1e-9, stopDistance)),
+      close_move_R: closeMove / Math.max(1e-9, stopDistance),
+      first_barrier: firstBarrier,
+      note: 'Fixed-horizon OHLC path study; does not stop the measurement at a simulated stop/target. Not tradable PnL.'
+    };
+  }
+  return result;
 }
 
 async function runOne(rawM5, rawH1, config, strategy) {
@@ -399,21 +671,57 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const first=Math.max(250,80);
   let equity=config.initialEquity;
   const trades=[];
+  const candidateEvents=[];
   const state={day:null,dayStartEquity:equity,peak:equity};
-  const blocks={};
-  const setupWaitReasons={};
+  const diagnostics={
+    schema_version:1,
+    bars_scanned:0,
+    bars_skipped_while_in_trade:0,
+    invalid_m5_feature_bars:0,
+    invalid_h1_feature_bars:0,
+    signals_evaluated:0,
+    setup_wait_reasons:{},
+    candidates:0,
+    candidates_buy:0,
+    candidates_sell:0,
+    candidates_other:0,
+    risk_gate_checks:0,
+    risk_gate_blocked_candidates:0,
+    risk_gate_blocks:{},
+    risk_gate_passed:0,
+    rejected_next_bar_gap:0,
+    trade_attempts:0,
+    rejected_invalid_geometry:0,
+    rejected_entry_gap:0,
+    rejected_effective_rr:0,
+    trades_accepted:0,
+    trades_censored_unverified_gap:0,
+    gap_classifications:{}
+  };
   let nextAvailable=0;
-  let signalsEvaluated=0, candidates=0, candidatesBuy=0, candidatesSell=0, rejectedEntryGap=0, rejectedNextBarGap=0;
+  let censorDetail=null;
+
   for(let i=first;i<m5Ind.length-1;i++) {
     const signal=m5Ind[i];
     if(signal.time<start) continue;
-    signalsEvaluated++;
-    if(i<nextAvailable) continue;
-    if(![signal.ema20,signal.ema50,signal.rsi14,signal.atr14].every(Number.isFinite)) continue;
+    diagnostics.bars_scanned++;
+    if(i<nextAvailable) {
+      diagnostics.bars_skipped_while_in_trade++;
+      continue;
+    }
+    if(![signal.ema20,signal.ema50,signal.rsi14,signal.atr14].every(Number.isFinite)) {
+      diagnostics.invalid_m5_feature_bars++;
+      continue;
+    }
     const signalTime = signal.time + 300;
     const h1i=latestCompletedH1Index(h1Ind,signalTime);
     const h=h1Ind[h1i];
-    if(!h || ![h.close,h.ema20,h.ema50,h.ema200,h.rsi14,h.atr14].every(Number.isFinite)) continue;
+    if(!h || ![h.close,h.ema20,h.ema50,h.ema200,h.rsi14,h.atr14].every(Number.isFinite)) {
+      diagnostics.invalid_h1_feature_bars++;
+      continue;
+    }
+
+    diagnostics.signals_evaluated++;
     const setup=buildGoldV2Setup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
@@ -421,27 +729,197 @@ async function runOne(rawM5, rawH1, config, strategy) {
     },strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
-      setupWaitReasons[reason]=(setupWaitReasons[reason]||0)+1;
+      diagnostics.setup_wait_reasons[reason]=(diagnostics.setup_wait_reasons[reason]||0)+1;
       continue;
     }
-    candidates++;
-    if(setup.candidate==='BUY') candidatesBuy++;
-    if(setup.candidate==='SELL') candidatesSell++;
+
+    diagnostics.candidates++;
+    if(setup.candidate==='BUY') diagnostics.candidates_buy++;
+    else if(setup.candidate==='SELL') diagnostics.candidates_sell++;
+    else diagnostics.candidates_other++;
+
+    const signalDate = new Date(signal.time * 1000);
+    const candidateEvent = {
+      signal_time: signal.time,
+      signal_time_utc: signalDate.toISOString(),
+      year_utc: signalDate.toISOString().slice(0, 4),
+      hour_utc: signalDate.getUTCHours(),
+      side: setup.candidate,
+      trend: setup.trend ?? null,
+      setup_type: setup.setup_type ?? null,
+      setup_reason: setup.reason ?? null,
+      signal_bar: {
+        open: signal.open, high: signal.high, low: signal.low, close: signal.close,
+        volume: signal.volume, atr14: signal.atr14, rsi14: signal.rsi14,
+        ema20: signal.ema20, ema50: signal.ema50,
+        close_vs_ema20_atr: (signal.close - signal.ema20) / signal.atr14
+      },
+      h1_at_signal: {
+        completed_bar_time: h.time,
+        close: h.close, ema20: h.ema20, ema50: h.ema50, ema200: h.ema200,
+        rsi14: h.rsi14, atr14: h.atr14,
+        close_vs_ema20_atr: (h.close - h.ema20) / h.atr14,
+        ema20_vs_ema50_atr: (h.ema20 - h.ema50) / h.atr14,
+        ema50_vs_ema200_atr: (h.ema50 - h.ema200) / h.atr14,
+        strict_bull_stack: h.close > h.ema20 && h.ema20 > h.ema50 && h.ema50 > h.ema200,
+        strict_bear_stack: h.close < h.ema20 && h.ema20 < h.ema50 && h.ema50 < h.ema200
+      },
+      setup_levels: {
+        reference_entry: setup.entry_reference ?? null,
+        stop_loss: setup.stop_loss ?? null,
+        take_profit: setup.take_profit ?? null,
+        nominal_rr: setup.risk_reward ?? null
+      },
+      setup_diagnostics: setup.diagnostics ?? {},
+      risk_gate: null,
+      entry_metrics: null,
+      admission_decision: 'PENDING',
+      actual_outcome: null,
+      counterfactual_rr_only_outcome: null,
+      counterfactual_note: null
+    };
+    candidateEvents.push(candidateEvent);
+
     const gate=applyRiskGate(state,equity,signalTime,config);
-    if(!gate.allowed) { for(const r of gate.reasons) blocks[r]=(blocks[r]||0)+1; continue; }
+    diagnostics.risk_gate_checks++;
+    if(!gate.allowed) {
+      candidateEvent.risk_gate = { allowed: false, reasons: gate.reasons };
+      candidateEvent.admission_decision = 'RISK_GATE_BLOCKED';
+      diagnostics.risk_gate_blocked_candidates++;
+      for(const reason of gate.reasons) {
+        diagnostics.risk_gate_blocks[reason]=(diagnostics.risk_gate_blocks[reason]||0)+1;
+      }
+      continue;
+    }
+    candidateEvent.risk_gate = { allowed: true, reasons: [] };
+    diagnostics.risk_gate_passed++;
+
     const next=m5Ind[i+1];
     if(next.time-signal.time!==300) {
-      rejectedNextBarGap++;
+      candidateEvent.entry_metrics = { next_bar_time: next.time, gap_seconds: next.time - signal.time };
+      candidateEvent.admission_decision = 'NEXT_BAR_DATA_GAP';
+      diagnostics.rejected_next_bar_gap++;
       continue;
     }
-    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind.slice(i+1),setup,equity,config});
-    if(!trade) { rejectedEntryGap++; continue; }
-    trades.push(trade); equity+=trade.net_pnl;
+
+    diagnostics.trade_attempts++;
+    const modeledEntry=setup.candidate==='BUY'
+      ? next.open+config.spreadPrice+config.slippagePrice
+      : next.open-config.slippagePrice;
+    const stopDistance=Math.abs(modeledEntry-setup.stop_loss);
+    const entryGapAtr=Math.abs(next.open-signal.close)/Math.max(1e-9,Number(signal.atr14));
+    const effectiveRR=stopDistance>0 ? Math.abs(setup.take_profit-modeledEntry)/stopDistance : null;
+    const validGeometry=[modeledEntry,setup.stop_loss,setup.take_profit].every(Number.isFinite)
+      && modeledEntry>0 && setup.stop_loss>0 && setup.take_profit>0 && stopDistance>0;
+    let pretradeRejection='ELIGIBLE';
+    if(!validGeometry) pretradeRejection='INVALID_GEOMETRY';
+    else if(!(Number.isFinite(entryGapAtr) && entryGapAtr<=config.maxEntryGapAtr)) pretradeRejection='ENTRY_GAP';
+    else if(!(Number.isFinite(effectiveRR) && effectiveRR>=config.minEffectiveRR)) pretradeRejection='EFFECTIVE_RR';
+    candidateEvent.entry_metrics = {
+      next_bar_time: next.time,
+      next_bar_time_utc: new Date(next.time*1000).toISOString(),
+      next_bar_open: next.open,
+      modeled_entry: modeledEntry,
+      stop_distance: stopDistance,
+      entry_gap_atr: entryGapAtr,
+      effective_rr: effectiveRR,
+      effective_rr_floor: config.minEffectiveRR,
+      max_entry_gap_atr: config.maxEntryGapAtr,
+      pretrade_rejection: pretradeRejection,
+      margin_to_rr_floor: Number.isFinite(effectiveRR) ? effectiveRR-config.minEffectiveRR : null
+    };
+    candidateEvent.forward_followthrough = buildForwardFollowThrough({
+      bars: m5Ind,
+      startIndex: i+1,
+      side: setup.candidate,
+      entry: modeledEntry,
+      signalAtr: signal.atr14,
+      stopDistance,
+      stop: setup.stop_loss,
+      target: setup.take_profit,
+      spread: config.spreadPrice
+    });
+
+    // simulateTrade inspects at most maxHoldBars. Avoid copying the entire remaining five-year array for every accepted candidate; output is unchanged.
+    const future=m5Ind.slice(i+1, i+1+config.maxHoldBars);
+    const trade=simulateTrade({
+      signalBar:signal,
+      nextBar:next,
+      futureBars:future,
+      setup,
+      equity,
+      config,
+      diagnostics
+    });
+    if (trade?.censored) {
+      candidateEvent.admission_decision = 'CENSORED_UNVERIFIED_GAP';
+      candidateEvent.actual_outcome = { censored: true, censor_detail: trade.censor_detail };
+      censorDetail = trade.censor_detail;
+      break;
+    }
+    if(!trade) {
+      if(pretradeRejection==='EFFECTIVE_RR') {
+        const shadowDiagnostics={rejected_invalid_geometry:0,rejected_entry_gap:0,rejected_effective_rr:0,trades_censored_unverified_gap:0,gap_classifications:{}};
+        const shadow=simulateTrade({
+          signalBar:signal,
+          nextBar:next,
+          futureBars:future,
+          setup,
+          equity,
+          config,
+          diagnostics:shadowDiagnostics,
+          ignoreEffectiveRrGate:true
+        });
+        candidateEvent.admission_decision = 'REJECTED_EFFECTIVE_RR';
+        candidateEvent.counterfactual_note = 'Research-only isolated hypothetical outcome bypassing only the effective-RR floor. Excluded from portfolio statistics; hypothetical opportunities can overlap.';
+        if (shadow?.censored) {
+          candidateEvent.counterfactual_note += ' The shadow path crossed an unverified data gap and was censored; no fabricated exit/PnL is reported.';
+        } else if(shadow) {
+          candidateEvent.counterfactual_rr_only_outcome = {
+            entry_time: shadow.entry_time,
+            exit_time: shadow.exit_time,
+            exit_time_utc: new Date(shadow.exit_time*1000).toISOString(),
+            exit_reason: shadow.exit_reason,
+            net_r: shadow.net_r,
+            effective_rr: shadow.effective_rr,
+            mfe_r: shadow.mfe_r,
+            mae_r: shadow.mae_r,
+            holding_minutes: shadow.holding_minutes,
+            stop_and_target_same_bar: shadow.stop_and_target_same_bar
+          };
+        } else {
+          candidateEvent.counterfactual_note += ' The shadow simulation also failed entry geometry or gap validation.';
+        }
+      } else {
+        candidateEvent.admission_decision = pretradeRejection === 'ELIGIBLE' ? 'SIMULATION_REJECTED_OTHER' : 'REJECTED_' + pretradeRejection;
+      }
+      continue;
+    }
+    candidateEvent.admission_decision = 'ACCEPTED';
+    candidateEvent.actual_outcome = {
+      entry_time: trade.entry_time,
+      entry_time_utc: new Date(trade.entry_time*1000).toISOString(),
+      exit_time: trade.exit_time,
+      exit_time_utc: new Date(trade.exit_time*1000).toISOString(),
+      exit_reason: trade.exit_reason,
+      exit_class: trade.exit_class,
+      net_r: trade.net_r,
+      net_pnl: trade.net_pnl,
+      effective_rr: trade.effective_rr,
+      mfe_r: trade.mfe_r,
+      mae_r: trade.mae_r,
+      holding_minutes: trade.holding_minutes,
+      stop_and_target_same_bar: trade.stop_and_target_same_bar,
+      gap_exit: trade.gap_exit ?? null,
+      gap_audit: trade.gap_audit ?? []
+    };
+    diagnostics.trades_accepted++;
+    trades.push(trade);
+    equity+=trade.net_pnl;
     const exitIndex=m5Ind.findIndex((b,idx)=>idx>i+1 && b.time>trade.exit_time);
     nextAvailable=exitIndex<0?m5Ind.length:exitIndex;
   }
-  // Fixed 3y IS / 2y OOS split anchored to the dataset's latest available bar.
-  // These windows are evaluation-only and do not alter candidate generation.
+
   const oos730 = periodSummary(trades, config.initialEquity, 730, latest);
   const oosStart = latest - 730 * 86400;
   const is1095 = periodSummary(trades, config.initialEquity, 1095, oosStart);
@@ -457,16 +935,23 @@ async function runOne(rawM5, rawH1, config, strategy) {
     minimum_recent365_trades: 8,
     minimum_recent365_profit_factor: 1.00,
     minimum_positive_years: 3,
-    passed: Boolean(summary.trades >= 30 && summary.profit_factor >= 1.15 && summary.expectancy_R >= 0.05 && summary.max_drawdown_pct <= 5 && recent365.trades >= 8 && recent365.profit_factor >= 1.00 && positiveYears >= 3)
+    passed: Boolean(!censorDetail && summary.trades >= 30 && summary.profit_factor >= 1.15 && summary.expectancy_R >= 0.05 && summary.max_drawdown_pct <= 5 && recent365.trades >= 8 && recent365.profit_factor >= 1.00 && positiveYears >= 3)
   };
   return {
-    summary,recent365,is1095,oos730,annual:yearly,positiveYears,qualityGate,trades,
-    signals_evaluated:signalsEvaluated,
-    candidates,candidates_buy:candidatesBuy,candidates_sell:candidatesSell,
-    setup_wait_reasons:setupWaitReasons,
-    risk_gate_blocks:blocks,
-    rejected_next_bar_gap:rejectedNextBarGap,
-    rejected_entry_gap:rejectedEntryGap
+    summary,recent365,is1095,oos730,annual:yearly,positiveYears,qualityGate,trades,candidateEvents,
+    signals_evaluated:diagnostics.signals_evaluated,
+    candidates:diagnostics.candidates,
+    candidates_buy:diagnostics.candidates_buy,
+    candidates_sell:diagnostics.candidates_sell,
+    setup_wait_reasons:diagnostics.setup_wait_reasons,
+    risk_gate_blocks:diagnostics.risk_gate_blocks,
+    rejected_next_bar_gap:diagnostics.rejected_next_bar_gap,
+    rejected_entry_gap:diagnostics.rejected_entry_gap,
+    rejected_effective_rr:diagnostics.rejected_effective_rr,
+    funnel_diagnostics:diagnostics,
+    censored:Boolean(censorDetail),
+    censor_detail:censorDetail,
+    data_completeness:censorDetail ? 'CENSORED_UNVERIFIED_GAP' : 'NO_UNVERIFIED_GAPS_ENCOUNTERED_DURING_SIMULATED_TRADES'
   };
 }
 
@@ -489,6 +974,7 @@ function costScenarios(config) {
 }
 
 async function main() {
+  validateXmGapPolicyResolver();
   const args=parseArgs();
   const lookbackDays=Math.max(365,Number(args.get('lookback-days')||BASE_CONFIG.lookbackDays));
   const requestedEnd=new Date(), requestedStart=new Date(requestedEnd.getTime()-lookbackDays*86400000);
@@ -507,12 +993,116 @@ async function main() {
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
   const strategy=JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
+  const scheduleAwareResults={};
   for(const cost of costScenarios(config)) {
-    const runConfig={...config,...cost};
-    const out=await runOne(rawM5,rawH1,runConfig,strategy);
-    results[cost.name]=out;
-    console.log(cost.name, out.summary);
+    const legacyConfig={...config,...cost,gapPolicy:GAP_POLICY_LEGACY};
+    const legacyOut=await runOne(rawM5,rawH1,legacyConfig,strategy);
+    results[cost.name]=legacyOut;
+    const awareConfig={...config,...cost,gapPolicy:GAP_POLICY_XM};
+    const awareOut=await runOne(rawM5,rawH1,awareConfig,strategy);
+    scheduleAwareResults[cost.name]=awareOut;
+    console.log(cost.name, legacyOut.summary);
+    console.log(cost.name + '_xm_account_schedule_aware', {
+      ...awareOut.summary,
+      censored: awareOut.censored,
+      censor_detail: awareOut.censor_detail
+    });
   }
+
+  function comparisonForCost(name, legacyOut, awareOut) {
+    const keyOf = (trade) => String(trade.signal_time) + '|' + String(trade.side);
+    const legacyByKey = new Map(legacyOut.trades.map((trade) => [keyOf(trade), trade]));
+    const awareByKey = new Map(awareOut.trades.map((trade) => [keyOf(trade), trade]));
+    const allKeys = [...new Set([...legacyByKey.keys(), ...awareByKey.keys()])].sort();
+    const tradeRows = allKeys.map((key) => {
+      const legacy = legacyByKey.get(key) || null;
+      const aware = awareByKey.get(key) || null;
+      return {
+        key,
+        legacy: legacy ? {
+          side: legacy.side,
+          signal_time_utc: new Date(legacy.signal_time * 1000).toISOString(),
+          entry_time_utc: new Date(legacy.entry_time * 1000).toISOString(),
+          exit_time_utc: new Date(legacy.exit_time * 1000).toISOString(),
+          exit_reason: legacy.exit_reason,
+          net_r: legacy.net_r,
+          net_pnl: legacy.net_pnl
+        } : null,
+        xm_account_schedule_aware: aware ? {
+          side: aware.side,
+          signal_time_utc: new Date(aware.signal_time * 1000).toISOString(),
+          entry_time_utc: new Date(aware.entry_time * 1000).toISOString(),
+          exit_time_utc: new Date(aware.exit_time * 1000).toISOString(),
+          exit_reason: aware.exit_reason,
+          net_r: aware.net_r,
+          net_pnl: aware.net_pnl,
+          gap_exit: aware.gap_exit
+        } : null
+      };
+    });
+    const comparable = !awareOut.censored;
+    const deltas = comparable ? {
+      trades: awareOut.summary.trades - legacyOut.summary.trades,
+      net_profit: awareOut.summary.net_profit - legacyOut.summary.net_profit,
+      return_pct: awareOut.summary.return_pct - legacyOut.summary.return_pct,
+      profit_factor: awareOut.summary.profit_factor - legacyOut.summary.profit_factor,
+      expectancy_R: awareOut.summary.expectancy_R - legacyOut.summary.expectancy_R,
+      total_R: awareOut.summary.total_R - legacyOut.summary.total_R,
+      max_drawdown_pct: awareOut.summary.max_drawdown_pct - legacyOut.summary.max_drawdown_pct
+    } : null;
+    return {
+      costs: name,
+      comparison_valid: comparable,
+      invalidation_reason: awareOut.censor_detail ? 'The schedule-aware portfolio path encountered an unverified data gap; metrics are partial and must not be compared as five-year portfolio performance.' : null,
+      legacy: {
+        gap_policy: GAP_POLICY_LEGACY,
+        summary: legacyOut.summary,
+        quality_gate: legacyOut.qualityGate,
+        censored: legacyOut.censored,
+        data_completeness: legacyOut.data_completeness
+      },
+      xm_account_schedule_aware: {
+        gap_policy: GAP_POLICY_XM,
+        summary: awareOut.summary,
+        quality_gate: awareOut.qualityGate,
+        censored: awareOut.censored,
+        censor_detail: awareOut.censor_detail,
+        data_completeness: awareOut.data_completeness
+      },
+      deltas,
+      trade_comparison: {
+        legacy_trade_count: legacyOut.trades.length,
+        xm_account_schedule_aware_trade_count: awareOut.trades.length,
+        matched_trade_keys: allKeys.filter((key) => legacyByKey.has(key) && awareByKey.has(key)).length,
+        legacy_only_trade_keys: allKeys.filter((key) => legacyByKey.has(key) && !awareByKey.has(key)),
+        xm_account_schedule_aware_only_trade_keys: allKeys.filter((key) => !legacyByKey.has(key) && awareByKey.has(key)),
+        rows: tradeRows
+      }
+    };
+  }
+
+  const gapPolicyComparison = {
+    schema_version: 1,
+    generated_at: new Date().toISOString(),
+    status: 'RESEARCH_ONLY',
+    instrument: 'XAUUSD / GOLD on XM MT4 regular GOLD session',
+    session_specification: XM_MT4_GOLD_SESSION_SPEC,
+    dataset: {
+      source: 'Dukascopy XAUUSD M5; identical prepared input for both policies',
+      first_bar_utc: new Date(rawM5[0].time * 1000).toISOString(),
+      last_bar_utc: new Date(rawM5[rawM5.length - 1].time * 1000).toISOString(),
+      bars: rawM5.length
+    },
+    method: {
+      legacy: 'At any observed timestamp gap over 15 minutes, force close at the previous observed candle close, labelled DATA_GAP.',
+      xm_account_schedule_aware: 'Carry through only confirmed scheduled daily maintenance and Friday-to-Sunday closures; at reopen, apply stop gap-through at the first observed open plus modeled costs, credit target only at the target plus modeled costs, and continue checking the reopening candle when neither level is crossed. Stop the portfolio run at the first unverified gap and mark its metrics invalid/partial.',
+      other_settings: 'Strategy rules, entry filter, SL/TP geometry, RR admission floor, initial equity, risk, spread, slippage, maximum observed-bar holding count, and data are unchanged.'
+    },
+    costs: Object.fromEntries(costScenarios(config).map((cost) => [
+      cost.name,
+      comparisonForCost(cost.name, results[cost.name], scheduleAwareResults[cost.name])
+    ]))
+  };
   const report={
     strategy:'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
     fundamental_backtest_status:'NOT_RUN',
@@ -528,7 +1118,8 @@ async function main() {
       requested_end:requestedEnd.toISOString()
     },
     prepared_data_file:dataFile||null,
-    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side'},
+    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side',maximum_entry_gap_atr:config.maxEntryGapAtr,minimum_effective_reward_risk:config.minEffectiveRR,gap_policy:GAP_POLICY_LEGACY,alternate_gap_policy:GAP_POLICY_XM,account_session_specification:XM_MT4_GOLD_SESSION_SPEC},
+    gap_policy_comparison_file:'gap-policy-comparison/gold_v2_gap_policy_comparison.json',
     strategy_parameters:strategy,
     data_quality:dataQuality(rawM5),
     cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{spread_price:costScenarios(config).find(c=>c.name===name).spreadPrice,slippage_price:costScenarios(config).find(c=>c.name===name).slippagePrice}])),
@@ -536,13 +1127,77 @@ async function main() {
       summary:r.summary,recent365:r.recent365,is1095:r.is1095,oos730:r.oos730,annual:r.annual,positiveYears:r.positiveYears,qualityGate:r.qualityGate,
       signals_evaluated:r.signals_evaluated,candidates:r.candidates,candidates_buy:r.candidates_buy,candidates_sell:r.candidates_sell,
       setup_wait_reasons:r.setup_wait_reasons,risk_gate_blocks:r.risk_gate_blocks,
-      rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap
+      rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap,rejected_effective_rr:r.rejected_effective_rr,
+      funnel_diagnostics:r.funnel_diagnostics,
+      candidate_events:r.candidateEvents
     }])),
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
   await fs.writeFile(path.join(outDir,'gold_v2_backtest_report.json'),JSON.stringify(report,null,2));
-  for(const [name,r] of Object.entries(results)) await fs.writeFile(path.join(outDir,'gold_v2_trades_'+name+'.csv'),toCsv(r.trades));
+  for(const [name,r] of Object.entries(results)) {
+    await fs.writeFile(path.join(outDir,'gold_v2_trades_'+name+'.csv'),toCsv(r.trades));
+    await fs.writeFile(path.join(outDir,'gold_v2_candidate_events_'+name+'.json'),JSON.stringify(r.candidateEvents,null,2));
+  }
+  const comparisonDir=path.join(outDir,'gap-policy-comparison');
+  await fs.mkdir(comparisonDir,{recursive:true});
+  for(const [name,r] of Object.entries(scheduleAwareResults)) {
+    await fs.writeFile(path.join(comparisonDir,'gold_v2_trades_'+name+'_xm_account_schedule_aware.csv'),toCsv(r.trades));
+    await fs.writeFile(path.join(comparisonDir,'gold_v2_candidate_events_'+name+'_xm_account_schedule_aware.json'),JSON.stringify(r.candidateEvents,null,2));
+  }
+  await fs.writeFile(path.join(comparisonDir,'gold_v2_gap_policy_comparison.json'),JSON.stringify(gapPolicyComparison,null,2));
+  const md = [
+    '# GOLD V2 XM Account-Specific Gap-Policy Comparison',
+    '',
+    'Research only. No strategy parameters, execution settings, Render configuration, or live order settings were changed.',
+    '',
+    'Account symbol specification supplied by the user: trade allowed Monday-Friday 01:02-23:58 server time; quote hours Monday-Thursday 01:00-23:59 and Friday 01:00-23:58; weekend closed. The 2026-10-15 terminal log shows UTC+3 at that time. Historical timestamps use Europe/Nicosia to handle seasonal UTC+3/+2 mapping.',
+    '',
+    '## Results',
+    '',
+    '| Costs | Legacy trades | Legacy PF | Legacy expectancy (R) | XM-aware trades | XM-aware PF | XM-aware expectancy (R) | Comparison status |',
+    '|---|---:|---:|---:|---:|---:|---:|---|',
+    ...Object.entries(gapPolicyComparison.costs).map(([name, value]) => {
+      const l=value.legacy.summary, a=value.xm_account_schedule_aware.summary;
+      const aLabel=value.comparison_valid ? String(a.trades) : String(a.trades)+' (partial)';
+      const aPf=value.comparison_valid ? Number(a.profit_factor).toFixed(3) : 'not valid';
+      const aExp=value.comparison_valid ? Number(a.expectancy_R).toFixed(3) : 'not valid';
+      return '| '+name+' | '+l.trades+' | '+Number(l.profit_factor).toFixed(3)+' | '+Number(l.expectancy_R).toFixed(3)+' | '+aLabel+' | '+aPf+' | '+aExp+' | '+(value.comparison_valid ? 'COMPLETE' : 'CENSORED')+' |';
+    }),
+    '',
+    'A censored schedule-aware run is not a complete five-year portfolio result; its partial metrics are deliberately excluded from comparison.',
+    '',
+    '## Trade identity and exit differences',
+    '',
+    ...Object.entries(gapPolicyComparison.costs).flatMap(([name,value]) => [
+      '### '+name,
+      '',
+      '- Comparable portfolio path: **'+value.comparison_valid+'**',
+      '- Legacy trades: '+value.trade_comparison.legacy_trade_count,
+      '- XM schedule-aware closed trades before end/censor: '+value.trade_comparison.xm_account_schedule_aware_trade_count,
+      '- Shared signal/side keys: '+value.trade_comparison.matched_trade_keys,
+      '- Legacy-only keys: '+JSON.stringify(value.trade_comparison.legacy_only_trade_keys),
+      '- XM-aware-only keys: '+JSON.stringify(value.trade_comparison.xm_account_schedule_aware_only_trade_keys),
+      value.invalidation_reason ? '- Invalidation: '+value.invalidation_reason : '- No unverified gap encountered during simulated positions.',
+      ''
+    ]),
+    '## Interpretation cautions',
+    '',
+    '- This is a controlled exit-policy comparison, not strategy optimization.',
+    '- The account symbol specification is the authority for sessions; Dukascopy is the historical OHLC source, so M5 gap classification tolerates bar-label timing differences.',
+    '- Stop-gap fills use the first observed reopening price plus modeled slippage. Target gaps are conservatively credited at target, not at a better reopening price.',
+    '- Unknown outages/closures stop the schedule-aware run; a prior-close forced exit is retained only as the legacy sensitivity.',
+    '- A successful comparison does not establish that this strategy is profitable; use trade count, PF, expectancy and the existing quality gate together.'
+  ].join('\n');
+  await fs.writeFile(path.join(comparisonDir,'gold_v2_gap_policy_comparison.md'),md);
+  console.log('GAP_POLICY_COMPARISON', Object.fromEntries(Object.entries(gapPolicyComparison.costs).map(([name,value])=>[name,{
+    comparison_valid:value.comparison_valid,
+    legacy_trades:value.legacy.summary.trades,
+    legacy_pf:value.legacy.summary.profit_factor,
+    xm_aware_trades:value.xm_account_schedule_aware.summary.trades,
+    xm_aware_pf:value.xm_account_schedule_aware.summary.profit_factor,
+    censor_detail:value.xm_account_schedule_aware.censor_detail
+  }])));
   console.log('=== GOLD V2 BACKTEST ===');
   for(const [name,r] of Object.entries(results)) console.log(name, 'trades='+r.summary.trades,'PF='+r.summary.profit_factor,'expectancy_R='+r.summary.expectancy_R,'return='+r.summary.return_pct+'%','maxDD='+r.summary.max_drawdown_pct+'%','recent365_trades='+r.recent365.trades,'recent365_PF='+r.recent365.profit_factor,'positiveYears='+r.positiveYears,'QUALITY_GATE='+r.qualityGate.passed);
 }

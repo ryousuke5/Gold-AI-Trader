@@ -7,11 +7,20 @@ on:
       - 'server.js'
       - 'src/gold_h1_trend_diagnostics.js'
       - 'src/gold_strategy_v2.js'
+      - 'src/gold_signal_diagnostics.js'
+      - 'src/trade_exit_diagnostics.js'
+      - 'src/xm_gold_trading_calendar.js'
+      - 'tests/xm-gold-trading-calendar.test.js'
       - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/backtest-gold-v2-resumable.mjs'
+      - 'scripts/report-gold-v2-backtest.mjs'
+      - 'scripts/test-gold-v2-funnel-resume.mjs'
       - 'tests/gold_strategy_v2.test.js'
+      - 'tests/gold_signal_diagnostics.test.js'
+      - 'tests/trade_exit_diagnostics.test.js'
+      - 'tests/gold_h1_trend_diagnostics.test.js'
       - 'src/forward_monitor.js'
       - 'public/forward-monitor.html'
-      - 'tests/gold_h1_trend_diagnostics.test.js'
       - 'mt4/GoldAITraderV18.mq4'
       - 'tests/gold_mt4_utc_source.test.js'
       - 'tests/mt4_gold_bridge_static.test.js'
@@ -21,9 +30,19 @@ on:
     paths:
       - 'server.js'
       - 'src/gold_h1_trend_diagnostics.js'
+      - 'src/gold_strategy_v2.js'
+      - 'src/gold_signal_diagnostics.js'
+      - 'src/trade_exit_diagnostics.js'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/backtest-gold-v2-resumable.mjs'
+      - 'scripts/report-gold-v2-backtest.mjs'
+      - 'scripts/test-gold-v2-funnel-resume.mjs'
+      - 'tests/gold_strategy_v2.test.js'
+      - 'tests/gold_signal_diagnostics.test.js'
+      - 'tests/trade_exit_diagnostics.test.js'
+      - 'tests/gold_h1_trend_diagnostics.test.js'
       - 'src/forward_monitor.js'
       - 'public/forward-monitor.html'
-      - 'tests/gold_h1_trend_diagnostics.test.js'
       - 'mt4/GoldAITraderV18.mq4'
       - 'tests/gold_mt4_utc_source.test.js'
       - 'tests/mt4_gold_bridge_static.test.js'
@@ -47,5 +66,12 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Syntax-check historical backtest entry points
+        run: |
+          node --check scripts/backtest-gold-v2.mjs
+          node --check scripts/backtest-gold-v2-resumable.mjs
+          node --check scripts/report-gold-v2-backtest.mjs
       - name: Run complete test suite
         run: npm test
+      - name: Smoke-test GOLD funnel checkpoint resume
+        run: node scripts/test-gold-v2-funnel-resume.mjs

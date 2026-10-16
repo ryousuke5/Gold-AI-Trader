@@ -1,14 +1,44 @@
 name: Gold V2 5Y Baseline
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/backtest-gold-v2-resumable.mjs'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/run-gold-v2-rr-sensitivity.mjs'
+      - 'scripts/analyze-gold-v2-candidate-quality.mjs'
+      - 'scripts/run-gold-v2-sell-followthrough-study.mjs'
+      - 'scripts/run-gold-v2-sell-breakdown-universe-study.mjs'
+      - 'scripts/run-gold-v2-sell-execution-audit.mjs'
+      - 'scripts/compare-gold-v2-backtest-engines.mjs'
+      - 'scripts/report-gold-v2-backtest.mjs'
+      - 'src/trade_exit_diagnostics.js'
+      - 'src/xm_gold_trading_calendar.js'
+      - 'src/gold_strategy_v2.js'
+      - '.github/workflows/gold-v2-5y-baseline.yml'
+      - 'package.json'
   push:
     paths:
       - 'scripts/backtest-gold-v2-resumable.mjs'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/run-gold-v2-rr-sensitivity.mjs'
+      - 'scripts/analyze-gold-v2-candidate-quality.mjs'
+      - 'scripts/run-gold-v2-sell-followthrough-study.mjs'
+      - 'scripts/run-gold-v2-sell-breakdown-universe-study.mjs'
+      - 'scripts/run-gold-v2-sell-execution-audit.mjs'
+      - 'scripts/compare-gold-v2-backtest-engines.mjs'
       - 'scripts/report-gold-v2-backtest.mjs'
+      - 'src/trade_exit_diagnostics.js'
+      - 'src/xm_gold_trading_calendar.js'
       - 'src/gold_strategy_v2.js'
       - '.github/workflows/gold-v2-5y-baseline.yml'
       - 'package.json'
   workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   baseline:
@@ -20,6 +50,37 @@ jobs:
       GOLD_BACKTEST_INITIAL_EQUITY: 100000
       GOLD_BACKTEST_RISK_PCT: 0.25
       GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
+      GOLD_BACKTEST_SPREAD_PRICE: 0.50
+      GOLD_BACKTEST_SLIPPAGE_PRICE: 0.05
+      GOLD_BACKTEST_MAX_HOLD_BARS: 96
+      GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: 0.50
+      GOLD_BACKTEST_MIN_EFFECTIVE_RR: 1.50
+      GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: 2
+      GOLD_BACKTEST_MAX_DRAWDOWN_PCT: 5
+      GOLD_BACKTEST_SERVER_TIMEZONE: Europe/Nicosia
+      GOLD_RANGE_LOOKBACK: 12
+      GOLD_MIN_RANGE_ATR: 0.8
+      GOLD_MAX_RANGE_ATR: 2.8
+      GOLD_BREAKOUT_ATR: 0.10
+      GOLD_MIN_BODY_ATR: 0.40
+      GOLD_MIN_CLOSE_LOCATION: 0.65
+      GOLD_MIN_VOLUME_RATIO: 1.10
+      GOLD_BUY_RSI_MIN: 52
+      GOLD_BUY_RSI_MAX: 75
+      GOLD_SELL_RSI_MIN: 25
+      GOLD_SELL_RSI_MAX: 48
+      GOLD_MAX_EXTENSION_ATR: 1.50
+      GOLD_STOP_BUFFER_ATR: 0.15
+      GOLD_MIN_STOP_ATR: 0.80
+      GOLD_MAX_STOP_ATR: 2.00
+      GOLD_TAKE_PROFIT_R: 2.00
+      GOLD_MIN_H1_RSI_BUY: 50
+      GOLD_MAX_H1_RSI_BUY: 72
+      GOLD_MIN_H1_RSI_SELL: 28
+      GOLD_MAX_H1_RSI_SELL: 50
+      GOLD_SESSION_START_UTC: 7
+      GOLD_SESSION_END_UTC: 20
+      GOLD_H1_TREND_MODE: strict
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,14 +93,101 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      # The direct Dukascopy fetch in the resumable script may return zero rows
+      # in GitHub-hosted runners. Reuse the validated, assembled 5-year dataset
+      # produced by the dedicated chunked research workflow instead.
+      - name: Find latest successful five-year dataset
+        id: dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow_runs_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/gold-v2-research.yml/runs?status=success&per_page=20"
+          run_ids="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${workflow_runs_url}" | jq -r '.workflow_runs[] | select(.conclusion == "success") | .id')"
+
+          for run_id in ${run_ids}; do
+            artifacts="$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100")"
+            artifact_name="$(printf '%s' "${artifacts}" | jq -r '.artifacts[] | select(.name == "gold-xauusd-m5-1825d" and .expired == false) | .name' | head -n 1)"
+            if [[ "${artifact_name}" == "gold-xauusd-m5-1825d" ]]; then
+              echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+              echo "Using prepared dataset from research run ${run_id}"
+              exit 0
+            fi
+          done
+
+          echo "No unexpired gold-xauusd-m5-1825d artifact was found in recent successful research runs." >&2
+          echo "Run .github/workflows/gold-v2-research.yml successfully first." >&2
+          exit 1
+
+      - name: Download validated five-year dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.dataset.outputs.run_id }}
+
+      - name: Validate dataset and manifest
+        run: |
+          set -euo pipefail
+          test -s gold-xauusd-data/xauusd-m5.json.gz
+          test -s gold-xauusd-data/xauusd_m5_manifest.json
+          gzip -t gold-xauusd-data/xauusd-m5.json.gz
+          jq -e '
+            .instrument == "XAUUSD" and
+            .provider == "Dukascopy Historical Data Feed" and
+            .requested_start_date_utc == "2021-10-06" and
+            .requested_end_date_exclusive_utc == "2026-10-05"
+          ' gold-xauusd-data/xauusd_m5_manifest.json
+          echo "Prepared five-year OHLC dataset passed manifest and gzip checks."
+
       - name: Syntax checks
         run: |
           node --check scripts/backtest-gold-v2-resumable.mjs
+          node --check scripts/backtest-gold-v2.mjs
+          node --check scripts/run-gold-v2-rr-sensitivity.mjs
+          node --check scripts/analyze-gold-v2-candidate-quality.mjs
+          node --check scripts/run-gold-v2-sell-followthrough-study.mjs
+          node --check scripts/run-gold-v2-sell-breakdown-universe-study.mjs
+          node --check scripts/run-gold-v2-sell-execution-audit.mjs
+          node --check src/xm_gold_trading_calendar.js
+          node --check scripts/run-gold-v2-sell-breakdown-universe-study.mjs
+          node --check scripts/compare-gold-v2-backtest-engines.mjs
           node --check scripts/report-gold-v2-backtest.mjs
           node --check src/gold_strategy_v2.js
+          node --check src/trade_exit_diagnostics.js
 
       - name: Run Gold V2 five-year baseline
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
         run: node scripts/backtest-gold-v2-resumable.mjs
+
+      - name: Run ordinary engine against identical prepared data
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_BACKTEST_LOOKBACK_DAYS: 1825
+          GOLD_BACKTEST_INITIAL_EQUITY: 100000
+          GOLD_BACKTEST_RISK_PCT: 0.25
+          GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output/reference-engine
+        run: node scripts/backtest-gold-v2.mjs
+
+      - name: Compare ordinary and resumable engines
+        env:
+          GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
+          GOLD_REFERENCE_TRADES_CSV: gold-backtest-output/reference-engine/gold_v2_trades_baseline.csv
+          GOLD_RESUMABLE_TRADES_JSON: gold-backtest-output/gold_v2_resumed_trades.json
+          GOLD_REQUIRE_ENGINE_PARITY: 'true'
+          GOLD_BACKTEST_MIN_EFFECTIVE_RR: 1.50
+          GOLD_BACKTEST_SERVER_TIMEZONE: Europe/Nicosia
+        run: node scripts/compare-gold-v2-backtest-engines.mjs
 
       - name: Verify trade integrity
         run: |
@@ -49,12 +197,27 @@ jobs:
           const trades=JSON.parse(fs.readFileSync('gold-backtest-output/gold_v2_resumed_trades.json'));
           if(cp.status!=='COMPLETE') throw new Error('Backtest checkpoint is not COMPLETE');
           if(cp.trades.length!==trades.length) throw new Error('Checkpoint/trade output count mismatch');
+          const d=cp.funnel_diagnostics;
+          if(!d || d.schema_version!==1) throw new Error('Missing or unsupported funnel diagnostics');
+          const waitCount=Object.values(d.setup_wait_reasons||{}).reduce((sum,n)=>sum+Number(n||0),0);
+          const funnelChecks=[
+            ['setup outcomes', d.signals_evaluated===d.candidates+waitCount],
+            ['candidate sides', d.candidates===d.candidates_buy+d.candidates_sell+d.candidates_other],
+            ['risk gate checks', d.risk_gate_checks===d.candidates],
+            ['risk gate results', d.candidates===d.risk_gate_blocked_candidates+d.risk_gate_passed],
+            ['next-bar gap/attempts', d.risk_gate_passed===d.rejected_next_bar_gap+d.trade_attempts],
+            ['trade attempt outcomes', d.trade_attempts===d.rejected_invalid_geometry+d.rejected_entry_gap+d.rejected_effective_rr+d.trades_accepted],
+            ['accepted trades', d.trades_accepted===trades.length]
+          ];
+          const funnelFailures=funnelChecks.filter(([,ok])=>!ok).map(([name])=>name);
+          if(funnelFailures.length) throw new Error('Funnel counters do not reconcile: '+funnelFailures.join(', '));
           for(let i=0;i<trades.length;i++) {
             const t=trades[i];
             if(t.effective_rr!==undefined && Number(t.effective_rr)<1.5) throw new Error('Effective RR below floor at '+i);
             for(const k of ['signal_time','entry_time','exit_time','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl']) if(!Number.isFinite(Number(t[k]))) throw new Error('Invalid trade field: '+k+' at '+i);
             if(!(t.exit_time>=t.entry_time)) throw new Error('Exit before entry at '+i);
             if(i && !(trades[i-1].exit_time < t.entry_time)) throw new Error('Overlapping trades at '+i);
+            if(!t.exit_class) throw new Error('Missing exit classification at '+i);
           }
           console.log('TRADE INTEGRITY PASS', {trades:trades.length});
           NODE
@@ -73,6 +236,8 @@ jobs:
           for(const k of ['profitFactor','expectancyPerTrade','maxDrawdownPct','maxConsecutiveLosses']) {
             if(m[k]===null || m[k]===undefined || Number.isNaN(Number(m[k]))) throw new Error('Invalid metric: '+k);
           }
+          if(!m.exit_mechanisms || m.exit_mechanisms.sample_size!==m.trades) throw new Error('Exit diagnostics sample does not match trade count');
+          if(!m.funnel_diagnostics || m.funnel_diagnostics.trades_accepted!==m.trades) throw new Error('Funnel diagnostics missing or inconsistent in metrics');
           console.log('GOLD V2 FIVE-YEAR BASELINE PASS');
           console.log('COMMIT_SHA', process.env.GITHUB_SHA);
           console.log('RUN_ID', process.env.GITHUB_RUN_ID);
@@ -80,6 +245,37 @@ jobs:
           fs.writeFileSync('gold-backtest-output/baseline_run_manifest.json', JSON.stringify({commit_sha:process.env.GITHUB_SHA,run_id:process.env.GITHUB_RUN_ID,workflow:'Gold V2 5Y Baseline',artifact:'gold-v2-5y-baseline',generated_at:new Date().toISOString(),metrics:m},null,2));
           console.log(JSON.stringify(m,null,2));
           NODE
+
+      - name: Run controlled effective-RR sensitivity (research only)
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_RR_SENSITIVITY_OUTPUT_DIR: gold-backtest-output/rr-sensitivity
+        run: node scripts/run-gold-v2-rr-sensitivity.mjs
+
+      - name: Analyze candidate signal quality (research only)
+        env:
+          GOLD_BACKTEST_OUTPUT_DIR: gold-backtest-output
+          GOLD_CANDIDATE_DIAGNOSTICS_DIR: gold-backtest-output/candidate-quality
+        run: node scripts/analyze-gold-v2-candidate-quality.mjs
+
+      - name: Analyze SELL breakout follow-through (research only)
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_SELL_FOLLOWTHROUGH_OUTPUT_DIR: gold-backtest-output/sell-followthrough
+        run: node scripts/run-gold-v2-sell-followthrough-study.mjs
+
+      - name: Analyze expanded SELL breakdown universe (research only)
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_SELL_BREAKDOWN_OUTPUT_DIR: gold-backtest-output/sell-breakdown-universe
+        run: node scripts/run-gold-v2-sell-breakdown-universe-study.mjs
+
+      - name: Audit SELL stop geometry and data-gap exits (research only)
+        env:
+          GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_SELL_BREAKDOWN_JSON: gold-backtest-output/sell-breakdown-universe/gold_v2_sell_breakdown_universe.json
+          GOLD_SELL_EXECUTION_AUDIT_DIR: gold-backtest-output/sell-execution-audit
+        run: node scripts/run-gold-v2-sell-execution-audit.mjs
 
       - name: Upload baseline artifacts
         if: always()
@@ -89,5 +285,3 @@ jobs:
           path: gold-backtest-output/
           if-no-files-found: warn
           retention-days: 30
-
-# Baseline trigger marker: rerun after report updates.
