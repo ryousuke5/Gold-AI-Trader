@@ -154,6 +154,7 @@ function summarize(run) {
     max_drawdown_r: maxDrawdown,
     max_consecutive_losses: maxLossStreak,
     trades_per_week: periodWeeks ? rs.length / periodWeeks : 0,
+    net_r_per_week: periodWeeks ? rs.reduce((sum, r) => sum + r, 0) / periodWeeks : 0,
     average_hold_minutes: holdMinutes.length ? holdMinutes.reduce((sum, v) => sum + v, 0) / holdMinutes.length : null,
     source_sha256: run.manifest.source_data.content_sha256,
     fixed_costs_and_execution: run.manifest.config,
@@ -177,6 +178,7 @@ const report = {
     source_data_identical: true,
     indicator_warmup: 'Indicators are calculated from the complete shared source series; only candidate timestamps are window-filtered. This keeps recent-window warm-up identical to the five-year run.',
     window_semantics: 'Start inclusive, end exclusive; both periods share the same data-derived end timestamp.',
+    comparability_note: 'Total net R, total trade count, and maximum drawdown depend on the window length. Compare expectancy, profit factor, win rate, trades per week, and net R per week alongside raw totals.',
     trade_selection: 'Eligible trades sorted chronologically; a new trade is skipped while the prior selected trade remains open.'
   },
   configuration_check: {
@@ -191,9 +193,10 @@ const report = {
     signal_candidates: recentStats.signal_candidates - fiveYearStats.signal_candidates,
     selected_non_overlapping_trades: recentStats.selected_non_overlapping_trades - fiveYearStats.selected_non_overlapping_trades,
     win_rate_pct: recentStats.win_rate_pct - fiveYearStats.win_rate_pct,
-    profit_factor: (recentStats.profit_factor ?? 0) - (fiveYearStats.profit_factor ?? 0),
+    profit_factor: recentStats.profit_factor === null || fiveYearStats.profit_factor === null ? null : recentStats.profit_factor - fiveYearStats.profit_factor,
     expectancy_r: recentStats.expectancy_r - fiveYearStats.expectancy_r,
     net_r: recentStats.net_r - fiveYearStats.net_r,
+    net_r_per_week: recentStats.net_r_per_week - fiveYearStats.net_r_per_week,
     max_drawdown_r: recentStats.max_drawdown_r - fiveYearStats.max_drawdown_r,
     trades_per_week: recentStats.trades_per_week - fiveYearStats.trades_per_week
   },
