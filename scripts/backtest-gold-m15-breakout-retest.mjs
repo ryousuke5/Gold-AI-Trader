@@ -32,7 +32,7 @@ const RULES = {
   allowed_input_timeframes: ['M1 BID OHLC', 'M5 BID OHLC'],
   aggregation_quality: 'M1 input uses active-minute coverage and gap checks; M5 input requires complete contiguous M5 bars inside each M15/H1 bucket',
   same_bar_stop_and_target: 'STOP first (conservative)',
-  data_gap_policy: 'If the next observed M15 bar starts after a gap, flatten at the prior observed bar close with modeled spread/slippage and mark GAP_FLAT; no intragap price path is fabricated.',
+  data_gap_policy: 'If the next observed M15 bar starts after a gap while a position is open, exit at the first observed post-gap M15 open with modeled adverse spread/slippage, mark GAP_OPEN_EXIT, and do not assume an intragap stop/target fill.',
   live_orders_enabled: false
 };
 
@@ -483,13 +483,11 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
     const lastPossible = Math.min(i + 12, m15.length - 1);
     for (let j = i + 1; j <= lastPossible; j++) {
       if (j > i + 1 && m15[j].time - m15[j - 1].time !== 900) {
-        const prior = m15[j - 1];
-        exitTime = prior.time + 900;
-        exitIndex = j - 1;
-        exitReason = 'GAP_FLAT';
-        exitPrice = side === 'BUY'
-          ? prior.close - cost.slippage
-          : prior.close + cost.spread + cost.slippage;
+        const reopened = m15[j];
+        exitTime = reopened.time;
+        exitIndex = j;
+        exitReason = 'GAP_OPEN_EXIT';
+        exitPrice = gapOpenExitPrice(side, reopened.open, cost);
         break;
       }
       const bar = m15[j];
@@ -568,7 +566,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
     data_range_valid: dataRangeValid,
     session_coverage: coverage,
     censored_trades: censoredTrades,
-    gap_flat_trades: trades.filter(t => t.exit_reason === 'GAP_FLAT').length,
+    gap_open_exit_trades: trades.filter(t => t.exit_reason === 'GAP_OPEN_EXIT').length,
     by_side: {}
   };
   for (const side of ['BUY', 'SELL']) {
