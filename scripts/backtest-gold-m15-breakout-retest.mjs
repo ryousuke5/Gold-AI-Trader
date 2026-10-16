@@ -234,8 +234,10 @@ function nyInfo(epochSeconds) {
   }
   return { ...item, minute: new Date(epochSeconds * 1000).getUTCMinutes() };
 }
-function inSession(info) {
-  if (info.weekday === 'Sat' || info.weekday === 'Sun') return false;
+function inSession(value) {
+  // Call sites may provide an epoch timestamp or already-resolved New York parts.
+  const info = typeof value === 'number' ? nyInfo(value) : value;
+  if (!info || info.weekday === 'Sat' || info.weekday === 'Sun') return false;
   const minute = info.hour * 60 + info.minute;
   return minute >= 9 * 60 + 35 && minute <= 12 * 60 + 15;
 }
@@ -623,9 +625,13 @@ function selfTest() {
   assert(m15.bars.length === 8, 'M15 aggregation self-test failed: ' + m15.bars.length);
   assert(h1.bars.length === 2, 'H1 aggregation self-test failed: ' + h1.bars.length);
   assert(consecutive(m15.bars, 0, 7, 900), 'M15 continuity self-test failed');
-  const session = nyInfo(Date.UTC(2026, 9, 16, 13, 45) / 1000);
+  const sessionTimestamp = Date.UTC(2026, 9, 16, 13, 45) / 1000;
+  const session = nyInfo(sessionTimestamp);
   assert(inSession(session), 'America/New_York session/DST self-test failed: ' + JSON.stringify(session));
-  assert(!inSession(nyInfo(Date.UTC(2026, 9, 16, 16, 30) / 1000)), 'Session end self-test failed');
+  assert(inSession(sessionTimestamp), 'Timestamp-based New York session check failed');
+  const afterSessionTimestamp = Date.UTC(2026, 9, 16, 16, 30) / 1000;
+  assert(!inSession(nyInfo(afterSessionTimestamp)), 'Session end object check failed');
+  assert(!inSession(afterSessionTimestamp), 'Session end timestamp check failed');
   assert(Math.abs(gapOpenExitPrice('BUY', 2500, { spread: 0.75, slippage: 0.10 }) - 2499.90) < 1e-9, 'BUY gap-open exit cost test failed');
   assert(Math.abs(gapOpenExitPrice('SELL', 2500, { spread: 0.75, slippage: 0.10 }) - 2500.85) < 1e-9, 'SELL gap-open exit cost test failed');
   const coverage = sessionCoverage(m15.bars, base, base + 2 * 3600);
