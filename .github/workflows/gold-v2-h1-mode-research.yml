@@ -1,0 +1,150 @@
+name: GOLD V2 H1 Mode Research
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/run-gold-v2-h1-mode-study.mjs'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'src/gold_strategy_v2.js'
+      - 'src/xm_gold_trading_calendar.js'
+      - '.github/workflows/gold-v2-h1-mode-research.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  h1-mode-study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GOLD_BACKTEST_DATA_FILE: ${{ github.workspace }}/gold-xauusd-data/xauusd-m5.json.gz
+      GOLD_H1_MODE_STUDY_OUTPUT_DIR: ${{ github.workspace }}/gold-h1-mode-study-output
+      GOLD_BACKTEST_INITIAL_EQUITY: 100000
+      GOLD_BACKTEST_RISK_PCT: 0.25
+      GOLD_BACKTEST_SPREAD_PRICE: 0.50
+      GOLD_BACKTEST_SLIPPAGE_PRICE: 0.05
+      GOLD_BACKTEST_MAX_HOLD_BARS: 96
+      GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: 0.50
+      GOLD_BACKTEST_MIN_EFFECTIVE_RR: 1.50
+      GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: 2
+      GOLD_BACKTEST_MAX_DRAWDOWN_PCT: 5
+      GOLD_BACKTEST_SERVER_TIMEZONE: Europe/Nicosia
+      GOLD_RANGE_LOOKBACK: 12
+      GOLD_MIN_RANGE_ATR: 0.8
+      GOLD_MAX_RANGE_ATR: 2.8
+      GOLD_BREAKOUT_ATR: 0.10
+      GOLD_MIN_BODY_ATR: 0.40
+      GOLD_MIN_CLOSE_LOCATION: 0.65
+      GOLD_MIN_VOLUME_RATIO: 1.10
+      GOLD_BUY_RSI_MIN: 52
+      GOLD_BUY_RSI_MAX: 75
+      GOLD_SELL_RSI_MIN: 25
+      GOLD_SELL_RSI_MAX: 48
+      GOLD_MAX_EXTENSION_ATR: 1.50
+      GOLD_STOP_BUFFER_ATR: 0.15
+      GOLD_MIN_STOP_ATR: 0.80
+      GOLD_MAX_STOP_ATR: 2.00
+      GOLD_TAKE_PROFIT_R: 2.00
+      GOLD_MIN_H1_RSI_BUY: 50
+      GOLD_MAX_H1_RSI_BUY: 72
+      GOLD_MIN_H1_RSI_SELL: 28
+      GOLD_MAX_H1_RSI_SELL: 50
+      GOLD_SESSION_START_UTC: 7
+      GOLD_SESSION_END_UTC: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Find latest successful five-year data artifact
+        id: dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow_runs_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/gold-v2-research.yml/runs?status=success&per_page=20"
+          run_ids="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${workflow_runs_url}" | jq -r '.workflow_runs[] | select(.conclusion == "success") | .id')"
+
+          for run_id in ${run_ids}; do
+            artifacts="$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100")"
+            name="$(printf '%s' "${artifacts}" | jq -r '.artifacts[] | select(.name == "gold-xauusd-m5-1825d" and .expired == false) | .name' | head -n 1)"
+            if [[ "${name}" == "gold-xauusd-m5-1825d" ]]; then
+              echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+              echo "Using prepared dataset from research run ${run_id}"
+              exit 0
+            fi
+          done
+
+          echo "No unexpired gold-xauusd-m5-1825d artifact found in recent successful research runs." >&2
+          exit 1
+
+      - name: Download prepared five-year M5 history
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.dataset.outputs.run_id }}
+
+      - name: Validate dataset
+        run: |
+          set -euo pipefail
+          test -s gold-xauusd-data/xauusd-m5.json.gz
+          test -s gold-xauusd-data/xauusd_m5_manifest.json
+          gzip -t gold-xauusd-data/xauusd-m5.json.gz
+          jq -e '
+            .instrument == "XAUUSD" and
+            .provider == "Dukascopy Historical Data Feed" and
+            .requested_start_date_utc == "2021-10-06" and
+            .requested_end_date_exclusive_utc == "2026-10-05"
+          ' gold-xauusd-data/xauusd_m5_manifest.json
+
+      - name: Run fixed one-factor H1 mode study
+        run: |
+          node --check scripts/backtest-gold-v2.mjs
+          node --check scripts/run-gold-v2-h1-mode-study.mjs
+          node scripts/run-gold-v2-h1-mode-study.mjs
+
+      - name: Validate study outputs
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const file = 'gold-h1-mode-study-output/gold-v2-h1-mode-study.json';
+          const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (report.status !== 'RESEARCH_ONLY_FIXED_ONE_FACTOR_COMPARISON') throw new Error('Unexpected study status');
+          if (report.no_production_changes !== true || report.real_orders_enabled !== false || report.render_deployment_performed !== false) throw new Error('Safety scope mismatch');
+          if (report.frozen_factor.no_threshold_sweep !== true) throw new Error('Study must not perform threshold sweep');
+          if (report.metrics.length !== 8) throw new Error('Expected 2 modes × 2 windows × 2 cost models');
+          for (const row of report.metrics) {
+            if (!['strict', 'close_ema20_rsi'].includes(row.mode)) throw new Error('Unexpected mode: '+row.mode);
+            if (!['five_year', 'recent_730d'].includes(row.window)) throw new Error('Unexpected window: '+row.window);
+            if (!['baseline', 'conservative'].includes(row.cost_model)) throw new Error('Unexpected cost model: '+row.cost_model);
+            if (typeof row.summary_valid_for_full_window !== 'boolean') throw new Error('Missing gap completeness status');
+            if (row.summary_valid_for_full_window && (!Number.isFinite(row.trades) || row.trades < 0)) throw new Error('Invalid trade count');
+          }
+          console.log('GOLD V2 H1 mode research output contract PASS');
+          NODE
+
+      - name: Upload H1 mode research artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-h1-mode-study
+          path: gold-h1-mode-study-output/
+          if-no-files-found: warn
+          retention-days: 30
