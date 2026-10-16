@@ -334,7 +334,7 @@ function gapOpenExitPrice(side, reopeningOpen, cost) {
   return side === 'BUY' ? reopeningOpen - cost.slippage : reopeningOpen + cost.spread + cost.slippage;
 }
 
-function closedH1Index(h1, closeTime) {
+function closedH1Index(h1, features, closeTime) {
   let lo = 0, hi = h1.length - 1, best = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
@@ -347,19 +347,19 @@ function closedH1Index(h1, closeTime) {
   }
   if (best < 50 || closeTime - (h1[best].time + 3600) > 3600 ||
       !consecutive(h1, best - 3, best, 3600)) return { index: -1, up: false, down: false };
-  const up = h1[best].close > h1[best].ema50 &&
-    h1[best].ema20 > h1[best].ema50 &&
-    h1[best].ema20 > h1[best - 3].ema20;
-  const down = h1[best].close < h1[best].ema50 &&
-    h1[best].ema20 < h1[best].ema50 &&
-    h1[best].ema20 < h1[best - 3].ema20;
+  const up = h1[best].close > features.h1Ema50[best] &&
+    features.h1Ema20[best] > features.h1Ema50[best] &&
+    features.h1Ema20[best] > features.h1Ema20[best - 3];
+  const down = h1[best].close < features.h1Ema50[best] &&
+    features.h1Ema20[best] < features.h1Ema50[best] &&
+    features.h1Ema20[best] < features.h1Ema20[best - 3];
   return { index: best, up, down };
 }
 function detectBreakout(m15, h1, features, k) {
   if (k < 8 || !consecutive(m15, k - 8, k, 900)) return null;
   const atrK = features.m15Atr14[k];
   if (!Number.isFinite(atrK) || !(atrK > 0)) return null;
-  const trend = closedH1Index(h1, m15[k].time + 900);
+  const trend = closedH1Index(h1, features, m15[k].time + 900);
   if (trend.index < 0 || (!trend.up && !trend.down) ||
       !Number.isFinite(features.h1Ema20[trend.index]) ||
       !Number.isFinite(features.h1Ema50[trend.index])) return null;
@@ -412,7 +412,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
     const atrNow = features.m15Atr14[i];
     if (!Number.isFinite(atrNow) || !(atrNow > 0) ||
         !Number.isFinite(features.m15Ema20[i])) { reject('m15_indicator_unavailable'); continue; }
-    const currentTrend = closedH1Index(h1, signal.time + 900);
+    const currentTrend = closedH1Index(h1, features, signal.time + 900);
     if (currentTrend.index < 0) { reject('h1_indicator_unavailable'); continue; }
     candidates++;
 

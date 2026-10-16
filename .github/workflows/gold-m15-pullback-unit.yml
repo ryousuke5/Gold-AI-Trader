@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/backtest-gold-m15-trend-pullback.mjs'
+      - 'scripts/backtest-gold-m15-breakout-retest.mjs'
       - 'scripts/fetch-xauusd-m1-chunk.py'
       - '.github/workflows/gold-m15-pullback-unit.yml'
   workflow_dispatch:
@@ -26,5 +27,6 @@ jobs:
         run: |
           node --check scripts/backtest-gold-m1-scalp.mjs
           node --check scripts/backtest-gold-m15-trend-pullback.mjs
+          node --check scripts/backtest-gold-m15-breakout-retest.mjs
       - name: Validate aggregation and New York DST/session logic
         run: node scripts/backtest-gold-m15-trend-pullback.mjs --self-test

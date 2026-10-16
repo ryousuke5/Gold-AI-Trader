@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/backtest-gold-m15-trend-pullback.mjs'
+      - 'scripts/backtest-gold-m15-breakout-retest.mjs'
       - '.github/workflows/gold-m15-pullback-research.yml'
       - 'package.json'
   workflow_dispatch:
@@ -77,7 +78,9 @@ jobs:
       - name: Validate M15 backtester and M1/M5 aggregation
         run: |
           node --check scripts/backtest-gold-m15-trend-pullback.mjs
+          node --check scripts/backtest-gold-m15-breakout-retest.mjs
           node scripts/backtest-gold-m15-trend-pullback.mjs --self-test
+          node scripts/backtest-gold-m15-breakout-retest.mjs --self-test
       - name: Run fixed five-year and recent-730-day M15 pullback tests on validated M5 history
         env:
           GOLD_M15_PULLBACK_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
@@ -93,5 +96,23 @@ jobs:
         with:
           name: gold-m15-trend-pullback-research
           path: gold-m15-trend-pullback-output/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Run fixed five-year and recent-730-day M15 breakout-retest tests
+        env:
+          GOLD_M15_BREAKOUT_RETEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_M15_BREAKOUT_RETEST_DATA_TIMEFRAME: m5
+          GOLD_M15_BREAKOUT_RETEST_OUTPUT_DIR: gold-m15-breakout-retest-output
+          GOLD_BREAKOUT_RETEST_INITIAL_EQUITY: '100000'
+          GOLD_BREAKOUT_RETEST_RISK_PCT: '0.25'
+          GOLD_RESEARCH_END_UTC: '2026-10-05T00:00:00Z'
+        run: node scripts/backtest-gold-m15-breakout-retest.mjs
+      - name: Upload M15 breakout-retest research results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-m15-breakout-retest-research
+          path: gold-m15-breakout-retest-output/
           retention-days: 30
           if-no-files-found: warn
