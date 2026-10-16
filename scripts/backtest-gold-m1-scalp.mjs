@@ -178,16 +178,24 @@ function sessionCoverage(bars, windowStart, windowEnd) {
     observed.get(local.date).add(bar.time);
   }
   let coveredDays = 0, observedSlots = 0, expectedSlots = 0;
-  for (const [date, slots] of expected) {
+  let maxConsecutiveIncompleteWeekdays = 0, consecutiveIncompleteWeekdays = 0;
+  for (const [date, slots] of [...expected.entries()].sort((x, y) => x[0].localeCompare(y[0]))) {
     const count = observed.get(date)?.size || 0;
     observedSlots += count;
     expectedSlots += slots.size;
-    if (count >= Math.ceil(slots.size * 0.90)) coveredDays++;
+    if (count >= Math.ceil(slots.size * 0.90)) {
+      coveredDays++;
+      consecutiveIncompleteWeekdays = 0;
+    } else {
+      consecutiveIncompleteWeekdays++;
+      maxConsecutiveIncompleteWeekdays = Math.max(maxConsecutiveIncompleteWeekdays, consecutiveIncompleteWeekdays);
+    }
   }
   return {
     expected_weekdays: expected.size, covered_weekdays: coveredDays,
     incomplete_weekdays: expected.size - coveredDays,
     coverage_pct: expected.size ? coveredDays / expected.size * 100 : 0,
+    max_consecutive_incomplete_weekdays: maxConsecutiveIncompleteWeekdays,
     observed_minute_bars: observedSlots, expected_minute_bars: expectedSlots,
     minute_slot_coverage_pct: expectedSlots ? observedSlots / expectedSlots * 100 : 0,
     minimum_day_coverage_pct: 90, required_window_coverage_pct: MIN_SESSION_COVERAGE_PCT
@@ -348,7 +356,7 @@ function runWindow(bars, features, window, cost, latest, dataRangeValid) {
         censorDetail = { signal_time_utc: new Date(signal.time * 1000).toISOString(), reason: 'time_exit_bar_not_contiguous' };
         break;
       }
-      exitTime = last.time;
+      exitTime = last.time + 60;
       exitPrice = side === 'BUY' ? last.close - cost.slippage : last.close + cost.spread + cost.slippage;
       exitReason = 'TIME_EXIT';
     }
@@ -408,7 +416,7 @@ function runWindow(bars, features, window, cost, latest, dataRangeValid) {
     };
   }
   const coverage = sessionCoverage(bars, windowStart, latest);
-  const fullWindowValid = validWindow && censoredTrades === 0 && dataRangeValid && coverage.coverage_pct >= MIN_SESSION_COVERAGE_PCT;
+  const fullWindowValid = validWindow && censoredTrades === 0 && dataRangeValid && coverage.coverage_pct >= MIN_SESSION_COVERAGE_PCT && coverage.max_consecutive_incomplete_weekdays <= 2;
   const gate = {
     min_trades: window.minTrades, min_profit_factor: 1.15,
     min_expectancy_R: 0.05, max_drawdown_pct: 5,

@@ -197,16 +197,24 @@ function sessionCoverage(bars, windowStart, windowEnd) {
     observed.get(local.date).add(minute);
   }
   let coveredDays = 0, observedSlots = 0, expectedSlots = 0;
-  for (const [date, slots] of expected) {
+  let maxConsecutiveIncompleteWeekdays = 0, consecutiveIncompleteWeekdays = 0;
+  for (const [date, slots] of [...expected.entries()].sort((x, y) => x[0].localeCompare(y[0]))) {
     const count = observed.get(date)?.size || 0;
     observedSlots += count;
     expectedSlots += slots.size;
-    if (count >= Math.min(slots.size, 11)) coveredDays++;
+    if (count >= Math.min(slots.size, 11)) {
+      coveredDays++;
+      consecutiveIncompleteWeekdays = 0;
+    } else {
+      consecutiveIncompleteWeekdays++;
+      maxConsecutiveIncompleteWeekdays = Math.max(maxConsecutiveIncompleteWeekdays, consecutiveIncompleteWeekdays);
+    }
   }
   return {
     expected_weekdays: expected.size, covered_weekdays: coveredDays,
     incomplete_weekdays: expected.size - coveredDays,
     coverage_pct: expected.size ? coveredDays / expected.size * 100 : 0,
+    max_consecutive_incomplete_weekdays: maxConsecutiveIncompleteWeekdays,
     observed_m15_bars: observedSlots, expected_m15_bars: expectedSlots,
     m15_slot_coverage_pct: expectedSlots ? observedSlots / expectedSlots * 100 : 0,
     minimum_day_bars: 11, required_window_coverage_pct: MIN_SESSION_COVERAGE_PCT
@@ -267,7 +275,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
   const rejection = {};
   const reject = key => { rejection[key] = (rejection[key] || 0) + 1; };
 
-  for (let i = 55; i < m15.length - 18; i++) {
+  for (let i = 55; i < m15.length - 16; i++) {
     const signal = m15[i];
     if (signal.time + 900 < windowStart) continue;
     if (i < nextAvailable) continue;
@@ -353,7 +361,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
     const riskCash = equity * RISK_PCT / 100;
     let exitTime = null, exitPrice = null, exitReason = 'TIME_EXIT', exitIndex = i + 1;
     let localCensor = null;
-    const lastPossible = Math.min(i + 1 + 16, m15.length - 1);
+    const lastPossible = Math.min(i + 16, m15.length - 1);
     for (let j = i + 1; j <= lastPossible; j++) {
       if (j > i + 1 && m15[j].time - m15[j - 1].time !== 900) {
         localCensor = {
@@ -389,7 +397,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
       break;
     }
     if (exitTime === null) {
-      if (lastPossible < i + 17) {
+      if (lastPossible < i + 16) {
         censoredTrades++;
         validWindow = false;
         censorDetail = { signal_time_utc: new Date(signal.time * 1000).toISOString(), reason: 'insufficient_future_bars_for_max_hold' };
@@ -397,7 +405,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
       }
       exitIndex = lastPossible;
       const last = m15[exitIndex];
-      exitTime = last.time;
+      exitTime = last.time + 900;
       exitPrice = side === 'BUY' ? last.close - cost.slippage : last.close + cost.spread + cost.slippage;
       exitReason = 'TIME_EXIT';
     }
@@ -447,7 +455,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
     max_drawdown_pct: maxDrawdownPct,
     avg_holding_minutes: trades.length ? sum(trades.map(t => t.holding_minutes)) / trades.length : null,
     trades_per_week: trades.length / (window.days / 7),
-    full_window_result_valid: validWindow && censoredTrades === 0 && dataRangeValid && coverage.coverage_pct >= MIN_SESSION_COVERAGE_PCT,
+    full_window_result_valid: validWindow && censoredTrades === 0 && dataRangeValid && coverage.coverage_pct >= MIN_SESSION_COVERAGE_PCT && coverage.max_consecutive_incomplete_weekdays <= 2,
     data_range_valid: dataRangeValid,
     session_coverage: coverage,
     censored_trades: censoredTrades,
