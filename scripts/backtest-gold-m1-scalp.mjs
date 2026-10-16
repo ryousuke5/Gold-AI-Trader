@@ -8,6 +8,7 @@ const INITIAL_EQUITY = Math.max(1000, Number(process.env.GOLD_M1_SCALP_INITIAL_E
 const RISK_PCT = Math.max(0.01, Number(process.env.GOLD_M1_SCALP_RISK_PCT || 0.25));
 const BASELINE_COST = { name: 'baseline', spread: 0.58, slippage: 0.10 };
 const CONSERVATIVE_COST = { name: 'conservative', spread: 0.75, slippage: 0.10 };
+const MIN_SESSION_COVERAGE_PCT = 95;
 const WINDOWS = [
   { id: 'five_year', days: 1825, minTrades: 100 },
   { id: 'recent_730d', days: 730, minTrades: 40 }
@@ -142,6 +143,63 @@ function inSession(info) {
   const minuteOfDay = info.hour * 60 + info.minute;
   return minuteOfDay >= 9 * 60 + 35 && minuteOfDay <= 12 * 60 + 15;
 }
+function localTimeToEpoch(dateKey, minuteOfDay) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const utcNoon = Math.floor(Date.UTC(year, month - 1, day, 12, 0, 0) / 1000);
+  const local = nyLocalInfo(utcNoon);
+  const utcAsLocal = Math.floor(Date.UTC(year, month - 1, day, local.hour, new Date(utcNoon * 1000).getUTCMinutes(), 0) / 1000);
+  const offsetSeconds = utcAsLocal - utcNoon;
+  const targetAsUtc = Math.floor(Date.UTC(year, month - 1, day, Math.floor(minuteOfDay / 60), minuteOfDay % 60, 0) / 1000);
+  return targetAsUtc - offsetSeconds;
+}
+function sessionCoverage(bars, windowStart, windowEnd) {
+  const startMinute = 9 * 60 + 35, endMinute = 12 * 60 + 15;
+  const expected = new Map(), observed = new Map();
+  for (let t = Math.floor(windowStart / 86400) * 86400 - 86400; t < windowEnd + 86400; t += 86400) {
+    const local = nyLocalInfo(t + 12 * 3600);
+    if (['Sat', 'Sun'].includes(local.weekday) || expected.has(local.date)) continue;
+    const first = localTimeToEpoch(local.date, startMinute);
+    const last = localTimeToEpoch(local.date, endMinute);
+    if (last < windowStart || first >= windowEnd) continue;
+    const slots = [];
+    for (let minute = startMinute; minute <= endMinute; minute++) {
+      const ts = localTimeToEpoch(local.date, minute);
+      if (ts >= windowStart && ts < windowEnd) slots.push(ts);
+    }
+    if (slots.length) expected.set(local.date, new Set(slots));
+  }
+  for (const bar of bars) {
+    if (bar.time < windowStart || bar.time >= windowEnd) continue;
+    const local = nyLocalInfo(bar.time);
+    if (['Sat', 'Sun'].includes(local.weekday)) continue;
+    const minute = local.hour * 60 + local.minute;
+    if (minute < startMinute || minute > endMinute || !expected.has(local.date)) continue;
+    if (!observed.has(local.date)) observed.set(local.date, new Set());
+    observed.get(local.date).add(bar.time);
+  }
+  let coveredDays = 0, observedSlots = 0, expectedSlots = 0;
+  for (const [date, slots] of expected) {
+    const count = observed.get(date)?.size || 0;
+    observedSlots += count;
+    expectedSlots += slots.size;
+    if (count >= Math.ceil(slots.size * 0.90)) coveredDays++;
+  }
+  return {
+    expected_weekdays: expected.size, covered_weekdays: coveredDays,
+    incomplete_weekdays: expected.size - coveredDays,
+    coverage_pct: expected.size ? coveredDays / expected.size * 100 : 0,
+    observed_minute_bars: observedSlots, expected_minute_bars: expectedSlots,
+    minute_slot_coverage_pct: expectedSlots ? observedSlots / expectedSlots * 100 : 0,
+    minimum_day_coverage_pct: 90, required_window_coverage_pct: MIN_SESSION_COVERAGE_PCT
+  };
+}
+function getWindowEnd(defaultEnd) {
+  const raw = process.env.GOLD_RESEARCH_END_UTC;
+  if (!raw) return defaultEnd;
+  const ms = Date.parse(raw);
+  assert(Number.isFinite(ms), 'Invalid GOLD_RESEARCH_END_UTC: ' + raw);
+  return Math.floor(ms / 1000);
+}
 function sum(arr) { return arr.reduce((a, b) => a + b, 0); }
 function summarize(trades, initialEquity, maxDrawdownPct, censoredTrades, candidates, rejectionCounts) {
   const wins = trades.filter(t => t.net_pnl > 0);
@@ -184,9 +242,8 @@ function summarize(trades, initialEquity, maxDrawdownPct, censoredTrades, candid
 }
 function formatMoney(x) { return Number(x).toFixed(2); }
 
-function runWindow(bars, features, window, cost) {
+function runWindow(bars, features, window, cost, latest, dataRangeValid) {
   const { ema9, ema21, ema50, atr14, rsi14 } = features;
-  const latest = bars[bars.length - 1].time;
   const windowStart = latest - window.days * 86400;
   let equity = INITIAL_EQUITY, peak = INITIAL_EQUITY, maxDD = 0;
   let dayKey = '', dayStartEquity = equity, tradesToday = 0, dailyLocked = false, permanentlyLocked = false;
@@ -350,7 +407,8 @@ function runWindow(bars, features, window, cost) {
       expectancy_R: xs.length ? sum(xs.map(t => t.net_r)) / xs.length : null
     };
   }
-  const fullWindowValid = validWindow && censoredTrades === 0;
+  const coverage = sessionCoverage(bars, windowStart, latest);
+  const fullWindowValid = validWindow && censoredTrades === 0 && dataRangeValid && coverage.coverage_pct >= MIN_SESSION_COVERAGE_PCT;
   const gate = {
     min_trades: window.minTrades, min_profit_factor: 1.15,
     min_expectancy_R: 0.05, max_drawdown_pct: 5,
@@ -363,7 +421,7 @@ function runWindow(bars, features, window, cost) {
     window: window.id, window_days: window.days, window_start_utc: new Date(windowStart * 1000).toISOString(),
     window_end_utc: new Date(latest * 1000).toISOString(), cost_model: cost.name,
     costs: { spread_price: cost.spread, slippage_price: cost.slippage },
-    summary: { ...summary, full_window_result_valid: fullWindowValid, censored_trades: censoredTrades, censor_detail: censorDetail },
+    summary: { ...summary, full_window_result_valid: fullWindowValid, data_range_valid: dataRangeValid, session_coverage: coverage, censored_trades: censoredTrades, censor_detail: censorDetail },
     quality_gate: gate, rejection_counts: rejectionCounts, candidates, trades
   };
 }
@@ -375,8 +433,12 @@ async function main() {
     ema9: ema(closes, 9), ema21: ema(closes, 21), ema50: ema(closes, 50),
     atr14: atr(bars, 14), rsi14: rsi(closes, 14)
   };
-  const windows = WINDOWS.map(w => runWindow(bars, features, w, BASELINE_COST))
-    .concat(WINDOWS.map(w => runWindow(bars, features, w, CONSERVATIVE_COST)));
+  const latestActual = bars[bars.length - 1].time;
+  const windowEnd = getWindowEnd(latestActual + 60);
+  const expectedStart = windowEnd - Math.max(...WINDOWS.map(w => w.days)) * 86400;
+  const dataRangeValid = bars[0].time <= expectedStart + 3 * 86400 && latestActual >= windowEnd - 3 * 86400;
+  const windows = WINDOWS.map(w => runWindow(bars, features, w, BASELINE_COST, windowEnd, dataRangeValid))
+    .concat(WINDOWS.map(w => runWindow(bars, features, w, CONSERVATIVE_COST, windowEnd, dataRangeValid)));
   const report = {
     status: 'RESEARCH_ONLY_M1_SCALP',
     generated_at_utc: new Date().toISOString(),
@@ -389,7 +451,10 @@ async function main() {
       timeframe: 'M1 BID OHLC',
       bars: bars.length,
       first_bar_utc: new Date(bars[0].time * 1000).toISOString(),
-      last_bar_utc: new Date(bars[bars.length - 1].time * 1000).toISOString(),
+      last_bar_utc: new Date(latestActual * 1000).toISOString(),
+      expected_window_start_utc: new Date(expectedStart * 1000).toISOString(),
+      configured_window_end_utc: new Date(windowEnd * 1000).toISOString(),
+      data_range_valid: dataRangeValid,
       historical_xm_ask_spread_available: false
     },
     rules: RULES,

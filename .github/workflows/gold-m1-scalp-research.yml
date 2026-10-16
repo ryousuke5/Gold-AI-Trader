@@ -110,6 +110,8 @@ jobs:
 
   assemble:
     needs: [plan, prepare-chunks]
+    outputs:
+      end_date: ${{ needs.plan.outputs.end_date }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -199,6 +201,7 @@ jobs:
           GOLD_M1_SCALP_OUTPUT_DIR: gold-m1-scalp-output
           GOLD_M1_SCALP_INITIAL_EQUITY: '100000'
           GOLD_M1_SCALP_RISK_PCT: '0.25'
+          GOLD_RESEARCH_END_UTC: ${{ needs.assemble.outputs.end_date }}T00:00:00Z
         run: node scripts/backtest-gold-m1-scalp.mjs
       - name: Upload M1 scalp results
         if: always()
@@ -219,6 +222,7 @@ jobs:
           GOLD_M15_PULLBACK_OUTPUT_DIR: gold-m15-trend-pullback-output
           GOLD_PULLBACK_INITIAL_EQUITY: '100000'
           GOLD_PULLBACK_RISK_PCT: '0.25'
+          GOLD_RESEARCH_END_UTC: ${{ needs.assemble.outputs.end_date }}T00:00:00Z
         run: node scripts/backtest-gold-m15-trend-pullback.mjs
       - name: Upload M15 trend pullback results
         if: always()

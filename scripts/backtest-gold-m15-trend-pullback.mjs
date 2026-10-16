@@ -8,6 +8,7 @@ const INITIAL_EQUITY = Math.max(1000, Number(process.env.GOLD_PULLBACK_INITIAL_E
 const RISK_PCT = Math.max(0.01, Number(process.env.GOLD_PULLBACK_RISK_PCT || 0.25));
 const BASELINE_COST = { name: 'baseline', spread: 0.58, slippage: 0.10 };
 const CONSERVATIVE_COST = { name: 'conservative', spread: 0.75, slippage: 0.10 };
+const MIN_SESSION_COVERAGE_PCT = 95;
 const WINDOWS = [
   { id: 'five_year', days: 1825, minTrades: 150 },
   { id: 'recent_730d', days: 730, minTrades: 50 }
@@ -161,6 +162,63 @@ function inSession(info) {
   const minute = info.hour * 60 + info.minute;
   return minute >= 9 * 60 + 35 && minute <= 12 * 60 + 15;
 }
+function localTimeToEpoch(dateKey, minuteOfDay) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const utcNoon = Math.floor(Date.UTC(year, month - 1, day, 12, 0, 0) / 1000);
+  const local = nyInfo(utcNoon);
+  const utcAsLocal = Math.floor(Date.UTC(year, month - 1, day, local.hour, new Date(utcNoon * 1000).getUTCMinutes(), 0) / 1000);
+  const offsetSeconds = utcAsLocal - utcNoon;
+  const targetAsUtc = Math.floor(Date.UTC(year, month - 1, day, Math.floor(minuteOfDay / 60), minuteOfDay % 60, 0) / 1000);
+  return targetAsUtc - offsetSeconds;
+}
+function sessionCoverage(bars, windowStart, windowEnd) {
+  const startMinute = 9 * 60 + 30, endMinute = 12 * 60 + 15, stepMinutes = 15;
+  const expected = new Map(), observed = new Map();
+  for (let t = Math.floor(windowStart / 86400) * 86400 - 86400; t < windowEnd + 86400; t += 86400) {
+    const local = nyInfo(t + 12 * 3600);
+    if (local.weekday === 'Sat' || local.weekday === 'Sun' || expected.has(local.date)) continue;
+    const first = localTimeToEpoch(local.date, startMinute);
+    const last = localTimeToEpoch(local.date, endMinute);
+    if (last < windowStart || first >= windowEnd) continue;
+    const slots = [];
+    for (let minute = startMinute; minute <= endMinute; minute += stepMinutes) {
+      const ts = localTimeToEpoch(local.date, minute);
+      if (ts >= windowStart && ts < windowEnd) slots.push(ts);
+    }
+    if (slots.length) expected.set(local.date, new Set(slots));
+  }
+  for (const bar of bars) {
+    if (bar.time < windowStart || bar.time >= windowEnd) continue;
+    const local = nyInfo(bar.time);
+    if (local.weekday === 'Sat' || local.weekday === 'Sun') continue;
+    const minute = local.hour * 60 + local.minute;
+    if (minute < startMinute || minute > endMinute || (minute - startMinute) % stepMinutes !== 0 || !expected.has(local.date)) continue;
+    if (!observed.has(local.date)) observed.set(local.date, new Set());
+    observed.get(local.date).add(minute);
+  }
+  let coveredDays = 0, observedSlots = 0, expectedSlots = 0;
+  for (const [date, slots] of expected) {
+    const count = observed.get(date)?.size || 0;
+    observedSlots += count;
+    expectedSlots += slots.size;
+    if (count >= Math.min(slots.size, 11)) coveredDays++;
+  }
+  return {
+    expected_weekdays: expected.size, covered_weekdays: coveredDays,
+    incomplete_weekdays: expected.size - coveredDays,
+    coverage_pct: expected.size ? coveredDays / expected.size * 100 : 0,
+    observed_m15_bars: observedSlots, expected_m15_bars: expectedSlots,
+    m15_slot_coverage_pct: expectedSlots ? observedSlots / expectedSlots * 100 : 0,
+    minimum_day_bars: 11, required_window_coverage_pct: MIN_SESSION_COVERAGE_PCT
+  };
+}
+function getWindowEnd(defaultEnd) {
+  const raw = process.env.GOLD_RESEARCH_END_UTC;
+  if (!raw) return defaultEnd;
+  const ms = Date.parse(raw);
+  assert(Number.isFinite(ms), 'Invalid GOLD_RESEARCH_END_UTC: ' + raw);
+  return Math.floor(ms / 1000);
+}
 function consecutive(bars, start, end, intervalSeconds) {
   if (start < 0 || end >= bars.length || start > end) return false;
   for (let i = start + 1; i <= end; i++) {
@@ -190,8 +248,7 @@ function fmt(value, decimals = 3) {
   return value === null || value === undefined || !Number.isFinite(value) ? '—' : Number(value).toFixed(decimals);
 }
 
-function runWindow(m15, h1, features, window, cost) {
-  const latest = m15[m15.length - 1].time + 900;
+function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
   const windowStart = latest - window.days * 86400;
   let equity = INITIAL_EQUITY;
   let peakEquity = INITIAL_EQUITY;
@@ -374,6 +431,7 @@ function runWindow(m15, h1, features, window, cost) {
   const grossLoss = -sum(losses.map(t => t.net_pnl));
   const totalR = sum(trades.map(t => t.net_r));
   const totalPnl = sum(trades.map(t => t.net_pnl));
+  const coverage = sessionCoverage(m15, windowStart, latest);
   const summary = {
     initial_equity: INITIAL_EQUITY,
     final_equity: INITIAL_EQUITY + totalPnl,
@@ -389,7 +447,9 @@ function runWindow(m15, h1, features, window, cost) {
     max_drawdown_pct: maxDrawdownPct,
     avg_holding_minutes: trades.length ? sum(trades.map(t => t.holding_minutes)) / trades.length : null,
     trades_per_week: trades.length / (window.days / 7),
-    full_window_result_valid: validWindow && censoredTrades === 0,
+    full_window_result_valid: validWindow && censoredTrades === 0 && dataRangeValid && coverage.coverage_pct >= MIN_SESSION_COVERAGE_PCT,
+    data_range_valid: dataRangeValid,
+    session_coverage: coverage,
     censored_trades: censoredTrades,
     censor_detail: censorDetail,
     by_side: {}
@@ -447,6 +507,8 @@ function selfTest() {
   const session = nyInfo(Date.UTC(2026, 9, 16, 13, 45) / 1000);
   assert(inSession(session), 'America/New_York session/DST self-test failed: ' + JSON.stringify(session));
   assert(!inSession(nyInfo(Date.UTC(2026, 9, 16, 16, 30) / 1000)), 'Session end self-test failed');
+  const coverage = sessionCoverage(m15.bars, base, base + 2 * 3600);
+  assert(coverage.coverage_pct === 100, 'M15 session coverage self-test failed: ' + JSON.stringify(coverage));
   console.log(JSON.stringify({ self_test: 'PASS', m15_bars: m15.bars.length, h1_bars: h1.bars.length, timezone: 'America/New_York' }, null, 2));
 }
 
@@ -463,10 +525,14 @@ async function main() {
   assert(m15.length >= 10000, 'Insufficient quality-filtered M15 bars: ' + m15.length);
   assert(h1.length >= 1000, 'Insufficient quality-filtered H1 bars: ' + h1.length);
   const features = computeFeatures(m15, h1);
+  const latestActual = m15[m15.length - 1].time + 900;
+  const windowEnd = getWindowEnd(latestActual);
+  const expectedStart = windowEnd - Math.max(...WINDOWS.map(w => w.days)) * 86400;
+  const dataRangeValid = m15[0].time <= expectedStart + 3 * 86400 && latestActual >= windowEnd - 3 * 86400;
   const costs = [BASELINE_COST, CONSERVATIVE_COST];
   const results = [];
   for (const cost of costs) {
-    for (const window of WINDOWS) results.push(runWindow(m15, h1, features, window, cost));
+    for (const window of WINDOWS) results.push(runWindow(m15, h1, features, window, cost, windowEnd, dataRangeValid));
   }
   const report = {
     status: 'RESEARCH_ONLY_GOLD_M15_TREND_PULLBACK',
@@ -481,6 +547,9 @@ async function main() {
       m1_bars: m1.length,
       first_m1_bar_utc: new Date(m1[0].time * 1000).toISOString(),
       last_m1_bar_utc: new Date(m1[m1.length - 1].time * 1000).toISOString(),
+      expected_window_start_utc: new Date(expectedStart * 1000).toISOString(),
+      configured_window_end_utc: new Date(windowEnd * 1000).toISOString(),
+      data_range_valid: dataRangeValid,
       m15_bars_after_quality_filter: m15.length,
       h1_bars_after_quality_filter: h1.length,
       m15_quality: m15Result.diagnostics,
