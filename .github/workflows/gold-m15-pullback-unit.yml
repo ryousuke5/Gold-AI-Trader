@@ -1,0 +1,35 @@
+name: GOLD M15 Pullback Unit Checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/backtest-gold-m15-trend-pullback.mjs'
+      - 'scripts/backtest-gold-m15-breakout-retest.mjs'
+      - 'scripts/backtest-gold-m15-range-reversion.mjs'
+      - 'scripts/fetch-xauusd-m1-chunk.py'
+      - '.github/workflows/gold-m15-pullback-unit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate historical downloader without network access
+        run: python3 scripts/fetch-xauusd-m1-chunk.py --self-test
+      - name: Validate M1 and M15 backtester syntax
+        run: |
+          node --check scripts/backtest-gold-m1-scalp.mjs
+          node --check scripts/backtest-gold-m15-trend-pullback.mjs
+          node --check scripts/backtest-gold-m15-breakout-retest.mjs
+          node --check scripts/backtest-gold-m15-range-reversion.mjs
+          node scripts/backtest-gold-m15-range-reversion.mjs --self-test
+      - name: Validate aggregation and New York DST/session logic
+        run: node scripts/backtest-gold-m15-trend-pullback.mjs --self-test
