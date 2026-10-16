@@ -159,7 +159,7 @@ function summarize(run) {
     source_sha256: run.manifest.source_data.content_sha256,
     fixed_costs_and_execution: run.manifest.config,
     fixed_m5_and_h1_strategy_conditions: run.manifest.strategy,
-    xm_data_gap_policy: run.manifest.execution_policy
+    existing_replay_data_gap_policy: run.manifest.execution_policy
   };
 }
 
@@ -173,12 +173,13 @@ const report = {
     strategy_changed_between_runs: false,
     stop_loss_take_profit_changed_between_runs: false,
     spread_slippage_and_execution_filters_changed_between_runs: false,
-    xm_market_pause_handling_changed_between_runs: false,
+    existing_pause_gap_handling_changed_between_runs: false,
     ai_environment_filter_applied: false,
     source_data_identical: true,
     indicator_warmup: 'Indicators are calculated from the complete shared source series; only candidate timestamps are window-filtered. This keeps recent-window warm-up identical to the five-year run.',
     window_semantics: 'Start inclusive, end exclusive; both periods share the same data-derived end timestamp.',
     comparability_note: 'Total net R, total trade count, and maximum drawdown depend on the window length. Compare expectancy, profit factor, win rate, trades per week, and net R per week alongside raw totals.',
+    pause_handling_scope: 'The current replay data-gap rule (>900 seconds) is identical in both windows; this comparison does not add or infer a separate XM maintenance-calendar rule.',
     trade_selection: 'Eligible trades sorted chronologically; a new trade is skipped while the prior selected trade remains open.'
   },
   configuration_check: {
