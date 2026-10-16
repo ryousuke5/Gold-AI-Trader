@@ -6,9 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const builder = path.join(path.dirname(fileURLToPath(import.meta.url)), 'build-gold-v2-ai-replay-dataset.mjs');
-const input = process.env.GOLD_BACKTEST_DATA_FILE;
-if (!input) throw new Error('GOLD_BACKTEST_DATA_FILE is required (JSON or .json.gz OHLC bars)');
-
+const input = process.env.GOLD_BACKTEST_DATA_FILE || path.join(repoRoot, 'gold-xauusd-data', 'xauusd-m5.json.gz');
 const inputPath = path.resolve(input);
 const rawBytes = await fs.readFile(inputPath);
 const text = inputPath.endsWith('.gz') ? gunzipSync(rawBytes).toString('utf8') : rawBytes.toString('utf8');
@@ -49,6 +47,7 @@ function build(label, start, outputDir) {
   console.log(JSON.stringify({ phase: 'build-start', label, start_utc: start, end_utc_exclusive: end, output_dir: outputDir }));
   const env = {
     ...process.env,
+    GOLD_BACKTEST_DATA_FILE: inputPath,
     GOLD_BACKTEST_START_UTC: start,
     GOLD_BACKTEST_END_UTC: end,
     GOLD_AI_REPLAY_OUTPUT_DIR: outputDir
