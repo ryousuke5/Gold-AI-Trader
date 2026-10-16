@@ -80,10 +80,10 @@ jobs:
             --end-date "${{ matrix.chunk.end }}" \
             --cache-dir "gold-xauusd-data/raw/${{ matrix.chunk.id }}" \
             --output-file "gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.json.gz" \
-            --m1-output-file "gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}".json.gz \
-            --manifest-file "gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}".manifest.json \
+            --m1-output-file "gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.json.gz" \
+            --manifest-file "gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.manifest.json" \
             --request-delay 1.5 --timeout 30 --retries 8
-          gzip -t "gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}".json.gz
+          gzip -t "gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.json.gz"
       - name: Save newly downloaded M1 checkpoint
         if: always() && steps.m1cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -96,8 +96,8 @@ jobs:
         with:
           name: gold-xauusd-m1-chunk-${{ matrix.chunk.id }}
           path: |
-            gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}".json.gz
-            gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}".manifest.json
+            gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.json.gz"
+            gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.manifest.json"
           retention-days: 7
           if-no-files-found: error
 
