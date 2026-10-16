@@ -16,6 +16,8 @@ export function getRiskLimits() {
     maxEntryDeviationPrice: Math.max(0, envNum('MAX_ENTRY_DEVIATION_PRICE', 1.00))
   };
 }
+// tickSize is a quote-price increment (for example, 0.01 in XAUUSD), not a count of points.
+// The MT4 bridge must convert MODE_TICKSIZE points into price units using MODE_POINT before sending it.
 export function calculateLots({ equity, riskPct, entry, stopLoss, tickSize, tickValue, minLot = 0.01, maxLot = 100, lotStep = 0.01 }) {
   const vals = [equity, riskPct, entry, stopLoss, tickSize, tickValue, minLot, maxLot, lotStep];
   if (!vals.every(Number.isFinite)) return { lots: 0, error: 'non_numeric_risk_inputs' };
