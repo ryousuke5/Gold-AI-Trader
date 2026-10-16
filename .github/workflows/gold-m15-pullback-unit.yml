@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/backtest-gold-m15-trend-pullback.mjs'
+      - 'scripts/fetch-xauusd-m1-chunk.py'
       - '.github/workflows/gold-m15-pullback-unit.yml'
   workflow_dispatch:
 
@@ -19,6 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Validate historical downloader without network access
+        run: python3 scripts/fetch-xauusd-m1-chunk.py --self-test
       - name: Validate M1 and M15 backtester syntax
         run: |
           node --check scripts/backtest-gold-m1-scalp.mjs

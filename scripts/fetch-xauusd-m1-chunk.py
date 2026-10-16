@@ -369,11 +369,22 @@ def main() -> None:
                 cache_file.unlink(missing_ok=True)
 
         if bars is None:
-            status, raw = fetch_bytes(
-                bi5_url(day),
-                retries=args.retries,
-                timeout=args.timeout,
-            )
+            try:
+                status, raw = fetch_bytes(
+                    bi5_url(day),
+                    retries=args.retries,
+                    timeout=args.timeout,
+                )
+            except (HTTPError, URLError, TimeoutError, OSError, RuntimeError) as exc:
+                # Save the failure in the checkpoint and finish processing the rest of the
+                # chunk. The chunk still fails closed below, but later days are cached so a
+                # retry only needs to fetch the missing day instead of repeating the chunk.
+                status, raw = "transient_failed", b""
+                print(json.dumps({
+                    "event": "day_fetch_exhausted",
+                    "date": day.isoformat(),
+                    "error": repr(exc),
+                }), flush=True)
             if status == "missing":
                 missing_days.append(day.isoformat())
                 missing_marker.touch()
