@@ -1,0 +1,25 @@
+name: GOLD M15 Pullback Unit Checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/backtest-gold-m15-trend-pullback.mjs'
+      - '.github/workflows/gold-m15-pullback-unit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate M15 backtester syntax
+        run: node --check scripts/backtest-gold-m15-trend-pullback.mjs
+      - name: Validate aggregation and New York DST/session logic
+        run: node scripts/backtest-gold-m15-trend-pullback.mjs --self-test
