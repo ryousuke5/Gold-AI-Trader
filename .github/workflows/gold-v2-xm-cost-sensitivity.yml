@@ -1,0 +1,219 @@
+name: GOLD V2 XM Cost Sensitivity Research
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/gold-v2-xm-cost-sensitivity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - id: spread_055_slip_005
+            spread: '0.55'
+            slippage: '0.05'
+          - id: spread_058_slip_010
+            spread: '0.58'
+            slippage: '0.10'
+          - id: spread_075_slip_010
+            spread: '0.75'
+            slippage: '0.10'
+          - id: spread_100_slip_010
+            spread: '1.00'
+            slippage: '0.10'
+    env:
+      COST_ID: ${{ matrix.id }}
+      SPREAD_PRICE: ${{ matrix.spread }}
+      SLIPPAGE_PRICE: ${{ matrix.slippage }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Download fixed five-year M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: 38362767897
+          github-token: ${{ github.token }}
+      - name: Verify data
+        run: |
+          set -euo pipefail
+          test -s gold-xauusd-data/xauusd-m5.json.gz
+          test -s gold-xauusd-data/xauusd_m5_manifest.json
+          gzip -t gold-xauusd-data/xauusd-m5.json.gz
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          import { gunzipSync } from 'node:zlib';
+          const manifest = JSON.parse(await fs.readFile('gold-xauusd-data/xauusd_m5_manifest.json','utf8'));
+          const bars = JSON.parse(gunzipSync(await fs.readFile('gold-xauusd-data/xauusd-m5.json.gz')).toString('utf8'));
+          if (!Array.isArray(bars) || bars.length < 300000) throw new Error('Insufficient XAUUSD M5 bars');
+          if (new Date(bars[0].time*1000).toISOString().slice(0,10) !== '2021-10-06') throw new Error('Unexpected first bar');
+          if (new Date(bars.at(-1).time*1000).toISOString().slice(0,10) !== '2026-10-04') throw new Error('Unexpected last bar');
+          console.log(JSON.stringify({rows:bars.length,first:new Date(bars[0].time*1000).toISOString(),last:new Date(bars.at(-1).time*1000).toISOString(),manifest_end:manifest.requested_end_date_exclusive_utc},null,2));
+          NODE
+      - name: Run fixed-condition backtests
+        run: |
+          set -euo pipefail
+          for window_spec in "five_year:1825" "recent_730d:730"; do
+            IFS=':' read -r window days <<< "$window_spec"
+            for mode in strict close_ema20_rsi; do
+              out="xm-cost-output/$COST_ID/$window/$mode"
+              mkdir -p "$out"
+              echo "COST=$COST_ID SPREAD=$SPREAD_PRICE SLIPPAGE=$SLIPPAGE_PRICE WINDOW=$window MODE=$mode"
+              env \
+                GOLD_BACKTEST_DATA_FILE="gold-xauusd-data/xauusd-m5.json.gz" \
+                GOLD_BACKTEST_OUTPUT_DIR="$out" \
+                GOLD_BACKTEST_LOOKBACK_DAYS="$days" \
+                GOLD_BACKTEST_INITIAL_EQUITY=100000 \
+                GOLD_BACKTEST_RISK_PCT=0.25 \
+                GOLD_BACKTEST_SPREAD_PRICE="$SPREAD_PRICE" \
+                GOLD_BACKTEST_SLIPPAGE_PRICE="$SLIPPAGE_PRICE" \
+                GOLD_BACKTEST_MAX_HOLD_BARS=96 \
+                GOLD_BACKTEST_MAX_ENTRY_GAP_ATR=0.50 \
+                GOLD_BACKTEST_MIN_EFFECTIVE_RR=1.50 \
+                GOLD_BACKTEST_MAX_DAILY_LOSS_PCT=2 \
+                GOLD_BACKTEST_MAX_DRAWDOWN_PCT=5 \
+                GOLD_BACKTEST_SERVER_TIMEZONE=Europe/Nicosia \
+                GOLD_RANGE_LOOKBACK=12 \
+                GOLD_MIN_RANGE_ATR=0.80 \
+                GOLD_MAX_RANGE_ATR=2.80 \
+                GOLD_BREAKOUT_ATR=0.10 \
+                GOLD_MIN_BODY_ATR=0.40 \
+                GOLD_MIN_CLOSE_LOCATION=0.65 \
+                GOLD_MIN_VOLUME_RATIO=1.10 \
+                GOLD_BUY_RSI_MIN=52 \
+                GOLD_BUY_RSI_MAX=75 \
+                GOLD_SELL_RSI_MIN=25 \
+                GOLD_SELL_RSI_MAX=48 \
+                GOLD_MAX_EXTENSION_ATR=1.50 \
+                GOLD_STOP_BUFFER_ATR=0.15 \
+                GOLD_MIN_STOP_ATR=0.80 \
+                GOLD_MAX_STOP_ATR=2.00 \
+                GOLD_TAKE_PROFIT_R=2.00 \
+                GOLD_MIN_H1_RSI_BUY=50 \
+                GOLD_MAX_H1_RSI_BUY=72 \
+                GOLD_MIN_H1_RSI_SELL=28 \
+                GOLD_MAX_H1_RSI_SELL=50 \
+                GOLD_SESSION_START_UTC=7 \
+                GOLD_SESSION_END_UTC=20 \
+                GOLD_H1_TREND_MODE="$mode" \
+                GOLD_H1_MODE_STUDY_RUN=true \
+                node scripts/backtest-gold-v2.mjs
+              test -s "$out/gold_v2_backtest_report.json"
+              test -s "$out/gap-policy-comparison/gold_v2_gap_policy_comparison.json"
+            done
+          done
+      - name: Upload scenario results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-xm-cost-${{ matrix.id }}
+          path: xm-cost-output/${{ matrix.id }}/
+          retention-days: 30
+          if-no-files-found: error
+  aggregate:
+    needs: backtest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download all scenario results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gold-v2-xm-cost-*
+          path: xm-cost-artifacts
+          merge-multiple: false
+      - name: Build comparison CSV and Markdown
+        run: |
+          python3 <<'PY'
+          import csv, json
+          from pathlib import Path
+          root = Path("xm-cost-artifacts")
+          rows = []
+          for scenario_dir in sorted(root.glob("gold-v2-xm-cost-*")):
+            cost_id = scenario_dir.name.replace("gold-v2-xm-cost-", "")
+            for window in ("five_year", "recent_730d"):
+              for mode in ("strict", "close_ema20_rsi"):
+                folder = scenario_dir / window / mode
+                report_path = folder / "gold_v2_backtest_report.json"
+                gap_path = folder / "gap-policy-comparison" / "gold_v2_gap_policy_comparison.json"
+                if not report_path.exists() or not gap_path.exists():
+                  raise SystemExit(f"Missing report: {folder}")
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                gap = json.loads(gap_path.read_text(encoding="utf-8"))
+                cost = gap["costs"]["baseline"]
+                selected = cost["xm_account_schedule_aware"]
+                summary = selected["summary"]
+                costs = cost["costs"]
+                rows.append({
+                  "cost_id": cost_id, "window": window,
+                  "window_days": 1825 if window == "five_year" else 730,
+                  "h1_mode": mode, "spread_price": costs["spread_price"],
+                  "slippage_price": costs["slippage_price"],
+                  "summary_valid": not bool(selected.get("censored")) and cost.get("comparison_valid") is True,
+                  "trades": summary.get("trades"), "profit_factor": summary.get("profit_factor"),
+                  "expectancy_R": summary.get("expectancy_R"),
+                  "max_drawdown_pct": summary.get("max_drawdown_pct"),
+                  "net_profit": summary.get("net_profit"), "return_pct": summary.get("return_pct"),
+                  "wins": summary.get("wins"), "losses": summary.get("losses"),
+                  "quality_gate_passed": bool(selected.get("quality_gate", {}).get("passed", False)),
+                  "data_first_utc": report.get("source_period", {}).get("m5_first"),
+                  "data_last_utc": report.get("source_period", {}).get("m5_last")
+                })
+          if len(rows) != 16:
+            raise SystemExit(f"Expected 16 summary rows, got {len(rows)}")
+          out = Path("xm-cost-summary")
+          out.mkdir(parents=True, exist_ok=True)
+          with (out / "gold_v2_xm_cost_sensitivity.csv").open("w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            writer.writeheader(); writer.writerows(rows)
+          (out / "gold_v2_xm_cost_sensitivity.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+          fmt = lambda x, d=3: "—" if x is None else f"{float(x):.{d}f}"
+          md = [
+            "# GOLD V2 XM Cost Sensitivity — research only", "",
+            "No production configuration changed. No Render deployment occurred. Real trading remains OFF.", "",
+            "Same prepared Dukascopy XAUUSD M5 data ending 2026-10-05 UTC. The 730-day window is independently reset. M5 filters, SL/TP, effective RR, risk, session, timezone and XM schedule-aware gap handling are frozen. Metrics use the requested cost as the run's baseline. This is a modeled cost study, not five years of historical XM spreads.", "",
+            "| Window | H1 mode | Spread | Slippage | Trades | PF | Expectancy (R/trade) | Max DD % | PnL | Valid window |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---|"
+          ]
+          for r in rows:
+            md.append("| " + " | ".join([
+              r["window"], r["h1_mode"], fmt(r["spread_price"],2), fmt(r["slippage_price"],2),
+              str(r["trades"]), fmt(r["profit_factor"]), fmt(r["expectancy_R"]),
+              fmt(r["max_drawdown_pct"]), fmt(r["net_profit"],2), str(r["summary_valid"])
+            ]) + " |")
+          md += ["", "## Interpretation", "",
+            "- Positive expectancy and PF above 1 are necessary evidence, not sufficient proof of robustness.",
+            "- The five-year quality gate requires at least 30 trades; a small sample cannot support production promotion.",
+            "- The recent 730-day interval ends at the latest historical bar available, not today: the M5 data ends 2026-10-05 UTC.",
+            "- close_ema20_rsi is a research-only H1 ablation, not a production recommendation.",
+            "- No live trading was enabled.", ""]
+          (out / "gold_v2_xm_cost_sensitivity.md").write_text("\n".join(md), encoding="utf-8")
+          print((out / "gold_v2_xm_cost_sensitivity.md").read_text(encoding="utf-8"))
+          PY
+      - name: Upload aggregated comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-xm-cost-sensitivity-summary
+          path: xm-cost-summary/
+          retention-days: 30
+          if-no-files-found: error
