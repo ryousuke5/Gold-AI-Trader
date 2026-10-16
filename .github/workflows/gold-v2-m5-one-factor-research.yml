@@ -1,0 +1,289 @@
+name: GOLD V2 M5 One-Factor Research
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/gold-v2-m5-one-factor-research.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - id: baseline
+            min_range_atr: '0.80'
+            max_range_atr: '2.80'
+            min_body_atr: '0.40'
+            min_volume_ratio: '1.10'
+            min_close_location: '0.65'
+            breakout_atr: '0.10'
+          - id: min_range_060
+            min_range_atr: '0.60'
+            max_range_atr: '2.80'
+            min_body_atr: '0.40'
+            min_volume_ratio: '1.10'
+            min_close_location: '0.65'
+            breakout_atr: '0.10'
+          - id: max_range_350
+            min_range_atr: '0.80'
+            max_range_atr: '3.50'
+            min_body_atr: '0.40'
+            min_volume_ratio: '1.10'
+            min_close_location: '0.65'
+            breakout_atr: '0.10'
+          - id: min_body_030
+            min_range_atr: '0.80'
+            max_range_atr: '2.80'
+            min_body_atr: '0.30'
+            min_volume_ratio: '1.10'
+            min_close_location: '0.65'
+            breakout_atr: '0.10'
+          - id: min_volume_100
+            min_range_atr: '0.80'
+            max_range_atr: '2.80'
+            min_body_atr: '0.40'
+            min_volume_ratio: '1.00'
+            min_close_location: '0.65'
+            breakout_atr: '0.10'
+          - id: close_location_060
+            min_range_atr: '0.80'
+            max_range_atr: '2.80'
+            min_body_atr: '0.40'
+            min_volume_ratio: '1.10'
+            min_close_location: '0.60'
+            breakout_atr: '0.10'
+          - id: breakout_atr_005
+            min_range_atr: '0.80'
+            max_range_atr: '2.80'
+            min_body_atr: '0.40'
+            min_volume_ratio: '1.10'
+            min_close_location: '0.65'
+            breakout_atr: '0.05'
+    env:
+      VARIANT_ID: ${{ matrix.id }}
+      MIN_RANGE_ATR: ${{ matrix.min_range_atr }}
+      MAX_RANGE_ATR: ${{ matrix.max_range_atr }}
+      MIN_BODY_ATR: ${{ matrix.min_body_atr }}
+      MIN_VOLUME_RATIO: ${{ matrix.min_volume_ratio }}
+      MIN_CLOSE_LOCATION: ${{ matrix.min_close_location }}
+      BREAKOUT_ATR: ${{ matrix.breakout_atr }}
+    steps:
+      - name: Checkout XM schedule-aware research engine
+        uses: actions/checkout@v4
+        with:
+          ref: fix/gold-extension-diagnostics-20261015
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Download fixed five-year M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: 38362767897
+          github-token: ${{ github.token }}
+      - name: Verify historical dataset
+        run: |
+          set -euo pipefail
+          test -s gold-xauusd-data/xauusd-m5.json.gz
+          test -s gold-xauusd-data/xauusd_m5_manifest.json
+          gzip -t gold-xauusd-data/xauusd-m5.json.gz
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          import { gunzipSync } from 'node:zlib';
+          const manifest = JSON.parse(await fs.readFile('gold-xauusd-data/xauusd_m5_manifest.json','utf8'));
+          const bars = JSON.parse(gunzipSync(await fs.readFile('gold-xauusd-data/xauusd-m5.json.gz')).toString('utf8'));
+          if (!Array.isArray(bars) || bars.length < 300000) throw new Error('Insufficient XAUUSD M5 bars');
+          if (new Date(bars[0].time*1000).toISOString().slice(0,10) !== '2021-10-06') throw new Error('Unexpected first bar');
+          if (new Date(bars.at(-1).time*1000).toISOString().slice(0,10) !== '2026-10-04') throw new Error('Unexpected last bar');
+          console.log(JSON.stringify({bars:bars.length,first:new Date(bars[0].time*1000).toISOString(),last:new Date(bars.at(-1).time*1000).toISOString(),manifest_end_exclusive:manifest.requested_end_date_exclusive_utc},null,2));
+          NODE
+      - name: Run baseline and one-factor M5 comparisons
+        shell: bash
+        run: |
+          set -euo pipefail
+          for window_spec in "five_year:1825" "recent_730d:730"; do
+            IFS=':' read -r window days <<< "$window_spec"
+            out="xm-m5-output/$VARIANT_ID/$window/close_ema20_rsi"
+            mkdir -p "$out"
+            echo "VARIANT=$VARIANT_ID WINDOW=$window H1_MODE=close_ema20_rsi SPREAD=0.58 SLIPPAGE=0.10"
+            env \
+              GOLD_BACKTEST_DATA_FILE="gold-xauusd-data/xauusd-m5.json.gz" \
+              GOLD_BACKTEST_OUTPUT_DIR="$out" \
+              GOLD_BACKTEST_LOOKBACK_DAYS="$days" \
+              GOLD_BACKTEST_INITIAL_EQUITY=100000 \
+              GOLD_BACKTEST_RISK_PCT=0.25 \
+              GOLD_BACKTEST_SPREAD_PRICE=0.58 \
+              GOLD_BACKTEST_SLIPPAGE_PRICE=0.10 \
+              GOLD_BACKTEST_MAX_HOLD_BARS=96 \
+              GOLD_BACKTEST_MAX_ENTRY_GAP_ATR=0.50 \
+              GOLD_BACKTEST_MIN_EFFECTIVE_RR=1.50 \
+              GOLD_BACKTEST_MAX_DAILY_LOSS_PCT=2 \
+              GOLD_BACKTEST_MAX_DRAWDOWN_PCT=5 \
+              GOLD_BACKTEST_SERVER_TIMEZONE=Europe/Nicosia \
+              GOLD_RANGE_LOOKBACK=12 \
+              GOLD_MIN_RANGE_ATR="$MIN_RANGE_ATR" \
+              GOLD_MAX_RANGE_ATR="$MAX_RANGE_ATR" \
+              GOLD_BREAKOUT_ATR="$BREAKOUT_ATR" \
+              GOLD_MIN_BODY_ATR="$MIN_BODY_ATR" \
+              GOLD_MIN_CLOSE_LOCATION="$MIN_CLOSE_LOCATION" \
+              GOLD_MIN_VOLUME_RATIO="$MIN_VOLUME_RATIO" \
+              GOLD_BUY_RSI_MIN=52 \
+              GOLD_BUY_RSI_MAX=75 \
+              GOLD_SELL_RSI_MIN=25 \
+              GOLD_SELL_RSI_MAX=48 \
+              GOLD_MAX_EXTENSION_ATR=1.50 \
+              GOLD_STOP_BUFFER_ATR=0.15 \
+              GOLD_MIN_STOP_ATR=0.80 \
+              GOLD_MAX_STOP_ATR=2.00 \
+              GOLD_TAKE_PROFIT_R=2.00 \
+              GOLD_MIN_H1_RSI_BUY=50 \
+              GOLD_MAX_H1_RSI_BUY=72 \
+              GOLD_MIN_H1_RSI_SELL=28 \
+              GOLD_MAX_H1_RSI_SELL=50 \
+              GOLD_SESSION_START_UTC=7 \
+              GOLD_SESSION_END_UTC=20 \
+              GOLD_H1_TREND_MODE=close_ema20_rsi \
+              GOLD_H1_MODE_STUDY_RUN=true \
+              node scripts/backtest-gold-v2.mjs
+            test -s "$out/gold_v2_backtest_report.json"
+            test -s "$out/gap-policy-comparison/gold_v2_gap_policy_comparison.json"
+            test -s "$out/gap-policy-comparison/gold_v2_trades_baseline_xm_account_schedule_aware.csv"
+            test -s "$out/gap-policy-comparison/gold_v2_candidate_events_baseline_xm_account_schedule_aware.json"
+          done
+      - name: Upload variant results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-m5-one-factor-${{ matrix.id }}
+          path: xm-m5-output/${{ matrix.id }}/
+          retention-days: 30
+          if-no-files-found: error
+
+  aggregate:
+    needs: backtest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download variant results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gold-v2-m5-one-factor-*
+          path: xm-m5-artifacts
+          merge-multiple: false
+      - name: Build trade-count, side and cost comparison
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import csv, json
+          from pathlib import Path
+          root = Path("xm-m5-artifacts")
+          rows = []
+          for scenario_dir in sorted(root.glob("gold-v2-m5-one-factor-*")):
+            variant = scenario_dir.name.replace("gold-v2-m5-one-factor-", "")
+            for window in ("five_year", "recent_730d"):
+              folder = scenario_dir / window / "close_ema20_rsi"
+              report_path = folder / "gold_v2_backtest_report.json"
+              gap_path = folder / "gap-policy-comparison" / "gold_v2_gap_policy_comparison.json"
+              event_path = folder / "gap-policy-comparison" / "gold_v2_candidate_events_baseline_xm_account_schedule_aware.json"
+              if not report_path.exists() or not gap_path.exists() or not event_path.exists():
+                raise SystemExit(f"Missing output for {variant}/{window}: {folder}")
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+              gap = json.loads(gap_path.read_text(encoding="utf-8"))
+              events = json.loads(event_path.read_text(encoding="utf-8"))
+              for cost_model in ("baseline", "conservative"):
+                cost_row = gap["costs"][cost_model]
+                aware = cost_row["xm_account_schedule_aware"]
+                summary = aware["summary"]
+                valid = cost_row.get("comparison_valid") is True and aware.get("censored") is not True
+                accepted = [e for e in events if e.get("admission_decision") == "ACCEPTED"]
+                decisions = {}
+                for event in events:
+                  key = event.get("admission_decision", "UNKNOWN")
+                  decisions[key] = decisions.get(key, 0) + 1
+                cost_params = report["cost_scenarios"][cost_model]
+                rows.append({
+                  "variant": variant, "window": window,
+                  "window_days": 1825 if window == "five_year" else 730,
+                  "cost_model": cost_model,
+                  "spread_price": cost_params.get("spread_price"),
+                  "slippage_price": cost_params.get("slippage_price"),
+                  "h1_mode": "close_ema20_rsi (research only)",
+                  "summary_valid": valid,
+                  "setup_candidates_recorded": len(events),
+                  "accepted_candidates_recorded": len(accepted),
+                  "decision_counts": json.dumps(decisions, sort_keys=True),
+                  "trades": summary.get("trades"),
+                  "buy_trades": summary.get("by_side", {}).get("BUY", {}).get("trades", 0),
+                  "sell_trades": summary.get("by_side", {}).get("SELL", {}).get("trades", 0),
+                  "profit_factor": summary.get("profit_factor"),
+                  "expectancy_R": summary.get("expectancy_R"),
+                  "max_drawdown_pct": summary.get("max_drawdown_pct"),
+                  "net_profit": summary.get("net_profit"),
+                  "return_pct": summary.get("return_pct"),
+                  "quality_gate_passed": bool(aware.get("quality_gate", {}).get("passed", False)),
+                  "censor_detail": aware.get("censor_detail"),
+                  "data_first_utc": report.get("source_period", {}).get("m5_first"),
+                  "data_last_utc": report.get("source_period", {}).get("m5_last"),
+                  "min_range_atr": report.get("strategy_parameters", {}).get("minRangeAtr"),
+                  "max_range_atr": report.get("strategy_parameters", {}).get("maxRangeAtr"),
+                  "min_body_atr": report.get("strategy_parameters", {}).get("minBodyAtr"),
+                  "min_volume_ratio": report.get("strategy_parameters", {}).get("minVolumeRatio"),
+                  "min_close_location": report.get("strategy_parameters", {}).get("minCloseLocation"),
+                  "breakout_atr": report.get("strategy_parameters", {}).get("breakoutAtr")
+                })
+          if len(rows) != 28:
+            raise SystemExit(f"Expected 28 summary rows (7 variants × 2 windows × 2 costs); got {len(rows)}")
+          out = Path("xm-m5-summary")
+          out.mkdir(parents=True, exist_ok=True)
+          with (out / "gold_v2_m5_one_factor.csv").open("w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            writer.writeheader(); writer.writerows(rows)
+          (out / "gold_v2_m5_one_factor.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+          fmt = lambda value, digits=3: "—" if value is None else f"{float(value):.{digits}f}"
+          md = [
+            "# GOLD V2 M5 One-Factor Research (research only)", "",
+            "No production configuration change. No Render deployment. Real orders remain OFF.", "",
+            "Research base: H1 close-vs-EMA20 plus existing H1 RSI band (research-only). Each variant changes exactly one M5 setup parameter. Both windows are independently evaluated with initial equity/risk reset. Engine models scheduled XM maintenance/weekend gaps but uses Dukascopy M5 bid OHLC, not historical XM tick data. Baseline cost 0.58/0.10; conservative model 0.75/0.10.", "",
+            "| Variant | Window | Cost | Valid | Trades | BUY | SELL | PF | Expectancy (R) | Max DD % | PnL |",
+            "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|"
+          ]
+          for r in rows:
+            md.append("| " + " | ".join([
+              r["variant"], r["window"], r["cost_model"], str(r["summary_valid"]),
+              str(r["trades"]), str(r["buy_trades"]), str(r["sell_trades"]),
+              fmt(r["profit_factor"]), fmt(r["expectancy_R"]), fmt(r["max_drawdown_pct"]),
+              fmt(r["net_profit"],2)
+            ]) + " |")
+          md += ["", "## Interpretation guardrails", "",
+            "- These are screening experiments, not strategy approval.",
+            "- Compare trade count with PF, expectancy, max DD and valid/full-window status; do not select a variant just because it creates more trades.",
+            "- The five-year gate requires at least 30 trades; avoid promotion if the separately reset recent 730-day expectancy is negative.",
+            "- The 730-day period becomes inspected in this experiment and will not remain an untouched holdout.",
+            "- H1 close_ema20_rsi stays research-only. No live setting changes.", ""]
+          (out / "gold_v2_m5_one_factor.md").write_text("\n".join(md), encoding="utf-8")
+          print((out / "gold_v2_m5_one_factor.md").read_text(encoding="utf-8"))
+          PY
+      - name: Upload combined comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-m5-one-factor-summary
+          path: xm-m5-summary/
+          retention-days: 30
+          if-no-files-found: error
