@@ -840,7 +840,8 @@ async function runOne(rawM5, rawH1, config, strategy) {
       spread: config.spreadPrice
     });
 
-    const future=m5Ind.slice(i+1);
+    // simulateTrade inspects at most maxHoldBars. Avoid copying the entire remaining five-year array for every accepted candidate; output is unchanged.
+    const future=m5Ind.slice(i+1, i+1+config.maxHoldBars);
     const trade=simulateTrade({
       signalBar:signal,
       nextBar:next,
