@@ -19,7 +19,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Validate M15 backtester syntax
-        run: node --check scripts/backtest-gold-m15-trend-pullback.mjs
+      - name: Validate M1 and M15 backtester syntax
+        run: |
+          node --check scripts/backtest-gold-m1-scalp.mjs
+          node --check scripts/backtest-gold-m15-trend-pullback.mjs
       - name: Validate aggregation and New York DST/session logic
         run: node scripts/backtest-gold-m15-trend-pullback.mjs --self-test
