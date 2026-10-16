@@ -67,6 +67,8 @@ jobs:
           path: gold-xauusd-data/raw/${{ matrix.chunk.id }}
           key: xauusd-m1-v5-${{ runner.os }}-${{ matrix.chunk.id }}-${{ github.run_id }}
           restore-keys: |
+            xauusd-v4-m1-v4-r1-${{ runner.os }}-${{ matrix.chunk.id }}-
+            xauusd-v4-m1--${{ runner.os }}-${{ matrix.chunk.id }}-
             xauusd-m1-v5-${{ runner.os }}-${{ matrix.chunk.id }}-
       - name: Prepare output directories
         run: |
@@ -96,8 +98,8 @@ jobs:
         with:
           name: gold-xauusd-m1-chunk-${{ matrix.chunk.id }}
           path: |
-            gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.json.gz"
-            gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.manifest.json"
+            gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.json.gz
+            gold-xauusd-data/chunks/xauusd-m1-${{ matrix.chunk.id }}.manifest.json
           retention-days: 7
           if-no-files-found: error
 
