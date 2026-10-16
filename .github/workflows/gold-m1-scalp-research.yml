@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   plan:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     outputs:
       chunks: ${{ steps.plan.outputs.chunks }}
@@ -52,6 +53,7 @@ jobs:
           PY
 
   prepare-chunks:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 30
