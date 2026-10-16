@@ -1,0 +1,48 @@
+name: GOLD M15 Trend Pullback Research
+
+concurrency:
+  group: gold-m15-pullback-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/backtest-gold-m15-trend-pullback.mjs'
+      - '.github/workflows/gold-m15-pullback-research.yml'
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate M15 backtester and M1/M5 aggregation
+        run: |
+          node --check scripts/backtest-gold-m15-trend-pullback.mjs
+          node scripts/backtest-gold-m15-trend-pullback.mjs --self-test
+      - name: Run fixed five-year and recent-730-day M15 pullback tests from Dukascopy M5 BID history
+        env:
+          GOLD_M15_PULLBACK_OUTPUT_DIR: gold-m15-trend-pullback-output
+          GOLD_PULLBACK_INITIAL_EQUITY: '100000'
+          GOLD_PULLBACK_RISK_PCT: '0.25'
+          GOLD_RESEARCH_END_UTC: '2026-10-05T00:00:00Z'
+        run: node scripts/backtest-gold-m15-trend-pullback.mjs
+      - name: Upload M15 pullback research results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-m15-trend-pullback-research
+          path: gold-m15-trend-pullback-output/
+          retention-days: 30
+          if-no-files-found: warn

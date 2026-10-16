@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
-const DATA_FILE = process.env.GOLD_M15_PULLBACK_DATA_FILE || 'gold-xauusd-data/xauusd-m1.json.gz';
+const DATA_FILE = process.env.GOLD_M15_PULLBACK_DATA_FILE || '';
+const INPUT_TIMEFRAME = (process.env.GOLD_M15_PULLBACK_DATA_TIMEFRAME || (DATA_FILE.toLowerCase().includes('m1') ? 'm1' : 'm5')).toLowerCase();
 const OUTPUT_DIR = path.resolve(process.env.GOLD_M15_PULLBACK_OUTPUT_DIR || 'gold-m15-trend-pullback-output');
 const INITIAL_EQUITY = Math.max(1000, Number(process.env.GOLD_PULLBACK_INITIAL_EQUITY || 100000));
 const RISK_PCT = Math.max(0.01, Number(process.env.GOLD_PULLBACK_RISK_PCT || 0.25));
@@ -27,7 +28,8 @@ const RULES = {
   max_daily_loss_pct: 2,
   risk_per_trade_pct: RISK_PCT,
   cost_model: 'Dukascopy BID OHLC; modeled entry/exit spread and slippage; not historical XM Ask ticks',
-  aggregation_quality: 'M15 buckets require >=70% active M1 bars, edges within 3 minutes, and maximum observed-minute gap <=5 minutes; H1 buckets require >=75% active M1 bars, edges within 10 minutes, and max gap <=10 minutes',
+  allowed_input_timeframes: ['M1 BID OHLC', 'M5 BID OHLC'],
+  aggregation_quality: 'M1 input uses active-minute coverage and gap checks; M5 input requires complete contiguous M5 bars inside each M15/H1 bucket',
   same_bar_stop_and_target: 'STOP first (conservative)',
   live_orders_enabled: false
 };
@@ -67,20 +69,46 @@ function atr(bars, period, secondsPerBar) {
   return out;
 }
 
-async function loadM1(file) {
-  const bytes = await fs.readFile(file);
-  const raw = file.endsWith('.gz') ? gunzipSync(bytes).toString('utf8') : bytes.toString('utf8');
-  const parsed = JSON.parse(raw);
-  assert(Array.isArray(parsed), 'M1 input must be a JSON array');
+async function loadSourceBars() {
+  let parsed;
+  if (DATA_FILE) {
+    const bytes = await fs.readFile(DATA_FILE);
+    const raw = DATA_FILE.endsWith('.gz') ? gunzipSync(bytes).toString('utf8') : bytes.toString('utf8');
+    parsed = JSON.parse(raw);
+    assert(Array.isArray(parsed), 'Input data must be a JSON array');
+  } else {
+    assert(INPUT_TIMEFRAME === 'm5', 'Direct historical fetch supports M5 input only');
+    const rawEnd = process.env.GOLD_RESEARCH_END_UTC || '2026-10-05T00:00:00Z';
+    const end = new Date(rawEnd);
+    assert(Number.isFinite(end.getTime()), 'Invalid GOLD_RESEARCH_END_UTC: ' + rawEnd);
+    const start = new Date(end.getTime() - 1825 * 86400000);
+    const mod = await import('dukascopy-node');
+    const getHistoricalRates = mod.getHistoricalRates || mod.default?.getHistoricalRates;
+    assert(typeof getHistoricalRates === 'function', 'dukascopy-node getHistoricalRates export not found');
+    parsed = await getHistoricalRates({
+      instrument: 'xauusd',
+      dates: { from: start, to: end },
+      timeframe: 'm5',
+      priceType: 'bid',
+      volumes: true,
+      format: 'array'
+    });
+  }
+  const sourceSeconds = INPUT_TIMEFRAME === 'm1' ? 60 : 300;
   const rows = [];
   for (const row of parsed) {
+    const tuple = Array.isArray(row);
     const bar = {
-      time: Number(row.time), open: Number(row.open), high: Number(row.high),
-      low: Number(row.low), close: Number(row.close), volume: Number(row.volume || 0)
+      time: Math.floor(Number(tuple ? Number(row[0]) / 1000 : row.time)),
+      open: Number(tuple ? row[1] : row.open),
+      high: Number(tuple ? row[2] : row.high),
+      low: Number(tuple ? row[3] : row.low),
+      close: Number(tuple ? row[4] : row.close),
+      volume: Number((tuple ? row[5] : row.volume) || 0)
     };
     if (![bar.time, bar.open, bar.high, bar.low, bar.close].every(Number.isFinite)) continue;
     if (bar.open <= 0 || bar.high < Math.max(bar.open, bar.close) || bar.low > Math.min(bar.open, bar.close) || bar.low <= 0) continue;
-    if (bar.time % 60 !== 0) continue;
+    if (bar.time % sourceSeconds !== 0) continue;
     rows.push(bar);
   }
   rows.sort((a, b) => a.time - b.time);
@@ -91,7 +119,8 @@ async function loadM1(file) {
     unique.push(bar);
     lastTime = bar.time;
   }
-  assert(unique.length >= 500000, 'Insufficient valid M1 history: ' + unique.length);
+  const minBars = INPUT_TIMEFRAME === 'm1' ? 500000 : 200000;
+  assert(unique.length >= minBars, 'Insufficient valid ' + INPUT_TIMEFRAME.toUpperCase() + ' history: ' + unique.length);
   return unique;
 }
 
@@ -130,6 +159,51 @@ function aggregateActiveM1(m1, seconds, quality) {
       volume: sum(rows.map(x => x.volume)),
       active_m1_rows: rows.length,
       coverage_pct: rows.length / expectedMinutes * 100
+    });
+  }
+  result.sort((a, b) => a.time - b.time);
+  return { bars: result, diagnostics: { candidate_buckets: grouped.size, rejected_coverage: rejectedCoverage, rejected_gap: rejectedGap } };
+}
+
+
+function aggregateSourceBars(source, sourceSeconds, targetSeconds) {
+  const grouped = new Map();
+  for (const bar of source) {
+    const bucket = Math.floor(bar.time / targetSeconds) * targetSeconds;
+    if (!grouped.has(bucket)) grouped.set(bucket, []);
+    grouped.get(bucket).push(bar);
+  }
+  const expectedBars = targetSeconds / sourceSeconds;
+  const result = [];
+  let rejectedCoverage = 0;
+  let rejectedGap = 0;
+  for (const [time, rows] of grouped) {
+    rows.sort((a, b) => a.time - b.time);
+    if (rows.length !== expectedBars || rows[0].time !== time ||
+        rows[rows.length - 1].time !== time + targetSeconds - sourceSeconds) {
+      rejectedCoverage++;
+      continue;
+    }
+    let valid = true;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i].time - rows[i - 1].time !== sourceSeconds) {
+        valid = false;
+        break;
+      }
+    }
+    if (!valid) {
+      rejectedGap++;
+      continue;
+    }
+    result.push({
+      time,
+      open: rows[0].open,
+      high: Math.max(...rows.map(x => x.high)),
+      low: Math.min(...rows.map(x => x.low)),
+      close: rows[rows.length - 1].close,
+      volume: sum(rows.map(x => x.volume)),
+      source_bars: rows.length,
+      coverage_pct: 100
     });
   }
   result.sort((a, b) => a.time - b.time);
@@ -509,6 +583,15 @@ function selfTest() {
   }
   const m15 = aggregateActiveM1(synthetic, 900, { minCoverage: 0.70, edgeMinutes: 3, maxGapMinutes: 5 });
   const h1 = aggregateActiveM1(synthetic, 3600, { minCoverage: 0.75, edgeMinutes: 10, maxGapMinutes: 10 });
+  const syntheticM5 = [];
+  for (let i = 0; i < synthetic.length; i += 5) {
+    const group = synthetic.slice(i, i + 5);
+    syntheticM5.push({ time: group[0].time, open: group[0].open, high: Math.max(...group.map(x => x.high)), low: Math.min(...group.map(x => x.low)), close: group[group.length - 1].close, volume: sum(group.map(x => x.volume)) });
+  }
+  const m15FromM5 = aggregateSourceBars(syntheticM5, 300, 900);
+  const h1FromM5 = aggregateSourceBars(syntheticM5, 300, 3600);
+  assert(m15FromM5.bars.length === 8, 'M5-to-M15 aggregation self-test failed: ' + m15FromM5.bars.length);
+  assert(h1FromM5.bars.length === 2, 'M5-to-H1 aggregation self-test failed: ' + h1FromM5.bars.length);
   assert(m15.bars.length === 8, 'M15 aggregation self-test failed: ' + m15.bars.length);
   assert(h1.bars.length === 2, 'H1 aggregation self-test failed: ' + h1.bars.length);
   assert(consecutive(m15.bars, 0, 7, 900), 'M15 continuity self-test failed');
@@ -525,9 +608,14 @@ async function main() {
     selfTest();
     return;
   }
-  const m1 = await loadM1(DATA_FILE);
-  const m15Result = aggregateActiveM1(m1, 900, { minCoverage: 0.70, edgeMinutes: 3, maxGapMinutes: 5 });
-  const h1Result = aggregateActiveM1(m1, 3600, { minCoverage: 0.75, edgeMinutes: 10, maxGapMinutes: 10 });
+  const sourceBars = await loadSourceBars();
+  const sourceSeconds = INPUT_TIMEFRAME === 'm1' ? 60 : 300;
+  const m15Result = INPUT_TIMEFRAME === 'm1'
+    ? aggregateActiveM1(sourceBars, 900, { minCoverage: 0.70, edgeMinutes: 3, maxGapMinutes: 5 })
+    : aggregateSourceBars(sourceBars, sourceSeconds, 900);
+  const h1Result = INPUT_TIMEFRAME === 'm1'
+    ? aggregateActiveM1(sourceBars, 3600, { minCoverage: 0.75, edgeMinutes: 10, maxGapMinutes: 10 })
+    : aggregateSourceBars(sourceBars, sourceSeconds, 3600);
   const m15 = m15Result.bars;
   const h1 = h1Result.bars;
   assert(m15.length >= 10000, 'Insufficient quality-filtered M15 bars: ' + m15.length);
@@ -551,10 +639,10 @@ async function main() {
     data: {
       instrument: 'XAUUSD / GOLD',
       provider: 'Dukascopy Historical Data Feed',
-      input_timeframe: 'M1 BID OHLC, inactive zero-volume flat placeholders removed',
-      m1_bars: m1.length,
-      first_m1_bar_utc: new Date(m1[0].time * 1000).toISOString(),
-      last_m1_bar_utc: new Date(m1[m1.length - 1].time * 1000).toISOString(),
+      input_timeframe: INPUT_TIMEFRAME.toUpperCase() + ' BID OHLC',
+      source_bars: sourceBars.length,
+      first_source_bar_utc: new Date(sourceBars[0].time * 1000).toISOString(),
+      last_source_bar_utc: new Date(sourceBars[sourceBars.length - 1].time * 1000).toISOString(),
       expected_window_start_utc: new Date(expectedStart * 1000).toISOString(),
       configured_window_end_utc: new Date(windowEnd * 1000).toISOString(),
       data_range_valid: dataRangeValid,
@@ -606,8 +694,8 @@ async function main() {
     ].join(' | ') + ' |');
   }
   md.push('', '## Data and interpretation limits', '',
-    '- Source is Dukascopy BID M1 OHLC, not historical XM Ask/tick data. Costs are modeled using recent observed XM spread reference values and a conservative alternative.',
-    '- M15/H1 bars are derived only from active M1 bars and are rejected when active coverage, edge coverage, or gap quality is insufficient.',
+    '- Source is Dukascopy BID OHLC (direct M5 history in the standalone workflow), not historical XM Ask/tick data. Costs are modeled using recent observed XM spread reference values and a conservative alternative.',
+    '- M15/H1 bars are derived from contiguous source bars; the M1 path applies active-minute coverage and gap checks, while the direct M5 path rejects incomplete M15/H1 buckets.',
     '- If an open trade crosses an invalid/missing M15 interval, the window is censored and marked invalid rather than inventing an exit. A censored window cannot pass the quality gate.',
     '- Separate 5-year and recent-730-day equity/trade-state runs share the same underlying history; the 730-day slice is not an untouched holdout for future tuning.',
     '- The metrics are research outputs only. Passing this initial gate would still require an untouched holdout and XM forward/paper execution before any consideration of live orders.', '');
