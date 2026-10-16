@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/backtest-gold-m15-trend-pullback.mjs'
       - 'scripts/backtest-gold-m15-breakout-retest.mjs'
+      - 'scripts/backtest-gold-m15-range-reversion.mjs'
       - 'scripts/fetch-xauusd-m1-chunk.py'
       - '.github/workflows/gold-m15-pullback-unit.yml'
   workflow_dispatch:
@@ -28,5 +29,7 @@ jobs:
           node --check scripts/backtest-gold-m1-scalp.mjs
           node --check scripts/backtest-gold-m15-trend-pullback.mjs
           node --check scripts/backtest-gold-m15-breakout-retest.mjs
+          node --check scripts/backtest-gold-m15-range-reversion.mjs
+          node scripts/backtest-gold-m15-range-reversion.mjs --self-test
       - name: Validate aggregation and New York DST/session logic
         run: node scripts/backtest-gold-m15-trend-pullback.mjs --self-test
