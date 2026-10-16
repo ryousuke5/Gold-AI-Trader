@@ -37,8 +37,10 @@ jobs:
       SPREAD_PRICE: ${{ matrix.spread }}
       SLIPPAGE_PRICE: ${{ matrix.slippage }}
     steps:
-      - name: Checkout
+      - name: Checkout research engine with XM schedule-aware gap handling
         uses: actions/checkout@v4
+        with:
+          ref: fix/gold-extension-diagnostics-20261015
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
