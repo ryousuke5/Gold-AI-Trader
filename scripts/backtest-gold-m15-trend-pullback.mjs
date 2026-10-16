@@ -31,7 +31,7 @@ const RULES = {
   allowed_input_timeframes: ['M1 BID OHLC', 'M5 BID OHLC'],
   aggregation_quality: 'M1 input uses active-minute coverage and gap checks; M5 input requires complete contiguous M5 bars inside each M15/H1 bucket',
   same_bar_stop_and_target: 'STOP first (conservative)',
-  data_gap_policy: 'If the next observed M15 bar starts after a gap, flatten at the prior observed bar close with modeled spread/slippage, label GAP_FLAT, and do not assume any intragap price path.',
+  data_gap_policy: 'If the next observed M15 bar starts after a gap while a position is open, exit at the first observed post-gap M15 open with modeled adverse slippage and spread, label GAP_OPEN_EXIT, and do not assume any intragap price path or stop/target fill.',
   live_orders_enabled: false
 };
 
@@ -327,6 +327,11 @@ function locateClosedH1(signalCloseTime, h1, pointer) {
   if (pointer < 3 || !consecutive(h1, pointer - 3, pointer, 3600)) return { index: -1, pointer };
   return { index: pointer, pointer };
 }
+function gapOpenExitPrice(side, reopeningOpen, cost) {
+  assert((side === 'BUY' || side === 'SELL') && Number.isFinite(reopeningOpen), 'Invalid gap-open exit inputs');
+  return side === 'BUY' ? reopeningOpen - cost.slippage : reopeningOpen + cost.spread + cost.slippage;
+}
+
 function fmt(value, decimals = 3) {
   return value === null || value === undefined || !Number.isFinite(value) ? '—' : Number(value).toFixed(decimals);
 }
@@ -438,15 +443,13 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
     const lastPossible = Math.min(i + 16, m15.length - 1);
     for (let j = i + 1; j <= lastPossible; j++) {
       if (j > i + 1 && m15[j].time - m15[j - 1].time !== 900) {
-        // Do not invent price movement through an unobserved interval. This rule
-        // assumes a pre-planned flatten at the prior observed close before the gap.
-        const prior = m15[j - 1];
-        exitTime = prior.time + 900;
-        exitIndex = j - 1;
-        exitReason = 'GAP_FLAT';
-        exitPrice = side === 'BUY'
-          ? prior.close - cost.slippage
-          : prior.close + cost.spread + cost.slippage;
+        // Avoid the hindsight assumption that we managed to flatten at the prior close.
+        // Exit at the first observable post-gap open, with modeled adverse execution costs.
+        const reopened = m15[j];
+        exitTime = reopened.time;
+        exitIndex = j;
+        exitReason = 'GAP_OPEN_EXIT';
+        exitPrice = gapOpenExitPrice(side, reopened.open, cost);
         break;
       }
       const bar = m15[j];
@@ -530,7 +533,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
     data_range_valid: dataRangeValid,
     session_coverage: coverage,
     censored_trades: censoredTrades,
-    gap_flat_trades: trades.filter(t => t.exit_reason === 'GAP_FLAT').length,
+    gap_open_exit_trades: trades.filter(t => t.exit_reason === 'GAP_OPEN_EXIT').length,
     by_side: {}
   };
   for (const side of ['BUY', 'SELL']) {
@@ -595,6 +598,8 @@ function selfTest() {
   const session = nyInfo(Date.UTC(2026, 9, 16, 13, 45) / 1000);
   assert(inSession(session), 'America/New_York session/DST self-test failed: ' + JSON.stringify(session));
   assert(!inSession(nyInfo(Date.UTC(2026, 9, 16, 16, 30) / 1000)), 'Session end self-test failed');
+  assert(Math.abs(gapOpenExitPrice('BUY', 2500, { spread: 0.75, slippage: 0.10 }) - 2499.90) < 1e-9, 'BUY gap-open exit cost test failed');
+  assert(Math.abs(gapOpenExitPrice('SELL', 2500, { spread: 0.75, slippage: 0.10 }) - 2500.85) < 1e-9, 'SELL gap-open exit cost test failed');
   const coverage = sessionCoverage(m15.bars, base, base + 2 * 3600);
   assert(coverage.coverage_pct === 100, 'M15 session coverage self-test failed: ' + JSON.stringify(coverage));
   console.log(JSON.stringify({ self_test: 'PASS', m15_bars: m15.bars.length, h1_bars: h1.bars.length, timezone: 'America/New_York' }, null, 2));
@@ -693,7 +698,7 @@ async function main() {
   md.push('', '## Data and interpretation limits', '',
     '- Source is Dukascopy BID OHLC (direct M5 history in the standalone workflow), not historical XM Ask/tick data. Costs are modeled using recent observed XM spread reference values and a conservative alternative.',
     '- M15/H1 bars are derived from contiguous source bars; the M1 path applies active-minute coverage and gap checks, while the direct M5 path rejects incomplete M15/H1 buckets.',
-    '- If an open trade encounters a gap in observed M15 bars, it is closed at the prior observed bar close with modeled spread/slippage and marked GAP_FLAT; no intragap OHLC or price is fabricated. This is a conservative execution assumption, not confirmation of XM fills.',
+    '- If an open trade encounters a gap in observed M15 bars, it is exited at the first observable post-gap M15 open with modeled adverse spread/slippage and marked GAP_OPEN_EXIT. No intragap OHLC is fabricated, and no stop/target fill is assumed during the gap. This remains an approximation, not confirmation of XM fills.',
     '- Separate 5-year and recent-730-day equity/trade-state runs share the same underlying history; the 730-day slice is not an untouched holdout for future tuning.',
     '- The metrics are research outputs only. Passing this initial gate would still require an untouched holdout and XM forward/paper execution before any consideration of live orders.', '');
   await fs.writeFile(path.join(OUTPUT_DIR, 'gold_m15_trend_pullback_summary.md'), md.join('\n'));
