@@ -245,7 +245,7 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
     const next = m15[i + 1];
     if (!next || next.time !== signal.time + 900) { reject('next_bar_gap'); continue; }
     const local = nyInfo(next.time);
-    if (!inSession(signal.time) || !inSession(next.time)) continue;
+    if (!inSession(signal.time + 900) || !inSession(next.time)) continue;
     if (local.date !== dateKey) {
       dateKey = local.date; dayStart = equity; tradesToday = 0; dailyLocked = false;
     }
@@ -294,7 +294,6 @@ function runWindow(m15, h1, features, window, cost, latest, dataRangeValid) {
       }
       const b = m15[j];
       const stopHit = side === 'BUY' ? b.low <= stop : b.high + cost.spread >= stop;
-      const targetHit = side === 'BUY' ? b.low <= target && false : b.high >= target && false;
       const targetReached = side === 'BUY' ? b.high >= target : b.low + cost.spread <= target;
       if (stopHit) {
         exitTime = b.time; exitIndex = j; exitReason = 'STOP';
