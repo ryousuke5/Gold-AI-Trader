@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { isSupportedEurUsdSymbol } from './eurusd_symbol.js';
 import {
   normalizeEurUsdFeatures,
   validateEurUsdFeatures,
@@ -184,9 +185,9 @@ export function registerEurUsdRoutes(app) {
     const requestId = String(req.headers['x-request-id'] || crypto.randomUUID());
     try {
       const body = req.body || {};
-      const symbol = String(body.symbol || 'EURUSD');
+      const symbol = String(body.symbol || 'EURUSD').trim();
       const timeframe = String(body.timeframe || 'M15');
-      if (symbol !== 'EURUSD') return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD', request_id: requestId });
+      if (!isSupportedEurUsdSymbol(symbol)) return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD or EURUSD#', request_id: requestId });
       if (timeframe !== 'M15') return res.status(400).json({ ok: false, error: 'EURUSD V1 supports M15 only', request_id: requestId });
 
       const features = normalizeEurUsdFeatures(body.features || body);
@@ -262,9 +263,9 @@ export function registerEurUsdRoutes(app) {
     const requestId = String(req.headers['x-request-id'] || crypto.randomUUID());
     try {
       const body = req.body || {};
-      const symbol = String(body.symbol || 'EURUSD');
+      const symbol = String(body.symbol || 'EURUSD').trim();
       const timeframe = String(body.timeframe || 'M15');
-      if (symbol !== 'EURUSD') return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD', request_id: requestId });
+      if (!isSupportedEurUsdSymbol(symbol)) return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD or EURUSD#', request_id: requestId });
       if (timeframe !== 'M15') return res.status(400).json({ ok: false, error: 'EURUSD V1 supports M15 only', request_id: requestId });
 
       const features = normalizeEurUsdFeatures(body.features || body);
@@ -509,9 +510,9 @@ export function registerEurUsdRoutes(app) {
     const requestId = String(req.headers['x-request-id'] || crypto.randomUUID());
     try {
       const body = req.body || {};
-      const symbol = String(body.symbol || 'EURUSD');
+      const symbol = String(body.symbol || 'EURUSD').trim();
       const timeframe = String(body.timeframe || 'M15');
-      if (symbol !== 'EURUSD') return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD', request_id: requestId });
+      if (!isSupportedEurUsdSymbol(symbol)) return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD or EURUSD#', request_id: requestId });
       if (timeframe !== 'M15') return res.status(400).json({ ok: false, error: 'EURUSD V1 supports M15 only', request_id: requestId });
 
       const features = normalizeEurUsdFeatures(body.features || body);
@@ -590,9 +591,9 @@ export function registerEurUsdRoutes(app) {
     const requestId = String(req.headers['x-request-id'] || crypto.randomUUID());
     try {
       const body = req.body || {};
-      const symbol = String(body.symbol || 'EURUSD');
+      const symbol = String(body.symbol || 'EURUSD').trim();
       const timeframe = String(body.timeframe || 'M15');
-      if (symbol !== 'EURUSD') return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD', request_id: requestId });
+      if (!isSupportedEurUsdSymbol(symbol)) return res.status(400).json({ ok: false, error: 'EURUSD endpoint requires symbol=EURUSD or EURUSD#', request_id: requestId });
       if (timeframe !== 'M15') return res.status(400).json({ ok: false, error: 'EURUSD V1 supports M15 only', request_id: requestId });
 
       const features = normalizeEurUsdFeatures(body.features || body);
@@ -865,7 +866,7 @@ export function registerEurUsdRoutes(app) {
         return res.status(400).json({ ok: false, error: 'signal_id and idempotency_key are required' });
       }
       const signal = await getSignalByKey({ signalId: String(body.signal_id) });
-      if (!signal || String(signal.symbol) !== 'EURUSD' || String(signal.timeframe) !== 'M15') {
+      if (!signal || !isSupportedEurUsdSymbol(signal.symbol) || String(signal.timeframe) !== 'M15') {
         return res.status(404).json({ ok: false, error: 'eurusd_signal_not_found' });
       }
       const risk = await getRiskBySignal(String(body.signal_id));
@@ -880,7 +881,7 @@ export function registerEurUsdRoutes(app) {
         id: body.order_id || crypto.randomUUID(),
         signal_id: body.signal_id,
         idempotency_key: String(body.idempotency_key),
-        symbol: 'EURUSD',
+        symbol: String(signal.symbol),
         mt4_ticket: ticket,
         side,
         requested_price: Number(body.requested_price || 0) || null,
