@@ -82,12 +82,20 @@ export function buildGoldV2Setup(features = {}, config = {}) {
 
   const rangeWidth = range.high - range.low;
   const rangeAtr = rangeWidth / m5.atr14;
+  // Diagnostic-only fields: these values explain why a setup is rejected without
+  // changing any condition, threshold, or trade decision.
+  const volumeRatio = range.averageVolume > 0 ? n(signal.volume) / range.averageVolume : 0;
   const rangeDiagnostics = {
     range_width: rangeWidth,
     m5_atr: m5.atr14,
     range_atr: rangeAtr,
     min_range_atr: cfg.minRangeAtr,
-    max_range_atr: cfg.maxRangeAtr
+    max_range_atr: cfg.maxRangeAtr,
+    signal_volume: n(signal.volume),
+    average_volume: range.averageVolume,
+    volume_ratio: volumeRatio,
+    min_volume_ratio: cfg.minVolumeRatio,
+    volume_confirmation: range.averageVolume > 0 ? volumeRatio >= cfg.minVolumeRatio : null
   };
   if (!(rangeWidth > 0) || rangeAtr < cfg.minRangeAtr || rangeAtr > cfg.maxRangeAtr) {
     return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'compression_filter', diagnostics: rangeDiagnostics };
@@ -95,12 +103,14 @@ export function buildGoldV2Setup(features = {}, config = {}) {
 
   const candleRange = signal.high - signal.low;
   const body = Math.abs(signal.close - signal.open);
+  rangeDiagnostics.candle_range = candleRange;
+  rangeDiagnostics.body_atr = body / m5.atr14;
   if (!(candleRange > 0) || body / m5.atr14 < cfg.minBodyAtr) {
     return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'impulse_body_filter', diagnostics: rangeDiagnostics };
   }
 
   const closeLocation = (signal.close - signal.low) / candleRange;
-  const volumeRatio = range.averageVolume > 0 ? n(signal.volume) / range.averageVolume : 0;
+  rangeDiagnostics.close_location = closeLocation;
   if (range.averageVolume > 0 && volumeRatio < cfg.minVolumeRatio) {
     return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'volume_expansion_filter', diagnostics: rangeDiagnostics };
   }
@@ -171,13 +181,10 @@ export function buildGoldV2Setup(features = {}, config = {}) {
     take_profit: target,
     risk_reward: cfg.takeProfitR,
     diagnostics: {
+      ...rangeDiagnostics,
       hour_utc: hour,
       range_high: range.high,
       range_low: range.low,
-      range_atr: rangeAtr,
-      body_atr: body / m5.atr14,
-      close_location: closeLocation,
-      volume_ratio: volumeRatio,
       stop_atr: stopAtr,
       breakout_atr: side === 'BUY' ? breakoutDistanceUp / m5.atr14 : breakoutDistanceDown / m5.atr14
     },
