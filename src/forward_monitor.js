@@ -11,7 +11,9 @@ import { getEurUsdForwardConfig, summarizeEurUsdForwardTrades } from './eurusd_f
 import { getEurUsdNewsFeedState } from './eurusd_news_feed.js';
 import { getGoldDiagnosticSnapshot } from './gold_diagnostics.js';
 
-const GOLD_SYMBOLS = ['GOLD', 'XAUUSD'];
+export const EURUSD_DIAGNOSTIC_SYMBOL = 'EURUSD#';
+export const GOLD_DIAGNOSTIC_SYMBOLS = ['GOLD#'];
+const GOLD_SYMBOLS = GOLD_DIAGNOSTIC_SYMBOLS;
 
 function finiteNumber(value, fallback = 0) {
   const n = Number(value);
@@ -520,7 +522,7 @@ async function summarizeSignalSource({
     total_signals: total,
     candidate_counts_all_time: { BUY: buy, SELL: sell, WAIT: wait },
     recent: sampled,
-    eurusd_setup: symbols?.length === 0 || values.includes('EURUSD') ? summarizeEurUsdSetup(latestSignals) : null,
+    eurusd_setup: symbols?.length === 0 || values.some(value => value === 'EURUSD' || value === EURUSD_DIAGNOSTIC_SYMBOL) ? summarizeEurUsdSetup(latestSignals) : null,
     filter_funnel: filterFunnel,
     h1_trend: symbols?.length && values.some(value => GOLD_SYMBOLS.includes(value))
       ? summarizeGoldH1Trend(latestSignals)
@@ -540,7 +542,7 @@ export async function buildForwardMonitorSnapshot(nowMs = Date.now()) {
     probeGoldDatabase(),
     listEurUsdForwardTrades({ limit: 5000 }),
     summarizeSignalSource({
-      symbol: 'EURUSD',
+      symbol: EURUSD_DIAGNOSTIC_SYMBOL,
       timeframe: 'M15',
       strategyVersion: eurStrategy,
       recentLimit: 200
@@ -601,7 +603,7 @@ export async function buildForwardMonitorSnapshot(nowMs = Date.now()) {
       }
     },
     eurusd: {
-      symbol: 'EURUSD',
+      symbol: EURUSD_DIAGNOSTIC_SYMBOL,
       timeframe: 'M15',
       strategy_version: eurStrategy,
       ai_enabled: String(process.env.EURUSD_AI_ENABLED || 'false').toLowerCase() === 'true',
@@ -617,6 +619,7 @@ export async function buildForwardMonitorSnapshot(nowMs = Date.now()) {
       }
     },
     gold: {
+      symbol: GOLD_SYMBOLS[0],
       symbols: GOLD_SYMBOLS,
       timeframe: 'M5',
       strategy_version: goldStrategy,
