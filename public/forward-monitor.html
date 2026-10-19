@@ -126,6 +126,20 @@ function rangeAtrSummary(stats){
     '<span>上限超過</span><b>'+fmt(stats.above_max)+'</b>'+
     '</div>';
 }
+function volumeRatioSummary(stats){
+  const v=stats?.volume_ratio;
+  if(!v||!v.observations) return '<div class="kv"><span>出来高比率の観測</span><b>新しい診断データ待ち</b></div>';
+  const thresholdLabel=v.threshold_varies?'複数設定':(v.configured_min_volume_ratio==null?'—':Number(v.configured_min_volume_ratio).toFixed(2)+' 倍');
+  const ratioLabel=value=>value==null?'—':Number(value).toFixed(2)+' 倍';
+  return '<div class="kv">'+
+    '<span>観測件数</span><b>'+fmt(v.observations)+'</b>'+
+    '<span>平均 / 中央値 / P90</span><b>'+ratioLabel(v.mean)+' / '+ratioLabel(v.median)+' / '+ratioLabel(v.p90)+'</b>'+
+    '<span>最小 / 最大</span><b>'+ratioLabel(v.min)+' / '+ratioLabel(v.max)+'</b>'+
+    '<span>出来高比率の閾値</span><b>'+esc(thresholdLabel)+'</b>'+
+    '<span>閾値未満</span><b>'+fmt(v.below_threshold_count)+' ('+pct(v.below_threshold_pct)+')</b>'+
+    '<span>閾値以上</span><b>'+fmt(v.confirmed_count)+' ('+pct(v.confirmed_pct)+')</b>'+
+    '</div><div class="meta" style="margin-top:6px">出来高比率 = 判定足のVolume ÷ 直前12本の平均Volume。旧レコードに比率が保存されていない場合は集計対象外。</div>';
+}
 function h1ConditionLabel(key){
   const labels={
     close_not_above_ema20:'H1終値がEMA20より上でない',
@@ -293,7 +307,7 @@ function cardMarket(title,meta,signals,extra,engine,liveGate){
   '<div class="section"><h3>判定理由</h3><div class="kv"><span>最新理由</span><b>'+esc(waitReasonLabel(signals.recent?.latest_reason||signals.recent?.latest_wait_reason||''))+'</b></div><div class="kv" style="margin-top:6px">'+reasonSummary(signals)+'</div></div>'+
   (signals.filter_funnel ? '<div class="section"><h3>Gold V2 フィルター通過率</h3>'+filterFunnelTable(signals.filter_funnel)+'</div>' : '')+
   (signals.h1_trend ? '<div class="section"><h3>H1トレンド条件 内訳</h3>'+h1TrendSummary(signals.h1_trend)+'</div>' : '')+
-  (signals.range_atr ? '<div class="section"><h3>Range ATR 実測分布</h3>'+rangeAtrSummary(signals.range_atr)+'</div>' : '')+extra+'</div>';
+  (signals.range_atr ? '<div class="section"><h3>Range ATR 実測分布</h3>'+rangeAtrSummary(signals.range_atr)+'</div><div class="section"><h3>出来高比率 実測分布</h3>'+volumeRatioSummary(signals.range_atr)+'</div>' : '')+extra+'</div>';
 }
 function utcLabel(value){
   if(!value) return '—';

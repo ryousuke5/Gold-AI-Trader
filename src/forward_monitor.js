@@ -436,13 +436,51 @@ export function summarizeGoldH1Trend(rows = []) {
 }
 
 export function summarizeGoldRangeAtr(rows = []) {
-  const observations = (Array.isArray(rows) ? rows : [])
+  const diagnosticRows = (Array.isArray(rows) ? rows : [])
     .map(extractGoldV2Diagnostics)
-    .filter(Boolean)
+    .filter(Boolean);
+  const observations = diagnosticRows
     .map(d => Number(d.range_atr))
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
   const count = observations.length;
+  const volumeSamples = diagnosticRows.map(d => {
+    const ratio = Number(d.volume_ratio);
+    const threshold = Number(d.min_volume_ratio);
+    const averageVolume = Number(d.average_volume);
+    const confirmation = typeof d.volume_confirmation === 'boolean'
+      ? d.volume_confirmation
+      : (Number.isFinite(ratio) && Number.isFinite(threshold) && averageVolume > 0
+          ? ratio >= threshold
+          : null);
+    if (!Number.isFinite(ratio) || !Number.isFinite(threshold) || confirmation === null) return null;
+    return { ratio, threshold, confirmed: confirmation };
+  }).filter(Boolean).sort((a, b) => a.ratio - b.ratio);
+  const volumeCount = volumeSamples.length;
+  const volumeValues = volumeSamples.map(item => item.ratio);
+  const volumeThresholds = [...new Set(volumeSamples.map(item => item.threshold))];
+  const quantile = (values, q) => {
+    if (!values.length) return null;
+    const position = (values.length - 1) * q;
+    const low = Math.floor(position);
+    const high = Math.ceil(position);
+    return values[low] + (values[high] - values[low]) * (position - low);
+  };
+  const belowThreshold = volumeSamples.filter(item => item.ratio < item.threshold).length;
+  const volumeRatio = {
+    observations: volumeCount,
+    min: volumeCount ? volumeValues[0] : null,
+    median: quantile(volumeValues, 0.5),
+    p90: quantile(volumeValues, 0.9),
+    max: volumeCount ? volumeValues[volumeCount - 1] : null,
+    mean: volumeCount ? volumeValues.reduce((sum, value) => sum + value, 0) / volumeCount : null,
+    configured_min_volume_ratio: volumeThresholds.length === 1 ? volumeThresholds[0] : null,
+    threshold_varies: volumeThresholds.length > 1,
+    below_threshold_count: belowThreshold,
+    below_threshold_pct: volumeCount ? belowThreshold / volumeCount * 100 : null,
+    confirmed_count: volumeSamples.filter(item => item.confirmed).length,
+    confirmed_pct: volumeCount ? volumeSamples.filter(item => item.confirmed).length / volumeCount * 100 : null
+  };
   if (!count) return {
     observations: 0,
     min: null,
@@ -455,11 +493,13 @@ export function summarizeGoldRangeAtr(rows = []) {
     in_range: 0,
     above_max: 0,
     configured_min: 0.8,
-    configured_max: 2.8
+    configured_max: 2.8,
+    volume_ratio: volumeRatio
   };
   const percentile = p => observations[Math.min(count - 1, Math.max(0, Math.floor((count - 1) * p)))];
-  const configuredMin = Number((Array.isArray(rows) ? rows : []).map(extractGoldV2Diagnostics).find(Boolean)?.min_range_atr);
-  const configuredMax = Number((Array.isArray(rows) ? rows : []).map(extractGoldV2Diagnostics).find(Boolean)?.max_range_atr);
+  const firstDiagnostic = diagnosticRows[0] || {};
+  const configuredMin = Number(firstDiagnostic.min_range_atr);
+  const configuredMax = Number(firstDiagnostic.max_range_atr);
   const minBound = Number.isFinite(configuredMin) ? configuredMin : 0.8;
   const maxBound = Number.isFinite(configuredMax) ? configuredMax : 2.8;
   const mean = observations.reduce((sum, value) => sum + value, 0) / count;
@@ -475,7 +515,8 @@ export function summarizeGoldRangeAtr(rows = []) {
     in_range: observations.filter(value => value >= minBound && value <= maxBound).length,
     above_max: observations.filter(value => value > maxBound).length,
     configured_min: minBound,
-    configured_max: maxBound
+    configured_max: maxBound,
+    volume_ratio: volumeRatio
   };
 }
 
