@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/gold-v2-h1-quick-comparison.yml'
+  workflow_run:
+    workflows: ["GOLD V2 Five-Year Research"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -16,6 +19,7 @@ concurrency:
 
 jobs:
   compare:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -36,7 +40,7 @@ jobs:
         with:
           name: gold-xauusd-m5-1825d
           path: gold-xauusd-data
-          run-id: 37893136797
+          run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate fixed dataset window

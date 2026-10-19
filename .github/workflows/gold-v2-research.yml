@@ -246,6 +246,17 @@ jobs:
             volume_ratio: "1.10"
             session_start: "7"
             session_end: "20"
+          - name: range_max_3_5
+            h1_trend_mode: "strict"
+            range_lookback: "12"
+            min_range_atr: "0.80"
+            max_range_atr: "3.50"
+            breakout_atr: "0.10"
+            body_atr: "0.40"
+            close_location: "0.65"
+            volume_ratio: "1.10"
+            session_start: "7"
+            session_end: "20"
           - name: strict
             h1_trend_mode: "strict"
             range_lookback: "12"
