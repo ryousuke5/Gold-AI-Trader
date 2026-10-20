@@ -6,7 +6,21 @@ import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+export function normalizeResearchSideFilter(value = 'BOTH') {
+  const side = String(value || 'BOTH').trim().toUpperCase();
+  if (!['BOTH', 'BUY', 'SELL'].includes(side)) {
+    throw new Error(`Invalid GOLD_BACKTEST_ALLOWED_SIDE: ${side}. Use BOTH, BUY, or SELL.`);
+  }
+  return side;
+}
+
+export function isAllowedResearchSide(candidate, allowedSide = 'BOTH') {
+  const side = normalizeResearchSideFilter(allowedSide);
+  return side === 'BOTH' || candidate === side;
+}
+
 const BASE_CONFIG = {
+  allowedSideFilter: normalizeResearchSideFilter(process.env.GOLD_BACKTEST_ALLOWED_SIDE || 'BOTH'),
   lookbackDays: Math.max(365, Number(process.env.GOLD_BACKTEST_LOOKBACK_DAYS || 1825)),
   initialEquity: Math.max(1000, Number(process.env.GOLD_BACKTEST_INITIAL_EQUITY || 100000)),
   riskPct: Math.max(0.01, Number(process.env.GOLD_BACKTEST_RISK_PCT || 0.25)),
@@ -403,7 +417,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const blocks={};
   const setupWaitReasons={};
   let nextAvailable=0;
-  let signalsEvaluated=0, candidates=0, candidatesBuy=0, candidatesSell=0, rejectedEntryGap=0, rejectedNextBarGap=0;
+  let signalsEvaluated=0, candidates=0, candidatesBuy=0, candidatesSell=0, rejectedEntryGap=0, rejectedNextBarGap=0, rejectedDirectionFilter=0;
   for(let i=first;i<m5Ind.length-1;i++) {
     const signal=m5Ind[i];
     if(signal.time<start) continue;
@@ -427,6 +441,10 @@ async function runOne(rawM5, rawH1, config, strategy) {
     candidates++;
     if(setup.candidate==='BUY') candidatesBuy++;
     if(setup.candidate==='SELL') candidatesSell++;
+    if(!isAllowedResearchSide(setup.candidate, config.allowedSideFilter)) {
+      rejectedDirectionFilter++;
+      continue;
+    }
     const gate=applyRiskGate(state,equity,signalTime,config);
     if(!gate.allowed) { for(const r of gate.reasons) blocks[r]=(blocks[r]||0)+1; continue; }
     const next=m5Ind[i+1];
@@ -466,7 +484,8 @@ async function runOne(rawM5, rawH1, config, strategy) {
     setup_wait_reasons:setupWaitReasons,
     risk_gate_blocks:blocks,
     rejected_next_bar_gap:rejectedNextBarGap,
-    rejected_entry_gap:rejectedEntryGap
+    rejected_entry_gap:rejectedEntryGap,
+    rejected_direction_filter:rejectedDirectionFilter
   };
 }
 
@@ -528,7 +547,7 @@ async function main() {
       requested_end:requestedEnd.toISOString()
     },
     prepared_data_file:dataFile||null,
-    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side'},
+    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side',direction_filter_for_research_only:config.allowedSideFilter},
     strategy_parameters:strategy,
     data_quality:dataQuality(rawM5),
     cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{spread_price:costScenarios(config).find(c=>c.name===name).spreadPrice,slippage_price:costScenarios(config).find(c=>c.name===name).slippagePrice}])),
@@ -536,7 +555,8 @@ async function main() {
       summary:r.summary,recent365:r.recent365,is1095:r.is1095,oos730:r.oos730,annual:r.annual,positiveYears:r.positiveYears,qualityGate:r.qualityGate,
       signals_evaluated:r.signals_evaluated,candidates:r.candidates,candidates_buy:r.candidates_buy,candidates_sell:r.candidates_sell,
       setup_wait_reasons:r.setup_wait_reasons,risk_gate_blocks:r.risk_gate_blocks,
-      rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap
+      rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap,
+      rejected_direction_filter:r.rejected_direction_filter
     }])),
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
