@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/gold-v2-direction-volume-sensitivity.yml'
+      - 'scripts/backtest-gold-v2.mjs'
   workflow_dispatch:
 
 permissions:
