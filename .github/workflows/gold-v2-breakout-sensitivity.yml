@@ -36,7 +36,7 @@ jobs:
       - name: Find latest successful five-year research artifact
         id: dataset_run
         env:
-          GH_TOKEN: ${ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -62,8 +62,8 @@ jobs:
         with:
           name: gold-xauusd-m5-1825d
           path: gold-xauusd-data
-          run-id: ${ steps.dataset_run.outputs.run_id }}
-          github-token: ${ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.dataset_run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate fixed dataset window
         run: |
