@@ -497,7 +497,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const setupWaitReasons={};
   let nextAvailable=0;
   let drawdownLockReached=false;
-  let drawdownLockTime=null;
+  let firstBlockedCandidateTime=null;
   let drawdownLockEquity=null;
   let drawdownLockPeak=null;
   let shadowNextAvailable=0;
@@ -541,7 +541,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
       for(const r of gate.reasons) blocks[r]=(blocks[r]||0)+1;
       if(gate.reasons.includes('drawdown_limit')) {
         if(!drawdownLockReached) {
-          drawdownLockTime=new Date(signalTime*1000).toISOString();
+          firstBlockedCandidateTime=new Date(signalTime*1000).toISOString();
           drawdownLockEquity=equity;
           drawdownLockPeak=state.peak;
         }
@@ -592,7 +592,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const summary = summarize(trades, config.initialEquity);
   const postDrawdownShadow = {
     lock_reached: drawdownLockReached,
-    lock_time_utc: drawdownLockTime,
+    first_blocked_candidate_time_utc: firstBlockedCandidateTime,
     equity_at_lock: drawdownLockEquity,
     peak_equity_at_lock: drawdownLockPeak,
     candidates_blocked_by_drawdown: blocks.drawdown_limit || 0,
@@ -602,6 +602,9 @@ async function runOne(rawM5, rawH1, config, strategy) {
     trade_count: postDrawdownShadowTrades.length,
     summary: summarize(postDrawdownShadowTrades, config.initialEquity),
     recent365: periodSummary(postDrawdownShadowTrades, config.initialEquity, 365, latest),
+    is1095: periodSummary(postDrawdownShadowTrades, config.initialEquity, 1095, latest - 730 * 86400),
+    oos730: periodSummary(postDrawdownShadowTrades, config.initialEquity, 730, latest),
+    annual: annualSummary(postDrawdownShadowTrades, config.initialEquity),
     trades: postDrawdownShadowTrades
   };
   const outcomeDiagnostics = {
@@ -705,7 +708,7 @@ async function main() {
       rejected_direction_filter:r.rejected_direction_filter,
       post_drawdown_shadow:{
         lock_reached:r.post_drawdown_shadow.lock_reached,
-        lock_time_utc:r.post_drawdown_shadow.lock_time_utc,
+        first_blocked_candidate_time_utc:r.post_drawdown_shadow.first_blocked_candidate_time_utc,
         equity_at_lock:r.post_drawdown_shadow.equity_at_lock,
         peak_equity_at_lock:r.post_drawdown_shadow.peak_equity_at_lock,
         candidates_blocked_by_drawdown:r.post_drawdown_shadow.candidates_blocked_by_drawdown,
@@ -714,7 +717,10 @@ async function main() {
         shadow_rejected_entry_gap:r.post_drawdown_shadow.shadow_rejected_entry_gap,
         trade_count:r.post_drawdown_shadow.trade_count,
         summary:r.post_drawdown_shadow.summary,
-        recent365:r.post_drawdown_shadow.recent365
+        recent365:r.post_drawdown_shadow.recent365,
+        is1095:r.post_drawdown_shadow.is1095,
+        oos730:r.post_drawdown_shadow.oos730,
+        annual:r.post_drawdown_shadow.annual
       },
       outcome_diagnostics:r.outcome_diagnostics
     }])),
