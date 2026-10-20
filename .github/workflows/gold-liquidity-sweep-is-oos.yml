@@ -1,0 +1,177 @@
+name: GOLD Liquidity Sweep IS Selection and Frozen OOS Validation
+on:
+  push:
+    branches: [research/gold-liquidity-sweep-is-oos]
+    paths:
+      - '.github/workflows/gold-liquidity-sweep-is-oos.yml'
+      - 'config/gold-liquidity-sweep-candidates.json'
+      - 'src/gold_liquidity_sweep_reversal_research.js'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'tests/gold_liquidity_sweep_reversal.test.js'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gold-liquidity-sweep-is-oos
+  cancel-in-progress: true
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install and test
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+      - name: Resolve dataset artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          found=""
+          runs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/gold-v2-research.yml/runs?status=success&per_page=30" --jq '.workflow_runs[] | select(.conclusion == "success") | .id')
+          while read -r candidate; do
+            [ -n "$candidate" ] || continue
+            n=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$candidate/artifacts?per_page=100" --jq '[.artifacts[] | select(.name == "gold-xauusd-m5-1825d" and .expired == false)] | length')
+            if [ "$n" -gt 0 ]; then found="$candidate"; break; fi
+          done <<< "$runs"
+          if [ -z "$found" ]; then echo "No usable prepared data artifact found." >&2; exit 1; fi
+          echo "SOURCE_RUN_ID=$found" >> "$GITHUB_ENV"
+      - name: Download fixed five-year data
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run download "$SOURCE_RUN_ID" --name gold-xauusd-m5-1825d --dir gold-xauusd-data
+      - name: Validate dataset
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('gold-xauusd-data/xauusd_m5_manifest.json').read_text())
+          assert m['requested_start_date_utc']=='2021-10-06',m
+          assert m['requested_end_date_exclusive_utc']=='2026-10-05',m
+          assert int(m['m5_rows'])>=200000,m
+          print(json.dumps({k:m.get(k) for k in ('requested_start_date_utc','requested_end_date_exclusive_utc','m5_rows','output_sha256')},indent=2))
+          PY
+      - name: Score pre-registered candidates on IS only
+        env:
+          GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_BACKTEST_EVAL_START_UTC: 2021-10-06T00:00:00Z
+          GOLD_BACKTEST_EVAL_END_UTC: 2024-10-05T00:00:00Z
+          GOLD_BACKTEST_LOOKBACK_DAYS: '1825'
+          GOLD_BACKTEST_INITIAL_EQUITY: '100000'
+          GOLD_BACKTEST_RISK_PCT: '0.25'
+          GOLD_BACKTEST_SPREAD_PRICE: '0.50'
+          GOLD_BACKTEST_SLIPPAGE_PRICE: '0.05'
+          GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: '1000'
+          GOLD_BACKTEST_MAX_DRAWDOWN_PCT: '1000'
+          GOLD_BACKTEST_MAX_HOLD_BARS: '96'
+          GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: '0.50'
+          GOLD_BACKTEST_SERVER_TIMEZONE: Europe/Nicosia
+          GOLD_BACKTEST_ALLOWED_SIDE: BOTH
+          GOLD_BACKTEST_STRATEGY_VARIANT: liquidity_sweep_reversal
+        run: |
+          python3 - <<'PY'
+          import json,os,subprocess
+          from pathlib import Path
+          for c in json.loads(Path('config/gold-liquidity-sweep-candidates.json').read_text()):
+            env=os.environ.copy()
+            env['GOLD_STRATEGY_JSON']=json.dumps(c['strategy_parameters'],separators=(',',':'))
+            env['GOLD_BACKTEST_OUTPUT_DIR']=str(Path('gold-liquidity-sweep-is')/c['id'])
+            print('IS candidate '+c['id'],flush=True)
+            subprocess.run(['node','scripts/backtest-gold-v2.mjs'],env=env,check=True)
+          PY
+      - name: Select by IS and freeze parameters
+        run: |
+          python3 - <<'PY'
+          import csv,json
+          from pathlib import Path
+          grid=json.loads(Path('config/gold-liquidity-sweep-candidates.json').read_text())
+          scores=[]
+          for c in grid:
+            r=json.loads((Path('gold-liquidity-sweep-is')/c['id']/'gold_v2_backtest_report.json').read_text())
+            s=r['results']['baseline']['summary']; n=int(s.get('trades') or 0)
+            pf=float(s.get('profit_factor') or 0); e=float(s.get('expectancy_R') or -999); dd=float(s.get('max_drawdown_pct') or 0)
+            scores.append({'candidate_id':c['id'],'strategy_parameters':c['strategy_parameters'],'trades':n,'profit_factor':pf,'expectancy_R':e,'max_drawdown_pct':dd,'eligible':n>=30,'is_screen_passed':n>=30 and pf>=1 and e>0 and dd<=10})
+          pool=[x for x in scores if x['eligible']] or scores
+          pool.sort(key=lambda x:(-x['expectancy_R'],-x['profit_factor'],x['max_drawdown_pct'],-x['trades'],x['candidate_id']))
+          chosen=pool[0]; root=Path('gold-liquidity-sweep-selection'); root.mkdir(parents=True,exist_ok=True)
+          out={'selection_rule':'IS only: expectancy R descending, PF descending, max DD ascending, n descending, candidate ID ascending; prefer n>=30 when possible.',
+               'candidate_grid_size':len(scores),'is_window':'2021-10-06 inclusive to 2024-10-05 exclusive',
+               'selection_costs':{'spread_price':0.5,'slippage_price':0.05},'selected':chosen,'is_screen_passed':chosen['is_screen_passed'],'candidate_scores':scores}
+          (root/'selection.json').write_text(json.dumps(out,indent=2)+'\\n')
+          with (root/'is_candidate_scores.csv').open('w',newline='') as f:
+            w=csv.DictWriter(f,fieldnames=['candidate_id','trades','profit_factor','expectancy_R','max_drawdown_pct','eligible','is_screen_passed']); w.writeheader()
+            for x in scores: w.writerow({k:x[k] for k in w.fieldnames})
+          print(json.dumps({'selected':chosen,'is_screen_passed':out['is_screen_passed']},indent=2))
+          PY
+      - name: Evaluate only the frozen candidate on OOS
+        env:
+          GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_BACKTEST_EVAL_START_UTC: 2024-10-05T00:00:00Z
+          GOLD_BACKTEST_EVAL_END_UTC: 2026-10-05T00:00:00Z
+          GOLD_BACKTEST_LOOKBACK_DAYS: '1825'
+          GOLD_BACKTEST_INITIAL_EQUITY: '100000'
+          GOLD_BACKTEST_RISK_PCT: '0.25'
+          GOLD_BACKTEST_SPREAD_PRICE: '0.50'
+          GOLD_BACKTEST_SLIPPAGE_PRICE: '0.05'
+          GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: '1000'
+          GOLD_BACKTEST_MAX_DRAWDOWN_PCT: '1000'
+          GOLD_BACKTEST_MAX_HOLD_BARS: '96'
+          GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: '0.50'
+          GOLD_BACKTEST_SERVER_TIMEZONE: Europe/Nicosia
+          GOLD_BACKTEST_ALLOWED_SIDE: BOTH
+          GOLD_BACKTEST_STRATEGY_VARIANT: liquidity_sweep_reversal
+          GOLD_BACKTEST_OUTPUT_DIR: gold-liquidity-sweep-oos/frozen-selected-candidate
+        run: |
+          params=$(python3 -c "import json; print(json.dumps(json.load(open('gold-liquidity-sweep-selection/selection.json'))['selected']['strategy_parameters'],separators=(',',':')))")
+          GOLD_STRATEGY_JSON="$params" node scripts/backtest-gold-v2.mjs
+      - name: Build acceptance summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path('gold-liquidity-sweep-selection'); sp=root/'selection.json'
+          op=Path('gold-liquidity-sweep-oos/frozen-selected-candidate/gold_v2_backtest_report.json')
+          if not sp.exists(): raise SystemExit('IS selection file missing')
+          sel=json.loads(sp.read_text()); pick=sel['selected']; oos=None
+          if op.exists():
+            r=json.loads(op.read_text()); b=r['results']['baseline']['summary']; c=r['results']['conservative']['summary']
+            oos={'trades':int(b.get('trades') or 0),'profit_factor':float(b.get('profit_factor') or 0),'expectancy_R':float(b.get('expectancy_R') or -999),'max_drawdown_pct':float(b.get('max_drawdown_pct') or 0),
+                 'stress':{'trades':int(c.get('trades') or 0),'profit_factor':float(c.get('profit_factor') or 0),'expectancy_R':float(c.get('expectancy_R') or -999),'max_drawdown_pct':float(c.get('max_drawdown_pct') or 0)}}
+          gates={'is_screen_passed':bool(sel['is_screen_passed']),'oos_n_ge_30':bool(oos and oos['trades']>=30),
+            'oos_pf_ge_1_10':bool(oos and oos['profit_factor']>=1.1),'oos_E_positive':bool(oos and oos['expectancy_R']>0),
+            'oos_DD_le_10pct':bool(oos and oos['max_drawdown_pct']<=10),'stress_n_ge_15':bool(oos and oos['stress']['trades']>=15),
+            'stress_pf_ge_1':bool(oos and oos['stress']['profit_factor']>=1),'stress_E_nonnegative':bool(oos and oos['stress']['expectancy_R']>=0)}
+          final={'protocol':'is-selection-frozen-oos-v1','selected_candidate_id':pick['candidate_id'],'frozen_parameters':pick['strategy_parameters'],
+            'is_metrics':{k:pick[k] for k in ('trades','profit_factor','expectancy_R','max_drawdown_pct')},
+            'is_screen_passed':sel['is_screen_passed'],'oos_metrics':oos,'acceptance_gates':gates,'all_gates_passed':all(gates.values()),
+            'note':'Research-only. IS selection was frozen before OOS validation; production path and settings remain unchanged.'}
+          (root/'frozen_oos_final.json').write_text(json.dumps(final,indent=2)+'\\n')
+          lines=['# GOLD Liquidity Sweep IS / Frozen OOS','Research-only; no production changes.',
+            'IS: 2021-10-06 inclusive to 2024-10-05 exclusive. OOS: 2024-10-05 inclusive to 2026-10-05 exclusive.',
+            'Selected: '+pick['candidate_id'],'Parameters: '+json.dumps(pick['strategy_parameters']),
+            'IS: n='+str(pick['trades'])+', PF='+str(pick['profit_factor'])+', E='+str(pick['expectancy_R'])+'R, DD='+str(pick['max_drawdown_pct'])+'%; pass='+str(sel['is_screen_passed']),
+            'OOS: '+str(oos),'','| Gate | Result |','|---|---|']
+          lines += ['| '+k+' | '+('PASS' if v else 'FAIL')+' |' for k,v in gates.items()]
+          lines += ['', 'OVERALL: '+('PASS' if all(gates.values()) else 'FAIL'), 'Any failed gate rejects this version; do not tune against OOS.']
+          (root/'frozen_oos_final.md').write_text('\\n'.join(lines)+'\\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f: f.write('\\n'.join(lines)+'\\n')
+          print(json.dumps(final,indent=2))
+          PY
+      - name: Upload research artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-liquidity-sweep-is-oos
+          path: |
+            gold-liquidity-sweep-is/
+            gold-liquidity-sweep-oos/
+            gold-liquidity-sweep-selection/
+          retention-days: 90
+          if-no-files-found: warn

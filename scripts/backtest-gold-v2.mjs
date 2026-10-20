@@ -509,6 +509,9 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const latest=m5Ind[m5Ind.length-1].time;
   const start=config.evalStartUtc ?? latest-config.lookbackDays*86400;
   const end=config.evalEndUtc ?? latest+300;
+  // Prevent any IS trade from using future OOS bars for exit simulation.
+  const simulationEndIndex = config.evalEndUtc === null ? m5Ind.length : m5Ind.findIndex((b) => b.time + 300 > end);
+  const simulationBars = simulationEndIndex < 0 ? m5Ind : m5Ind.slice(0, simulationEndIndex);
   if (!(Number.isFinite(start) && Number.isFinite(end) && end > start)) {
     throw new Error(`Invalid evaluation window start=${start} end=${end}`);
   }
@@ -579,7 +582,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
         // Fixed initial equity sizing provides comparable per-trade shadow R;
         // this branch intentionally bypasses only the DD lock for diagnostics.
         const shadowTrade=simulateTrade({
-          signalBar:signal,nextBar:next,futureBars:m5Ind,futureStartIndex:i+1,
+          signalBar:signal,nextBar:next,futureBars:simulationBars,futureStartIndex:i+1,
           setup,equity:config.initialEquity,config
         });
         if(!shadowTrade) {
@@ -598,7 +601,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
       rejectedNextBarGap++;
       continue;
     }
-    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind,futureStartIndex:i+1,setup,equity,config});
+    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:simulationBars,futureStartIndex:i+1,setup,equity,config});
     if(!trade) { rejectedEntryGap++; continue; }
     trade.post_drawdown_lock_shadow=false;
     trades.push(trade); equity+=trade.net_pnl;
