@@ -9,7 +9,7 @@ import { buildGoldLiquiditySweepReversalSetup } from '../src/gold_liquidity_swee
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
   if (!['breakout_v2', 'pullback_retest', 'liquidity_sweep_reversal'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2, pullback_retest, or liquidity_sweep_reversal.`);
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest; liquidity_sweep_reversal is research-only.`);
   }
   return variant;
 }
