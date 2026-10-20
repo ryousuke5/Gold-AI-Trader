@@ -347,15 +347,27 @@ function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
   const pnlPrice=side==='BUY' ? exitPrice-entry : entry-exitPrice;
   const netR=pnlPrice/stopDistance;
   const netPnl=riskCash*netR;
-  const grossR=side==='BUY' ? (exitPrice+ (side==='BUY'?0:0) - nextBar.open)/stopDistance : (nextBar.open-exitPrice)/stopDistance;
+  const signalAtr = Number(signalBar.atr14);
+  const signalEma20 = Number(signalBar.ema20);
   return {
     signal_time:signalBar.time, entry_time:nextBar.time, exit_time:exitTime, side,
+    signal_hour_utc:new Date(signalBar.time*1000).getUTCHours(),
     setup_type:setup.setup_type, entry, stop_loss:stop, take_profit:target,
     risk_cash:riskCash, net_r:netR, net_pnl:netPnl, exit_reason:exitReason,
     holding_minutes:Math.max(0,(exitTime-nextBar.time)/60),
+    signal_atr:Number.isFinite(signalAtr) ? signalAtr : null,
+    signal_rsi14:Number.isFinite(Number(signalBar.rsi14)) ? Number(signalBar.rsi14) : null,
+    signal_ema20_distance_atr:Number.isFinite(signalAtr) && signalAtr>0 && Number.isFinite(signalEma20)
+      ? Math.abs(signalBar.close-signalEma20)/signalAtr : null,
     range_atr:setup.diagnostics?.range_atr ?? null,
     breakout_atr:setup.diagnostics?.breakout_atr ?? null,
-    volume_ratio:setup.diagnostics?.volume_ratio ?? null
+    volume_ratio:setup.diagnostics?.volume_ratio ?? null,
+    stop_atr:setup.diagnostics?.stop_atr ??
+      (Number.isFinite(signalAtr) && signalAtr>0 ? stopDistance/signalAtr : null),
+    extension_atr:setup.diagnostics?.extension_atr ?? null,
+    pullback_touch_atr_tolerance:setup.diagnostics?.pullback_touch_atr_tolerance ?? null,
+    confirmation_body_atr:setup.diagnostics?.confirmation_body_atr ?? null,
+    confirmation_close_location:setup.diagnostics?.confirmation_close_location ?? null
   };
 }
 
@@ -408,8 +420,62 @@ function annualSummary(trades, initialEquity) {
 }
 
 function toCsv(trades) {
-  const headers=['signal_time','entry_time','exit_time','side','setup_type','entry','stop_loss','take_profit','risk_cash','net_r','net_pnl','exit_reason','holding_minutes','range_atr','breakout_atr','volume_ratio'];
+  const headers=[
+    'signal_time','entry_time','exit_time','signal_hour_utc','side','setup_type',
+    'entry','stop_loss','take_profit','risk_cash','net_r','net_pnl','exit_reason','holding_minutes',
+    'signal_atr','signal_rsi14','signal_ema20_distance_atr','range_atr','breakout_atr','volume_ratio',
+    'stop_atr','extension_atr','pullback_touch_atr_tolerance','confirmation_body_atr','confirmation_close_location',
+    'post_drawdown_lock_shadow'
+  ];
   return headers.join(',')+'\n'+trades.map(t=>headers.map(h=>String(t[h]??'')).join(',')).join('\n')+'\n';
+}
+
+function groupTradeOutcomes(trades, field, labeler = (value) => String(value ?? 'UNKNOWN')) {
+  const groups = new Map();
+  for (const trade of trades) {
+    const key = labeler(trade[field]);
+    const row = groups.get(key) || { group:key, trades:0, wins:0, losses:0, net_R:0, gross_profit_R:0, gross_loss_R:0 };
+    row.trades++;
+    row.net_R += Number(trade.net_r) || 0;
+    if ((Number(trade.net_r) || 0) > 0) {
+      row.wins++;
+      row.gross_profit_R += Number(trade.net_r) || 0;
+    } else if ((Number(trade.net_r) || 0) < 0) {
+      row.losses++;
+      row.gross_loss_R += Math.abs(Number(trade.net_r) || 0);
+    }
+    groups.set(key,row);
+  }
+  return [...groups.values()].map(row => ({
+    ...row,
+    expectancy_R: row.trades ? row.net_R / row.trades : 0,
+    profit_factor: row.gross_loss_R > 0 ? row.gross_profit_R / row.gross_loss_R : (row.gross_profit_R > 0 ? null : 0),
+    win_rate_pct: row.trades ? row.wins / row.trades * 100 : 0
+  })).sort((a,b)=>String(a.group).localeCompare(String(b.group)));
+}
+
+export function diagnoseTradeOutcomes(trades = []) {
+  const stopBand = value => {
+    const v = Number(value);
+    if (!Number.isFinite(v)) return 'NA';
+    if (v < 1) return '<1.0';
+    if (v < 1.5) return '1.0-1.5';
+    return '>=1.5';
+  };
+  const extensionBand = value => {
+    const v=Number(value);
+    if (!Number.isFinite(v)) return 'NA';
+    if (v < 0.25) return '<0.25';
+    if (v < 0.75) return '0.25-0.75';
+    return '>=0.75';
+  };
+  return {
+    by_side: groupTradeOutcomes(trades,'side'),
+    by_exit_reason: groupTradeOutcomes(trades,'exit_reason'),
+    by_signal_hour_utc: groupTradeOutcomes(trades,'signal_hour_utc'),
+    by_stop_atr_band: groupTradeOutcomes(trades,'stop_atr',stopBand),
+    by_ema20_distance_atr_band: groupTradeOutcomes(trades,'signal_ema20_distance_atr',extensionBand)
+  };
 }
 
 function score(report) {
@@ -430,12 +496,24 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const blocks={};
   const setupWaitReasons={};
   let nextAvailable=0;
+  let drawdownLockReached=false;
+  let drawdownLockTime=null;
+  let drawdownLockEquity=null;
+  let drawdownLockPeak=null;
+  let shadowNextAvailable=0;
+  let postLockCandidateAttempts=0;
+  let postLockRejectedEntryGap=0;
+  let postLockRejectedNextBarGap=0;
+  const postDrawdownShadowTrades=[];
   let signalsEvaluated=0, candidates=0, candidatesBuy=0, candidatesSell=0, rejectedEntryGap=0, rejectedNextBarGap=0, rejectedDirectionFilter=0;
   for(let i=first;i<m5Ind.length-1;i++) {
     const signal=m5Ind[i];
     if(signal.time<start) continue;
     signalsEvaluated++;
     if(i<nextAvailable) continue;
+    // After the real-equity DD lock, keep an isolated sequential shadow ledger.
+    // It never changes the actual trades, equity, or the risk gate.
+    if(drawdownLockReached && i<shadowNextAvailable) continue;
     if(![signal.ema20,signal.ema50,signal.rsi14,signal.atr14].every(Number.isFinite)) continue;
     const signalTime = signal.time + 300;
     const h1i=latestCompletedH1Index(h1Ind,signalTime);
@@ -459,7 +537,38 @@ async function runOne(rawM5, rawH1, config, strategy) {
       continue;
     }
     const gate=applyRiskGate(state,equity,signalTime,config);
-    if(!gate.allowed) { for(const r of gate.reasons) blocks[r]=(blocks[r]||0)+1; continue; }
+    if(!gate.allowed) {
+      for(const r of gate.reasons) blocks[r]=(blocks[r]||0)+1;
+      if(gate.reasons.includes('drawdown_limit')) {
+        if(!drawdownLockReached) {
+          drawdownLockTime=new Date(signalTime*1000).toISOString();
+          drawdownLockEquity=equity;
+          drawdownLockPeak=state.peak;
+        }
+        drawdownLockReached=true;
+        postLockCandidateAttempts++;
+        const next=m5Ind[i+1];
+        if(next.time-signal.time!==300) {
+          postLockRejectedNextBarGap++;
+          continue;
+        }
+        // Fixed initial equity sizing provides comparable per-trade shadow R;
+        // this branch intentionally bypasses only the DD lock for diagnostics.
+        const shadowTrade=simulateTrade({
+          signalBar:signal,nextBar:next,futureBars:m5Ind.slice(i+1),
+          setup,equity:config.initialEquity,config
+        });
+        if(!shadowTrade) {
+          postLockRejectedEntryGap++;
+          continue;
+        }
+        shadowTrade.post_drawdown_lock_shadow=true;
+        postDrawdownShadowTrades.push(shadowTrade);
+        const shadowExitIndex=m5Ind.findIndex((b,idx)=>idx>i+1 && b.time>shadowTrade.exit_time);
+        shadowNextAvailable=shadowExitIndex<0?m5Ind.length:shadowExitIndex;
+      }
+      continue;
+    }
     const next=m5Ind[i+1];
     if(next.time-signal.time!==300) {
       rejectedNextBarGap++;
@@ -467,6 +576,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
     }
     const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind.slice(i+1),setup,equity,config});
     if(!trade) { rejectedEntryGap++; continue; }
+    trade.post_drawdown_lock_shadow=false;
     trades.push(trade); equity+=trade.net_pnl;
     const exitIndex=m5Ind.findIndex((b,idx)=>idx>i+1 && b.time>trade.exit_time);
     nextAvailable=exitIndex<0?m5Ind.length:exitIndex;
@@ -480,6 +590,24 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const yearly = annualSummary(trades, config.initialEquity);
   const positiveYears = yearly.filter((y)=>y.net_r > 0).length;
   const summary = summarize(trades, config.initialEquity);
+  const postDrawdownShadow = {
+    lock_reached: drawdownLockReached,
+    lock_time_utc: drawdownLockTime,
+    equity_at_lock: drawdownLockEquity,
+    peak_equity_at_lock: drawdownLockPeak,
+    candidates_blocked_by_drawdown: blocks.drawdown_limit || 0,
+    shadow_candidate_attempts_after_lock: postLockCandidateAttempts,
+    shadow_rejected_next_bar_gap: postLockRejectedNextBarGap,
+    shadow_rejected_entry_gap: postLockRejectedEntryGap,
+    trade_count: postDrawdownShadowTrades.length,
+    summary: summarize(postDrawdownShadowTrades, config.initialEquity),
+    recent365: periodSummary(postDrawdownShadowTrades, config.initialEquity, 365, latest),
+    trades: postDrawdownShadowTrades
+  };
+  const outcomeDiagnostics = {
+    actual: diagnoseTradeOutcomes(trades),
+    post_drawdown_lock_shadow: diagnoseTradeOutcomes(postDrawdownShadowTrades)
+  };
   const qualityGate = {
     minimum_trades_5y: 30,
     minimum_profit_factor_5y: 1.15,
@@ -498,7 +626,9 @@ async function runOne(rawM5, rawH1, config, strategy) {
     risk_gate_blocks:blocks,
     rejected_next_bar_gap:rejectedNextBarGap,
     rejected_entry_gap:rejectedEntryGap,
-    rejected_direction_filter:rejectedDirectionFilter
+    rejected_direction_filter:rejectedDirectionFilter,
+    post_drawdown_shadow:postDrawdownShadow,
+    outcome_diagnostics:outcomeDiagnostics
   };
 }
 
@@ -572,13 +702,30 @@ async function main() {
       signals_evaluated:r.signals_evaluated,candidates:r.candidates,candidates_buy:r.candidates_buy,candidates_sell:r.candidates_sell,
       setup_wait_reasons:r.setup_wait_reasons,risk_gate_blocks:r.risk_gate_blocks,
       rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap,
-      rejected_direction_filter:r.rejected_direction_filter
+      rejected_direction_filter:r.rejected_direction_filter,
+      post_drawdown_shadow:{
+        lock_reached:r.post_drawdown_shadow.lock_reached,
+        lock_time_utc:r.post_drawdown_shadow.lock_time_utc,
+        equity_at_lock:r.post_drawdown_shadow.equity_at_lock,
+        peak_equity_at_lock:r.post_drawdown_shadow.peak_equity_at_lock,
+        candidates_blocked_by_drawdown:r.post_drawdown_shadow.candidates_blocked_by_drawdown,
+        shadow_candidate_attempts_after_lock:r.post_drawdown_shadow.shadow_candidate_attempts_after_lock,
+        shadow_rejected_next_bar_gap:r.post_drawdown_shadow.shadow_rejected_next_bar_gap,
+        shadow_rejected_entry_gap:r.post_drawdown_shadow.shadow_rejected_entry_gap,
+        trade_count:r.post_drawdown_shadow.trade_count,
+        summary:r.post_drawdown_shadow.summary,
+        recent365:r.post_drawdown_shadow.recent365
+      },
+      outcome_diagnostics:r.outcome_diagnostics
     }])),
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
   await fs.writeFile(path.join(outDir,'gold_v2_backtest_report.json'),JSON.stringify(report,null,2));
-  for(const [name,r] of Object.entries(results)) await fs.writeFile(path.join(outDir,'gold_v2_trades_'+name+'.csv'),toCsv(r.trades));
+  for(const [name,r] of Object.entries(results)) {
+    await fs.writeFile(path.join(outDir,'gold_v2_trades_'+name+'.csv'),toCsv(r.trades));
+    await fs.writeFile(path.join(outDir,'gold_v2_trades_after_drawdown_lock_'+name+'.csv'),toCsv(r.post_drawdown_shadow.trades));
+  }
   console.log('=== GOLD V2 BACKTEST ===');
   for(const [name,r] of Object.entries(results)) console.log(name, 'trades='+r.summary.trades,'PF='+r.summary.profit_factor,'expectancy_R='+r.summary.expectancy_R,'return='+r.summary.return_pct+'%','maxDD='+r.summary.max_drawdown_pct+'%','recent365_trades='+r.recent365.trades,'recent365_PF='+r.recent365.profit_factor,'positiveYears='+r.positiveYears,'QUALITY_GATE='+r.qualityGate.passed);
 }
