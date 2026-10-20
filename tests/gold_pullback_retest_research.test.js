@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
-import { normalizeBacktestStrategyVariant } from '../scripts/backtest-gold-v2.mjs';
+import { diagnoseTradeOutcomes, normalizeBacktestStrategyVariant } from '../scripts/backtest-gold-v2.mjs';
 
 function pullbackBuyFeatures() {
   const baseTime = Date.parse('2026-01-12T13:00:00Z') / 1000;
@@ -86,4 +86,22 @@ test('research backtest variant selector defaults safely and rejects unknown str
   assert.equal(normalizeBacktestStrategyVariant(), 'breakout_v2');
   assert.equal(normalizeBacktestStrategyVariant('pullback_retest'), 'pullback_retest');
   assert.throws(() => normalizeBacktestStrategyVariant('live_auto'), /Use breakout_v2 or pullback_retest/);
+});
+
+test('trade outcome diagnostics group loss outcomes by side and exit reason', () => {
+  const diagnostics = diagnoseTradeOutcomes([
+    { side: 'BUY', exit_reason: 'TARGET', net_r: 1.4, signal_hour_utc: 13, stop_atr: 1.2, signal_ema20_distance_atr: 0.2 },
+    { side: 'BUY', exit_reason: 'STOP', net_r: -1.0, signal_hour_utc: 13, stop_atr: 1.2, signal_ema20_distance_atr: 0.2 },
+    { side: 'SELL', exit_reason: 'DATA_GAP', net_r: -0.5, signal_hour_utc: 14, stop_atr: 1.8, signal_ema20_distance_atr: 0.9 }
+  ]);
+  const buy = diagnostics.by_side.find((row) => row.group === 'BUY');
+  const sell = diagnostics.by_side.find((row) => row.group === 'SELL');
+  assert.equal(buy.trades, 2);
+  assert.equal(buy.wins, 1);
+  assert.equal(buy.losses, 1);
+  assert.ok(Math.abs(buy.expectancy_R - 0.2) < 1e-9);
+  assert.equal(sell.trades, 1);
+  assert.equal(sell.expectancy_R, -0.5);
+  assert.equal(diagnostics.by_exit_reason.find((row) => row.group === 'DATA_GAP').trades, 1);
+  assert.equal(diagnostics.by_stop_atr_band.find((row) => row.group === '>=1.5').trades, 1);
 });

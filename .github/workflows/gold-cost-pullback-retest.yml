@@ -169,6 +169,13 @@ jobs:
               is_result = base.get("is1095", {})
               oos_result = base.get("oos730", {})
               recent = base.get("recent365", {})
+              shadow = base.get("post_drawdown_shadow", {})
+              shadow_summary = shadow.get("summary", {})
+              shadow_oos = shadow.get("oos730", {})
+              shadow_recent = shadow.get("recent365", {})
+              diagnostics = base.get("outcome_diagnostics", {})
+              actual_diagnostics = diagnostics.get("actual", {})
+              shadow_diagnostics = diagnostics.get("post_drawdown_lock_shadow", {})
               cost = report.get("cost_scenarios", {})
               spread = cost.get("baseline", {}).get("spread_price")
               slippage = cost.get("baseline", {}).get("slippage_price")
@@ -197,6 +204,23 @@ jobs:
                   "OOS_2y_maxDD_pct": oos_result.get("max_drawdown_pct"),
                   "recent365_trades": recent.get("trades", 0),
                   "recent365_PF": recent.get("profit_factor"),
+                  "drawdown_lock_reached": bool(shadow.get("lock_reached", False)),
+                  "first_blocked_candidate_time_utc": shadow.get("first_blocked_candidate_time_utc"),
+                  "candidates_blocked_by_drawdown": shadow.get("candidates_blocked_by_drawdown", 0),
+                  "shadow_trades_after_lock": shadow.get("trade_count", 0),
+                  "shadow_after_lock_PF": shadow_summary.get("profit_factor"),
+                  "shadow_after_lock_expectancy_R": shadow_summary.get("expectancy_R"),
+                  "shadow_after_lock_net_profit_fixed_risk": shadow_summary.get("net_profit"),
+                  "shadow_after_lock_maxDD_pct": shadow_summary.get("max_drawdown_pct"),
+                  "shadow_after_lock_OOS_trades": shadow_oos.get("trades", 0),
+                  "shadow_after_lock_OOS_PF": shadow_oos.get("profit_factor"),
+                  "shadow_after_lock_OOS_expectancy_R": shadow_oos.get("expectancy_R"),
+                  "shadow_after_lock_recent365_trades": shadow_recent.get("trades", 0),
+                  "shadow_after_lock_recent365_PF": shadow_recent.get("profit_factor"),
+                  "actual_outcomes_by_side": actual_diagnostics.get("by_side", []),
+                  "actual_outcomes_by_exit_reason": actual_diagnostics.get("by_exit_reason", []),
+                  "actual_outcomes_by_utc_hour": actual_diagnostics.get("by_signal_hour_utc", []),
+                  "shadow_outcomes_by_side": shadow_diagnostics.get("by_side", []),
                   "conservative_spread_075_slippage_010_trades": cons["summary"].get("trades", 0),
                   "conservative_PF": cons["summary"].get("profit_factor"),
                   "conservative_expectancy_R": cons["summary"].get("expectancy_R"),
@@ -232,12 +256,21 @@ jobs:
               if isinstance(value, bool): return "PASS" if value else "FAIL"
               if isinstance(value, float): return f"{value:.3f}"
               if isinstance(value, dict): return "; ".join(f"{k}:{v}" for k, v in sorted(value.items()))
+              if isinstance(value, list):
+                  return "; ".join(
+                      f"{x.get('group')}:n={x.get('trades',0)},PF={fmt(x.get('profit_factor'))},E={fmt(x.get('expectancy_R'))}R"
+                      for x in value if isinstance(x, dict)
+                  )
               return str(value)
 
           fields = [
               "variant", "spread_price", "trades", "profit_factor", "expectancy_R",
               "net_profit", "max_drawdown_pct", "OOS_2y_trades", "OOS_2y_PF",
-              "OOS_2y_expectancy_R", "recent365_trades", "conservative_PF", "quality_gate"
+              "OOS_2y_expectancy_R", "recent365_trades", "drawdown_lock_reached",
+              "candidates_blocked_by_drawdown", "shadow_trades_after_lock",
+              "shadow_after_lock_PF", "shadow_after_lock_expectancy_R",
+              "shadow_after_lock_OOS_trades", "shadow_after_lock_OOS_PF",
+              "shadow_after_lock_OOS_expectancy_R", "conservative_PF", "quality_gate"
           ]
           md = [
               "# GOLD Cost Sensitivity and Pullback/Reconfirmation Research",
@@ -246,7 +279,7 @@ jobs:
               "Data: fixed XAUUSD M5 window 2021-10-06 to 2026-10-05; H1 bars are aggregated from that same M5 data. Every case uses next M5 bar open execution, 0.25% risk, max 96 bars, same daily/DD gates.",
               "Strategies: A = unchanged compression/volume breakout; C = H1 trend + prior M5 candle EMA20 touch + current completed M5 candle closes beyond the prior candle extreme in trend direction. For C the touch band is 0.15 ATR, prior close tolerance 0.35 ATR, RSI in the existing side ranges, confirmation close location >=0.60 for BUY / <=0.40 for SELL, stop beyond the last 4-bar swing plus 0.15 ATR, target 2R; stop distance 0.8-2.0 ATR. No intrabar prediction; order is entered at next bar open.",
               "Cost grid: spread price = 0.26, 0.30, 0.40, 0.50, 0.55, 0.75; baseline slippage = 0.05. Every run also includes a conservative scenario with spread >=0.75 and slippage >=0.10.",
-              "IS = prior 3 years; OOS = latest 2 years; recent365 = latest year. A quality gate pass is only a screening result, not proof of statistical edge. Fewer than 30 trades remains too small for confident deployment.",
+              "IS = prior 3 years; OOS = latest 2 years; recent365 = latest year. Post-lock shadow trades bypass only the permanent DD lock for diagnostics, use fixed initial-equity sizing, preserve single-position sequencing, and use the same entry/cost/exit model; they are not actual or deployable trades. They estimate how later candidates would have performed absent the DD lock and must not be mistaken for a second backtest account. A quality gate pass is only a screening result, not proof of statistical edge. Fewer than 30 trades remains too small for confident deployment.",
               "",
               "| " + " | ".join(fields) + " |",
               "| " + " | ".join(["---"] * len(fields)) + " |"
@@ -259,6 +292,11 @@ jobs:
                   f"### {r['variant']} @ spread {r['spread_price']}",
                   f"- Candidates: {r['five_year_candidates']} (BUY {r['candidates_buy']}, SELL {r['candidates_sell']}); entry-gap rejections: {r['rejected_entry_gap']}; next-bar gap rejections: {r['rejected_next_bar_gap']}.",
                   f"- WAIT reasons: {fmt(r['wait_reasons'])}.",
+                  f"- Actual outcomes by side: {fmt(r['actual_outcomes_by_side'])}.",
+                  f"- Actual exits: {fmt(r['actual_outcomes_by_exit_reason'])}.",
+                  f"- DD lock: reached={r['drawdown_lock_reached']}, first blocked candidate={r['first_blocked_candidate_time_utc']}, blocked candidates={r['candidates_blocked_by_drawdown']}.",
+                  f"- Post-lock shadow: n={r['shadow_trades_after_lock']}, PF={fmt(r['shadow_after_lock_PF'])}, expectancy={fmt(r['shadow_after_lock_expectancy_R'])}R, fixed-risk net={fmt(r['shadow_after_lock_net_profit_fixed_risk'])}, OOS n/PF/expectancy={r['shadow_after_lock_OOS_trades']}/{fmt(r['shadow_after_lock_OOS_PF'])}/{fmt(r['shadow_after_lock_OOS_expectancy_R'])}R.",
+                  f"- Post-lock shadow outcomes by side: {fmt(r['shadow_outcomes_by_side'])}.",
                   f"- Conservative scenario PF/expectancy/DD: {fmt(r['conservative_PF'])} / {fmt(r['conservative_expectancy_R'])}R / {fmt(r['conservative_maxDD_pct'])}%.",
                   ""
               ]
