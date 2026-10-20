@@ -1,0 +1,278 @@
+name: GOLD Cost Sensitivity and Pullback-Reconfirmation Research
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gold-cost-pullback-retest.yml'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'src/gold_pullback_retest_research.js'
+      - 'tests/gold_pullback_retest_research.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: gold-cost-pullback-retest-research
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies and run tests
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
+      - name: Find latest successful fixed five-year research dataset
+        id: dataset_run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=""
+          run_ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/gold-v2-research.yml/runs?status=success&per_page=20" --jq '.workflow_runs[] | select(.conclusion == "success") | .id')
+          while read -r candidate; do
+            [ -n "$candidate" ] || continue
+            artifact_count=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$candidate/artifacts?per_page=100" --jq '[.artifacts[] | select(.name == "gold-xauusd-m5-1825d" and .expired == false)] | length')
+            if [ "$artifact_count" -gt 0 ]; then
+              found="$candidate"
+              break
+            fi
+          done <<< "$run_ids"
+          if [ -z "$found" ]; then
+            echo "No unexpired prepared five-year GOLD M5 dataset found in the latest 20 successful research runs."
+            exit 1
+          fi
+          echo "run_id=$found" >> "$GITHUB_OUTPUT"
+          echo "Using prepared fixed-window data from research run $found"
+
+      - name: Download fixed five-year XAUUSD M5 data
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: ${{ steps.dataset_run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate fixed dataset window
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          const path = 'gold-xauusd-data/xauusd_m5_manifest.json';
+          const m = JSON.parse(await fs.readFile(path, 'utf8'));
+          if (m.requested_start_date_utc !== '2021-10-06' ||
+              m.requested_end_date_exclusive_utc !== '2026-10-05') {
+            throw new Error('Unexpected dataset window: ' + JSON.stringify(m));
+          }
+          const st = await fs.stat('gold-xauusd-data/xauusd-m5.json.gz');
+          if (st.size < 1000000) throw new Error('Prepared M5 dataset missing or unexpectedly small');
+          console.log(JSON.stringify({
+            instrument: m.instrument, provider: m.provider,
+            start: m.requested_start_date_utc,
+            end_exclusive: m.requested_end_date_exclusive_utc,
+            bytes: st.size
+          }, null, 2));
+          NODE
+
+      - name: Run strategy x cost grid
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATA_FILE=gold-xauusd-data/xauusd-m5.json.gz
+          OUT_ROOT=gold-cost-pullback-results
+          mkdir -p "$OUT_ROOT"
+
+          run_one() {
+            local variant="$1"
+            local spread="$2"
+            local tag=""
+            case "$spread" in
+              0.26) tag=026 ;;
+              0.30) tag=030 ;;
+              0.40) tag=040 ;;
+              0.50) tag=050 ;;
+              0.55) tag=055 ;;
+              0.75) tag=075 ;;
+              *) echo "Unexpected spread value: $spread"; exit 2 ;;
+            esac
+            local prefix=""
+            case "$variant" in
+              breakout_v2) prefix=a ;;
+              pullback_retest) prefix=c ;;
+              *) echo "Unexpected strategy variant: $variant"; exit 2 ;;
+            esac
+            local out="$OUT_ROOT/${prefix}_spread_${tag}"
+            echo "===== variant=$variant spread_price=$spread ====="
+            env \
+              GOLD_BACKTEST_STRATEGY_VARIANT="$variant" \
+              GOLD_BACKTEST_LOOKBACK_DAYS=1825 \
+              GOLD_BACKTEST_INITIAL_EQUITY=100000 \
+              GOLD_BACKTEST_RISK_PCT=0.25 \
+              GOLD_BACKTEST_SPREAD_PRICE="$spread" \
+              GOLD_BACKTEST_SLIPPAGE_PRICE=0.05 \
+              GOLD_BACKTEST_MAX_DAILY_LOSS_PCT=2 \
+              GOLD_BACKTEST_MAX_DRAWDOWN_PCT=5 \
+              GOLD_BACKTEST_MAX_HOLD_BARS=96 \
+              GOLD_BACKTEST_MAX_ENTRY_GAP_ATR=0.50 \
+              GOLD_BACKTEST_SERVER_TIMEZONE=Europe/Nicosia \
+              GOLD_BACKTEST_ALLOWED_SIDE=BOTH \
+              GOLD_MIN_RANGE_ATR=0.8 \
+              GOLD_MAX_RANGE_ATR=2.8 \
+              GOLD_BREAKOUT_ATR=0.10 \
+              GOLD_MIN_BODY_ATR=0.40 \
+              GOLD_MIN_CLOSE_LOCATION=0.65 \
+              GOLD_MIN_VOLUME_RATIO=1.10 \
+              GOLD_H1_TREND_MODE=strict \
+              GOLD_SESSION_START_UTC=7 \
+              GOLD_SESSION_END_UTC=20 \
+              GOLD_BACKTEST_DATA_FILE="$DATA_FILE" \
+              GOLD_BACKTEST_OUTPUT_DIR="$out" \
+              node scripts/backtest-gold-v2.mjs
+          }
+
+          for variant in breakout_v2 pullback_retest; do
+            for spread in 0.26 0.30 0.40 0.50 0.55 0.75; do
+              run_one "$variant" "$spread"
+            done
+          done
+
+      - name: Build cost sensitivity and strategy comparison reports
+        run: |
+          python3 - <<'PY'
+          import csv
+          import json
+          from pathlib import Path
+
+          root = Path("gold-cost-pullback-results")
+          rows = []
+          full = {}
+          for path in sorted(root.glob("*/gold_v2_backtest_report.json")):
+              report = json.loads(path.read_text(encoding="utf-8"))
+              variant = report.get("strategy_variant")
+              if variant not in {"breakout_v2", "pullback_retest"}:
+                  raise SystemExit(f"Unexpected strategy variant in {path}: {variant}")
+              base = report["results"]["baseline"]
+              cons = report["results"]["conservative"]
+              base_summary = base["summary"]
+              is_result = base.get("is1095", {})
+              oos_result = base.get("oos730", {})
+              recent = base.get("recent365", {})
+              cost = report.get("cost_scenarios", {})
+              spread = cost.get("baseline", {}).get("spread_price")
+              slippage = cost.get("baseline", {}).get("slippage_price")
+              if slippage != 0.05:
+                  raise SystemExit(f"Unexpected baseline slippage in {path}: {slippage}")
+              key = f"{'a' if variant == 'breakout_v2' else 'c'}_spread_{int(round(spread * 100)):03d}"
+              full[key] = report
+              rows.append({
+                  "variant": variant,
+                  "spread_price": spread,
+                  "slippage_price": slippage,
+                  "five_year_candidates": base.get("candidates", 0),
+                  "candidates_buy": base.get("candidates_buy", 0),
+                  "candidates_sell": base.get("candidates_sell", 0),
+                  "trades": base_summary.get("trades", 0),
+                  "profit_factor": base_summary.get("profit_factor"),
+                  "expectancy_R": base_summary.get("expectancy_R"),
+                  "net_profit": base_summary.get("net_profit"),
+                  "max_drawdown_pct": base_summary.get("max_drawdown_pct"),
+                  "IS_3y_trades": is_result.get("trades", 0),
+                  "IS_3y_PF": is_result.get("profit_factor"),
+                  "IS_3y_expectancy_R": is_result.get("expectancy_R"),
+                  "OOS_2y_trades": oos_result.get("trades", 0),
+                  "OOS_2y_PF": oos_result.get("profit_factor"),
+                  "OOS_2y_expectancy_R": oos_result.get("expectancy_R"),
+                  "OOS_2y_maxDD_pct": oos_result.get("max_drawdown_pct"),
+                  "recent365_trades": recent.get("trades", 0),
+                  "recent365_PF": recent.get("profit_factor"),
+                  "conservative_spread_075_slippage_010_trades": cons["summary"].get("trades", 0),
+                  "conservative_PF": cons["summary"].get("profit_factor"),
+                  "conservative_expectancy_R": cons["summary"].get("expectancy_R"),
+                  "conservative_maxDD_pct": cons["summary"].get("max_drawdown_pct"),
+                  "quality_gate": bool(base.get("qualityGate", {}).get("passed", False)),
+                  "wait_reasons": base.get("setup_wait_reasons", {}),
+                  "rejected_entry_gap": base.get("rejected_entry_gap", 0),
+                  "rejected_next_bar_gap": base.get("rejected_next_bar_gap", 0),
+                  "data_first": report.get("source_period", {}).get("m5_first"),
+                  "data_last": report.get("source_period", {}).get("m5_last")
+              })
+
+          expected = {f"{p}_spread_{s}" for p in ("a", "c") for s in ("026", "030", "040", "050", "055", "075")}
+          actual = set(full)
+          if actual != expected:
+              raise SystemExit(f"Incomplete comparison grid: expected={sorted(expected)}, actual={sorted(actual)}")
+          for r in rows:
+              if r["spread_price"] not in (0.26, 0.30, 0.40, 0.50, 0.55, 0.75):
+                  raise SystemExit(f"Unexpected spread assumption: {r}")
+              if r["slippage_price"] != 0.05:
+                  raise SystemExit(f"Unexpected slippage assumption: {r}")
+
+          out = Path("gold-cost-pullback-summary")
+          out.mkdir(parents=True, exist_ok=True)
+          (out / "gold_cost_pullback_comparison.json").write_text(json.dumps(rows, indent=2, allow_nan=False), encoding="utf-8")
+          with (out / "gold_cost_pullback_comparison.csv").open("w", newline="", encoding="utf-8") as fh:
+              writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+              writer.writeheader()
+              writer.writerows(rows)
+
+          def fmt(value):
+              if value is None: return "—"
+              if isinstance(value, bool): return "PASS" if value else "FAIL"
+              if isinstance(value, float): return f"{value:.3f}"
+              if isinstance(value, dict): return "; ".join(f"{k}:{v}" for k, v in sorted(value.items()))
+              return str(value)
+
+          fields = [
+              "variant", "spread_price", "trades", "profit_factor", "expectancy_R",
+              "net_profit", "max_drawdown_pct", "OOS_2y_trades", "OOS_2y_PF",
+              "OOS_2y_expectancy_R", "recent365_trades", "conservative_PF", "quality_gate"
+          ]
+          md = [
+              "# GOLD Cost Sensitivity and Pullback/Reconfirmation Research",
+              "",
+              "Research-only. This workflow does not change production signal logic, runtime environment settings, or order permissions. Real orders remain OFF.",
+              "Data: fixed XAUUSD M5 window 2021-10-06 to 2026-10-05; H1 bars are aggregated from that same M5 data. Every case uses next M5 bar open execution, 0.25% risk, max 96 bars, same daily/DD gates.",
+              "Strategies: A = unchanged compression/volume breakout; C = H1 trend + prior M5 candle EMA20 touch + current completed M5 candle closes beyond the prior candle extreme in trend direction. For C the touch band is 0.15 ATR, prior close tolerance 0.35 ATR, RSI in the existing side ranges, confirmation close location >=0.60 for BUY / <=0.40 for SELL, stop beyond the last 4-bar swing plus 0.15 ATR, target 2R; stop distance 0.8-2.0 ATR. No intrabar prediction; order is entered at next bar open.",
+              "Cost grid: spread price = 0.26, 0.30, 0.40, 0.50, 0.55, 0.75; baseline slippage = 0.05. Every run also includes a conservative scenario with spread >=0.75 and slippage >=0.10.",
+              "IS = prior 3 years; OOS = latest 2 years; recent365 = latest year. A quality gate pass is only a screening result, not proof of statistical edge. Fewer than 30 trades remains too small for confident deployment.",
+              "",
+              "| " + " | ".join(fields) + " |",
+              "| " + " | ".join(["---"] * len(fields)) + " |"
+          ]
+          for r in sorted(rows, key=lambda r: (r["variant"], r["spread_price"])):
+              md.append("| " + " | ".join(fmt(r.get(k)) for k in fields) + " |")
+          md += ["", "## Detailed per-case diagnostics", ""]
+          for r in sorted(rows, key=lambda r: (r["variant"], r["spread_price"])):
+              md += [
+                  f"### {r['variant']} @ spread {r['spread_price']}",
+                  f"- Candidates: {r['five_year_candidates']} (BUY {r['candidates_buy']}, SELL {r['candidates_sell']}); entry-gap rejections: {r['rejected_entry_gap']}; next-bar gap rejections: {r['rejected_next_bar_gap']}.",
+                  f"- WAIT reasons: {fmt(r['wait_reasons'])}.",
+                  f"- Conservative scenario PF/expectancy/DD: {fmt(r['conservative_PF'])} / {fmt(r['conservative_expectancy_R'])}R / {fmt(r['conservative_maxDD_pct'])}%.",
+                  ""
+              ]
+          (out / "gold_cost_pullback_comparison.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+          print("\n".join(md))
+          PY
+
+      - name: Upload comparison reports and all trade ledgers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-cost-pullback-research
+          path: |
+            gold-cost-pullback-summary/
+            gold-cost-pullback-results/
+          retention-days: 90
+          if-no-files-found: warn
