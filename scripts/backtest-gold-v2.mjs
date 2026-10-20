@@ -295,6 +295,17 @@ function latestCompletedH1Index(h1, signalTime) {
   return best;
 }
 
+function firstIndexAfterTime(bars, timestamp, startIndex) {
+  let lo = Math.max(0, startIndex);
+  let hi = bars.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (bars[mid].time > timestamp) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo < bars.length ? lo : -1;
+}
+
 function applyRiskGate(state, equity, timestamp, config) {
   const day = new Date(timestamp*1000).toISOString().slice(0,10);
   if(state.day!==day) { state.day=day; state.dayStartEquity=equity; }
@@ -564,7 +575,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
         }
         shadowTrade.post_drawdown_lock_shadow=true;
         postDrawdownShadowTrades.push(shadowTrade);
-        const shadowExitIndex=m5Ind.findIndex((b,idx)=>idx>i+1 && b.time>shadowTrade.exit_time);
+        const shadowExitIndex=firstIndexAfterTime(m5Ind,shadowTrade.exit_time,i+2);
         shadowNextAvailable=shadowExitIndex<0?m5Ind.length:shadowExitIndex;
       }
       continue;
@@ -578,7 +589,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
     if(!trade) { rejectedEntryGap++; continue; }
     trade.post_drawdown_lock_shadow=false;
     trades.push(trade); equity+=trade.net_pnl;
-    const exitIndex=m5Ind.findIndex((b,idx)=>idx>i+1 && b.time>trade.exit_time);
+    const exitIndex=firstIndexAfterTime(m5Ind,trade.exit_time,i+2);
     nextAvailable=exitIndex<0?m5Ind.length:exitIndex;
   }
   // Fixed 3y IS / 2y OOS split anchored to the dataset's latest available bar.
