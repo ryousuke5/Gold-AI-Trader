@@ -4,17 +4,22 @@ import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
+import { buildGoldLiquiditySweepReversalSetup } from '../src/gold_liquidity_sweep_reversal_research.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
-  if (!['breakout_v2', 'pullback_retest'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest.`);
+  if (!['breakout_v2', 'pullback_retest', 'liquidity_sweep_reversal'].includes(variant)) {
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest; liquidity_sweep_reversal is research-only.`);
   }
   return variant;
 }
 
 const STRATEGY_VARIANT = normalizeBacktestStrategyVariant(process.env.GOLD_BACKTEST_STRATEGY_VARIANT || 'breakout_v2');
-const buildSelectedSetup = STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
+const buildSelectedSetup = STRATEGY_VARIANT === 'pullback_retest'
+  ? buildGoldPullbackRetestSetup
+  : STRATEGY_VARIANT === 'liquidity_sweep_reversal'
+    ? buildGoldLiquiditySweepReversalSetup
+    : buildGoldV2Setup;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -502,7 +507,14 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const m5=rawM5, h1=rawH1;
   const m5Ind=addIndicators(m5), h1Ind=addIndicators(h1);
   const latest=m5Ind[m5Ind.length-1].time;
-  const start=latest-config.lookbackDays*86400;
+  const start=config.evalStartUtc ?? latest-config.lookbackDays*86400;
+  const end=config.evalEndUtc ?? latest+300;
+  // Prevent any IS trade from using future OOS bars for exit simulation.
+  const simulationEndIndex = config.evalEndUtc === null ? m5Ind.length : m5Ind.findIndex((b) => b.time + 300 > end);
+  const simulationBars = simulationEndIndex < 0 ? m5Ind : m5Ind.slice(0, simulationEndIndex);
+  if (!(Number.isFinite(start) && Number.isFinite(end) && end > start)) {
+    throw new Error(`Invalid evaluation window start=${start} end=${end}`);
+  }
   const first=Math.max(250,80);
   let equity=config.initialEquity;
   const trades=[];
@@ -522,21 +534,22 @@ async function runOne(rawM5, rawH1, config, strategy) {
   let signalsEvaluated=0, candidates=0, candidatesBuy=0, candidatesSell=0, rejectedEntryGap=0, rejectedNextBarGap=0, rejectedDirectionFilter=0;
   for(let i=first;i<m5Ind.length-1;i++) {
     const signal=m5Ind[i];
-    if(signal.time<start) continue;
+    const signalTime=signal.time+300;
+    if(signalTime<start) continue;
+    if(signalTime>=end) break;
     signalsEvaluated++;
     if(i<nextAvailable) continue;
     // After the real-equity DD lock, keep an isolated sequential shadow ledger.
     // It never changes the actual trades, equity, or the risk gate.
     if(drawdownLockReached && i<shadowNextAvailable) continue;
     if(![signal.ema20,signal.ema50,signal.rsi14,signal.atr14].every(Number.isFinite)) continue;
-    const signalTime = signal.time + 300;
     const h1i=latestCompletedH1Index(h1Ind,signalTime);
     const h=h1Ind[h1i];
     if(!h || ![h.close,h.ema20,h.ema50,h.ema200,h.rsi14,h.atr14].every(Number.isFinite)) continue;
     const setup=buildSelectedSetup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
-      recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
+      recentM5:recentBars(m5Ind,i,STRATEGY_VARIANT === 'liquidity_sweep_reversal' ? strategy.rangeLookback+1 : Math.max(80,strategy.rangeLookback+1))
     },strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
@@ -569,7 +582,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
         // Fixed initial equity sizing provides comparable per-trade shadow R;
         // this branch intentionally bypasses only the DD lock for diagnostics.
         const shadowTrade=simulateTrade({
-          signalBar:signal,nextBar:next,futureBars:m5Ind,futureStartIndex:i+1,
+          signalBar:signal,nextBar:next,futureBars:simulationBars,futureStartIndex:i+1,
           setup,equity:config.initialEquity,config
         });
         if(!shadowTrade) {
@@ -588,7 +601,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
       rejectedNextBarGap++;
       continue;
     }
-    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind,futureStartIndex:i+1,setup,equity,config});
+    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:simulationBars,futureStartIndex:i+1,setup,equity,config});
     if(!trade) { rejectedEntryGap++; continue; }
     trade.post_drawdown_lock_shadow=false;
     trades.push(trade); equity+=trade.net_pnl;
@@ -667,6 +680,13 @@ function costScenarios(config) {
   ];
 }
 
+function parseUtcBoundary(value, name) {
+  if (!value) return null;
+  const millis = Date.parse(value);
+  if (!Number.isFinite(millis)) throw new Error(`Invalid ${name}: ${value}`);
+  return Math.floor(millis / 1000);
+}
+
 async function main() {
   const args=parseArgs();
   const lookbackDays=Math.max(365,Number(args.get('lookback-days')||BASE_CONFIG.lookbackDays));
@@ -682,7 +702,15 @@ async function main() {
     rawM5=normalizeDukascopy(rows);
     if(rawM5.length<200000) throw new Error('Insufficient Dukascopy XAUUSD M5 data: '+rawM5.length);
   }
-  const config={...BASE_CONFIG,lookbackDays};
+  const config={
+    ...BASE_CONFIG,
+    lookbackDays,
+    evalStartUtc: parseUtcBoundary(process.env.GOLD_BACKTEST_EVAL_START_UTC, 'GOLD_BACKTEST_EVAL_START_UTC'),
+    evalEndUtc: parseUtcBoundary(process.env.GOLD_BACKTEST_EVAL_END_UTC, 'GOLD_BACKTEST_EVAL_END_UTC')
+  };
+  if (config.evalStartUtc !== null && config.evalEndUtc !== null && config.evalEndUtc <= config.evalStartUtc) {
+    throw new Error('GOLD_BACKTEST_EVAL_END_UTC must be after GOLD_BACKTEST_EVAL_START_UTC');
+  }
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
   const strategy=JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
@@ -695,7 +723,9 @@ async function main() {
   const report={
     strategy: STRATEGY_VARIANT === 'pullback_retest'
       ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
-      : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
+      : STRATEGY_VARIANT === 'liquidity_sweep_reversal'
+        ? 'XAUUSD research-only M5 prior-range liquidity sweep and close-back-inside reversal'
+        : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
     strategy_variant: STRATEGY_VARIANT,
     fundamental_backtest_status:'NOT_RUN',
     fundamental_backtest_note:'AI/web-search environment filtering is intentionally excluded from historical technical performance because point-in-time AI outputs are not available in this price dataset.',
@@ -706,6 +736,8 @@ async function main() {
     test_period:{
       start:new Date(rawM5[0].time*1000).toISOString(),
       end:new Date((rawM5[rawM5.length-1].time+300)*1000).toISOString(),
+      evaluation_start_utc: config.evalStartUtc === null ? null : new Date(config.evalStartUtc*1000).toISOString(),
+      evaluation_end_exclusive_utc: config.evalEndUtc === null ? null : new Date(config.evalEndUtc*1000).toISOString(),
       requested_start:requestedStart.toISOString(),
       requested_end:requestedEnd.toISOString()
     },
