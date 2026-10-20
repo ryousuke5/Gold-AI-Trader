@@ -1,0 +1,257 @@
+name: GOLD V2 Breakout ATR Sensitivity
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gold-v2-breakout-sensitivity.yml'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'src/gold_strategy_v2.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: gold-v2-breakout-atr-sensitivity
+  cancel-in-progress: false
+
+jobs:
+  sensitivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies and run tests
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
+      - name: Find latest successful five-year research artifact
+        id: dataset_run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=""
+          run_ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/gold-v2-research.yml/runs?status=success&per_page=20" --jq '.workflow_runs[] | select(.conclusion == "success") | .id')
+          while read -r candidate; do
+            [ -n "$candidate" ] || continue
+            artifact_count=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$candidate/artifacts?per_page=100" --jq '[.artifacts[] | select(.name == "gold-xauusd-m5-1825d" and .expired == false)] | length')
+            if [ "$artifact_count" -gt 0 ]; then
+              found="$candidate"
+              break
+            fi
+          done <<< "$run_ids"
+          if [ -z "$found" ]; then
+            echo "No unexpired five-year research dataset artifact found in the latest 20 successful runs."
+            exit 1
+          fi
+          echo "run_id=$found" >> "$GITHUB_OUTPUT"
+          echo "Using prepared dataset from successful research run $found"
+
+      - name: Download fixed five-year XAUUSD M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: ${{ steps.dataset_run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate fixed dataset window
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          const p = 'gold-xauusd-data/xauusd_m5_manifest.json';
+          const m = JSON.parse(await fs.readFile(p, 'utf8'));
+          if (m.requested_start_date_utc !== '2021-10-06' ||
+              m.requested_end_date_exclusive_utc !== '2026-10-05') {
+            throw new Error('Unexpected dataset window: ' + JSON.stringify({
+              start: m.requested_start_date_utc,
+              endExclusive: m.requested_end_date_exclusive_utc
+            }));
+          }
+          const st = await fs.stat('gold-xauusd-data/xauusd-m5.json.gz');
+          if (st.size < 1000000) throw new Error('Prepared M5 dataset is missing or too small');
+          console.log(JSON.stringify({
+            instrument: m.instrument,
+            provider: m.provider,
+            start: m.requested_start_date_utc,
+            end_exclusive: m.requested_end_date_exclusive_utc,
+            bytes: st.size
+          }, null, 2));
+          NODE
+
+      - name: Run breakout ATR sensitivity grid
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATA_FILE=gold-xauusd-data/xauusd-m5.json.gz
+          OUT_ROOT=gold-breakout-atr-results
+          mkdir -p "$OUT_ROOT"
+
+          run_one() {
+            local threshold="$1"
+            local tag=""
+            case "$threshold" in
+              0.05) tag=005 ;;
+              0.075) tag=0075 ;;
+              0.10) tag=010 ;;
+              *) echo "Unexpected breakout threshold: $threshold"; exit 2 ;;
+            esac
+            local out="$OUT_ROOT/breakout_$tag"
+            echo "===== variant=breakout_$tag min_breakout_atr=$threshold ====="
+            env \
+              GOLD_BACKTEST_LOOKBACK_DAYS=1825 \
+              GOLD_BACKTEST_INITIAL_EQUITY=100000 \
+              GOLD_BACKTEST_RISK_PCT=0.25 \
+              GOLD_BACKTEST_SPREAD_PRICE=0.50 \
+              GOLD_BACKTEST_SLIPPAGE_PRICE=0.05 \
+              GOLD_BACKTEST_MAX_DAILY_LOSS_PCT=2 \
+              GOLD_BACKTEST_MAX_DRAWDOWN_PCT=5 \
+              GOLD_BACKTEST_MAX_HOLD_BARS=96 \
+              GOLD_BACKTEST_MAX_ENTRY_GAP_ATR=0.50 \
+              GOLD_BACKTEST_SERVER_TIMEZONE=Europe/Nicosia \
+              GOLD_BACKTEST_ALLOWED_SIDE=BOTH \
+              GOLD_MIN_RANGE_ATR=0.8 \
+              GOLD_MAX_RANGE_ATR=2.8 \
+              GOLD_BREAKOUT_ATR="$threshold" \
+              GOLD_MIN_BODY_ATR=0.40 \
+              GOLD_MIN_CLOSE_LOCATION=0.65 \
+              GOLD_MIN_VOLUME_RATIO=1.10 \
+              GOLD_H1_TREND_MODE=strict \
+              GOLD_BACKTEST_DATA_FILE="$DATA_FILE" \
+              GOLD_BACKTEST_OUTPUT_DIR="$out" \
+              node scripts/backtest-gold-v2.mjs
+          }
+
+          for threshold in 0.05 0.075 0.10; do
+            run_one "$threshold"
+          done
+
+      - name: Build cost-adjusted comparison report
+        run: |
+          python3 - <<'PY'
+          import csv
+          import json
+          from pathlib import Path
+
+          root = Path("gold-breakout-atr-results")
+          rows = []
+          reports = {}
+          for path in sorted(root.glob("*/gold_v2_backtest_report.json")):
+              report = json.loads(path.read_text(encoding="utf-8"))
+              baseline = report["results"]["baseline"]
+              conservative = report["results"]["conservative"]
+              overall = baseline["summary"]
+              cons = conservative["summary"]
+              is_result = baseline.get("is1095", {})
+              oos_result = baseline.get("oos730", {})
+              recent = baseline.get("recent365", {})
+              reasons = baseline.get("setup_wait_reasons", {})
+              strategy = report.get("strategy_parameters", {})
+              rows.append({
+                  "variant": path.parent.name,
+                  "breakout_min_atr": strategy.get("breakoutAtr"),
+                  "spread_price_baseline": report.get("cost_scenarios", {}).get("baseline", {}).get("spread_price"),
+                  "slippage_price_baseline": report.get("cost_scenarios", {}).get("baseline", {}).get("slippage_price"),
+                  "five_year_trades": overall.get("trades", 0),
+                  "five_year_pf": overall.get("profit_factor"),
+                  "five_year_expectancy_R": overall.get("expectancy_R"),
+                  "five_year_net_profit": overall.get("net_profit"),
+                  "five_year_maxDD_pct": overall.get("max_drawdown_pct"),
+                  "five_year_candidates": baseline.get("candidates", 0),
+                  "five_year_candidate_buy": baseline.get("candidates_buy", 0),
+                  "five_year_candidate_sell": baseline.get("candidates_sell", 0),
+                  "breakout_trigger_waits": reasons.get("breakout_trigger_filter", 0),
+                  "is1095_trades": is_result.get("trades", 0),
+                  "is1095_pf": is_result.get("profit_factor"),
+                  "is1095_expectancy_R": is_result.get("expectancy_R"),
+                  "oos730_trades": oos_result.get("trades", 0),
+                  "oos730_pf": oos_result.get("profit_factor"),
+                  "oos730_expectancy_R": oos_result.get("expectancy_R"),
+                  "oos730_maxDD_pct": oos_result.get("max_drawdown_pct"),
+                  "recent365_trades": recent.get("trades", 0),
+                  "recent365_pf": recent.get("profit_factor"),
+                  "conservative_trades": cons.get("trades", 0),
+                  "conservative_pf": cons.get("profit_factor"),
+                  "conservative_expectancy_R": cons.get("expectancy_R"),
+                  "conservative_maxDD_pct": cons.get("max_drawdown_pct"),
+                  "quality_gate": bool(baseline.get("qualityGate", {}).get("passed", False)),
+                  "data_first": report.get("source_period", {}).get("m5_first"),
+                  "data_last": report.get("source_period", {}).get("m5_last")
+              })
+              reports[path.parent.name] = report
+
+          expected = {"breakout_005", "breakout_0075", "breakout_010"}
+          actual = {r["variant"] for r in rows}
+          if actual != expected:
+              raise SystemExit(f"Incomplete sensitivity grid: expected={sorted(expected)}, actual={sorted(actual)}")
+
+          # Guard against unintended changes to fixed assumptions.
+          for r in rows:
+              if r["spread_price_baseline"] != 0.5 or r["slippage_price_baseline"] != 0.05:
+                  raise SystemExit(f"Unexpected baseline costs in {r['variant']}: {r}")
+              if r["breakout_min_atr"] not in (0.05, 0.075, 0.1):
+                  raise SystemExit(f"Unexpected breakout value in {r['variant']}: {r}")
+
+          out = Path("gold-breakout-atr-summary")
+          out.mkdir(parents=True, exist_ok=True)
+          (out / "gold_breakout_atr_sensitivity.json").write_text(json.dumps(rows, indent=2, allow_nan=False), encoding="utf-8")
+          with (out / "gold_breakout_atr_sensitivity.csv").open("w", newline="", encoding="utf-8") as f:
+              writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+              writer.writeheader()
+              writer.writerows(rows)
+
+          def fmt(x):
+              if x is None: return "—"
+              if isinstance(x, bool): return "PASS" if x else "FAIL"
+              if isinstance(x, float): return f"{x:.3f}"
+              return str(x)
+
+          fields = [
+              "variant", "breakout_min_atr", "five_year_candidates",
+              "five_year_candidate_buy", "five_year_candidate_sell", "breakout_trigger_waits",
+              "five_year_trades", "five_year_pf", "five_year_expectancy_R",
+              "five_year_net_profit", "five_year_maxDD_pct",
+              "is1095_trades", "is1095_pf", "is1095_expectancy_R",
+              "oos730_trades", "oos730_pf", "oos730_expectancy_R", "oos730_maxDD_pct",
+              "recent365_trades", "recent365_pf",
+              "conservative_trades", "conservative_pf",
+              "conservative_expectancy_R", "conservative_maxDD_pct", "quality_gate"
+          ]
+          md = [
+              "# GOLD V2 Breakout ATR Sensitivity",
+              "",
+              "Research-only. No production strategy parameters are changed; the real-order gate remains OFF.",
+              "Same prepared five-year XAUUSD M5 dataset (2021-10-06 to 2026-10-05), strict H1 trend, range ATR 0.8-2.8, min body ATR 0.40, close location 0.65, volume ratio 1.10, original entry/risk/exit rules for every variant.",
+              "Only GOLD_BREAKOUT_ATR changes: 0.05 / 0.075 / 0.10 ATR. Fixed baseline costs: spread price 0.50 + slippage price 0.05. Conservative costs: spread price at least 0.75 + slippage price at least 0.10.",
+              "IS = prior 3 years; OOS = latest 2 years. Recent365 = latest year. Low trade counts mean PF/expectancy are not statistically robust; quality gate remains the primary validation signal.",
+              "",
+              "| " + " | ".join(fields) + " |",
+              "| " + " | ".join(["---"] * len(fields)) + " |"
+          ]
+          for r in rows:
+              md.append("| " + " | ".join(fmt(r[k]) for k in fields) + " |")
+          text = "\n".join(md) + "\n"
+          (out / "gold_breakout_atr_sensitivity.md").write_text(text, encoding="utf-8")
+          print(text)
+          PY
+
+      - name: Upload sensitivity reports and raw trade data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-breakout-atr-sensitivity
+          path: |
+            gold-breakout-atr-summary/
+            gold-breakout-atr-results/
+          retention-days: 90
+          if-no-files-found: warn
