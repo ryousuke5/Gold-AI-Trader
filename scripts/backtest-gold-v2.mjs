@@ -549,7 +549,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const setup=buildSelectedSetup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
-      recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
+      recentM5:recentBars(m5Ind,i,STRATEGY_VARIANT === 'liquidity_sweep_reversal' ? strategy.rangeLookback+1 : Math.max(80,strategy.rangeLookback+1))
     },strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
