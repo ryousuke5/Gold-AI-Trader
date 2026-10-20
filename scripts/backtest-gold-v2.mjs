@@ -3,6 +3,18 @@ import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
+import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
+
+export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
+  const variant = String(value || 'breakout_v2').trim().toLowerCase();
+  if (!['breakout_v2', 'pullback_retest'].includes(variant)) {
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest.`);
+  }
+  return variant;
+}
+
+const STRATEGY_VARIANT = normalizeBacktestStrategyVariant(process.env.GOLD_BACKTEST_STRATEGY_VARIANT || 'breakout_v2');
+const buildSelectedSetup = STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -269,7 +281,8 @@ function dataQuality(bars) {
 
 function recentBars(bars, index, count=80) {
   return bars.slice(Math.max(0,index-count+1),index+1).map((b)=>({
-    time:b.time+300, open:b.open, high:b.high, low:b.low, close:b.close, volume:b.volume
+    time:b.time+300, open:b.open, high:b.high, low:b.low, close:b.close, volume:b.volume,
+    ema20:b.ema20, ema50:b.ema50, ema200:b.ema200, rsi14:b.rsi14, atr14:b.atr14
   }));
 }
 
@@ -428,7 +441,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const h1i=latestCompletedH1Index(h1Ind,signalTime);
     const h=h1Ind[h1i];
     if(!h || ![h.close,h.ema20,h.ema50,h.ema200,h.rsi14,h.atr14].every(Number.isFinite)) continue;
-    const setup=buildGoldV2Setup({
+    const setup=buildSelectedSetup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
       recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
@@ -533,7 +546,10 @@ async function main() {
     console.log(cost.name, out.summary);
   }
   const report={
-    strategy:'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
+    strategy: STRATEGY_VARIANT === 'pullback_retest'
+      ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
+      : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
+    strategy_variant: STRATEGY_VARIANT,
     fundamental_backtest_status:'NOT_RUN',
     fundamental_backtest_note:'AI/web-search environment filtering is intentionally excluded from historical technical performance because point-in-time AI outputs are not available in this price dataset.',
     data_source:{m5:dataFile?'PREPARED_DUKASCOPY_XAUUSD':'DUKASCOPY_XAUUSD',h1:'FROM_M5'},
@@ -547,7 +563,7 @@ async function main() {
       requested_end:requestedEnd.toISOString()
     },
     prepared_data_file:dataFile||null,
-    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side',direction_filter_for_research_only:config.allowedSideFilter},
+    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side',direction_filter_for_research_only:config.allowedSideFilter,strategy_variant:STRATEGY_VARIANT},
     strategy_parameters:strategy,
     data_quality:dataQuality(rawM5),
     cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{spread_price:costScenarios(config).find(c=>c.name===name).spreadPrice,slippage_price:costScenarios(config).find(c=>c.name===name).slippagePrice}])),
