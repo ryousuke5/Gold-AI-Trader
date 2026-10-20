@@ -103,7 +103,7 @@ jobs:
           out={'selection_rule':'IS only: expectancy R descending, PF descending, max DD ascending, n descending, candidate ID ascending; prefer n>=30 when possible.',
                'candidate_grid_size':len(scores),'is_window':'2021-10-06 inclusive to 2024-10-05 exclusive',
                'selection_costs':{'spread_price':0.5,'slippage_price':0.05},'selected':chosen,'is_screen_passed':chosen['is_screen_passed'],'candidate_scores':scores}
-          (root/'selection.json').write_text(json.dumps(out,indent=2)+'\\n')
+          (root/'selection.json').write_text(json.dumps(out,indent=2))
           with (root/'is_candidate_scores.csv').open('w',newline='') as f:
             w=csv.DictWriter(f,fieldnames=['candidate_id','trades','profit_factor','expectancy_R','max_drawdown_pct','eligible','is_screen_passed']); w.writeheader()
             for x in scores: w.writerow({k:x[k] for k in w.fieldnames})
@@ -152,7 +152,7 @@ jobs:
             'is_metrics':{k:pick[k] for k in ('trades','profit_factor','expectancy_R','max_drawdown_pct')},
             'is_screen_passed':sel['is_screen_passed'],'oos_metrics':oos,'acceptance_gates':gates,'all_gates_passed':all(gates.values()),
             'note':'Research-only. IS selection was frozen before OOS validation; production path and settings remain unchanged.'}
-          (root/'frozen_oos_final.json').write_text(json.dumps(final,indent=2)+'\\n')
+          (root/'frozen_oos_final.json').write_text(json.dumps(final,indent=2))
           lines=['# GOLD Liquidity Sweep IS / Frozen OOS','Research-only; no production changes.',
             'IS: 2021-10-06 inclusive to 2024-10-05 exclusive. OOS: 2024-10-05 inclusive to 2026-10-05 exclusive.',
             'Selected: '+pick['candidate_id'],'Parameters: '+json.dumps(pick['strategy_parameters']),
@@ -160,8 +160,8 @@ jobs:
             'OOS: '+str(oos),'','| Gate | Result |','|---|---|']
           lines += ['| '+k+' | '+('PASS' if v else 'FAIL')+' |' for k,v in gates.items()]
           lines += ['', 'OVERALL: '+('PASS' if all(gates.values()) else 'FAIL'), 'Any failed gate rejects this version; do not tune against OOS.']
-          (root/'frozen_oos_final.md').write_text('\\n'.join(lines)+'\\n')
-          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f: f.write('\\n'.join(lines)+'\\n')
+          (root/'frozen_oos_final.md').write_text('\n'.join(lines))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f: f.write('\n'.join(lines))
           print(json.dumps(final,indent=2))
           PY
       - name: Upload research artifacts
