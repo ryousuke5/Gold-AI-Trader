@@ -318,7 +318,7 @@ function applyRiskGate(state, equity, timestamp, config) {
   return {allowed:!reasons.length,reasons,daily,dd};
 }
 
-function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
+function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,equity,config}) {
   const spread=config.spreadPrice, slip=config.slippagePrice;
   const side=setup.candidate;
   const entry=side==='BUY' ? nextBar.open+spread+slip : nextBar.open-slip;
@@ -327,12 +327,15 @@ function simulateTrade({signalBar,nextBar,futureBars,setup,equity,config}) {
   const stopDistance=Math.abs(entry-stop);
   if(!(stopDistance>0) || Math.abs(entry-setup.entry_reference)/Math.max(0.000001, Number(signalBar.atr14))>config.maxEntryGapAtr) return null;
   const riskCash=equity*(config.riskPct/100);
-  let exitTime=futureBars[Math.min(futureBars.length-1,config.maxHoldBars-1)]?.time ?? nextBar.time;
-  let exitPrice=futureBars[Math.min(futureBars.length-1,config.maxHoldBars-1)]?.close ?? nextBar.close;
+  const scanStart = Math.max(0, Math.floor(Number(futureStartIndex) || 0));
+  const scanEnd = Math.min(futureBars.length, scanStart + config.maxHoldBars);
+  const finalScanIndex = scanEnd - 1;
+  let exitTime = futureBars[finalScanIndex]?.time ?? nextBar.time;
+  let exitPrice = futureBars[finalScanIndex]?.close ?? nextBar.close;
   let exitReason='TIME';
-  const scan=futureBars.slice(0,config.maxHoldBars);
   let previousBar = null;
-  for(const bar of scan) {
+  for(let scanIndex=scanStart;scanIndex<scanEnd;scanIndex++) {
+    const bar = futureBars[scanIndex];
     if(previousBar && bar.time - previousBar.time > 900) {
       exitTime=previousBar.time;
       exitReason='DATA_GAP';
@@ -566,7 +569,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
         // Fixed initial equity sizing provides comparable per-trade shadow R;
         // this branch intentionally bypasses only the DD lock for diagnostics.
         const shadowTrade=simulateTrade({
-          signalBar:signal,nextBar:next,futureBars:m5Ind.slice(i+1),
+          signalBar:signal,nextBar:next,futureBars:m5Ind,futureStartIndex:i+1,
           setup,equity:config.initialEquity,config
         });
         if(!shadowTrade) {
@@ -585,7 +588,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
       rejectedNextBarGap++;
       continue;
     }
-    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind.slice(i+1),setup,equity,config});
+    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind,futureStartIndex:i+1,setup,equity,config});
     if(!trade) { rejectedEntryGap++; continue; }
     trade.post_drawdown_lock_shadow=false;
     trades.push(trade); equity+=trade.net_pnl;
