@@ -99,7 +99,7 @@ test('trade outcome diagnostics group loss outcomes by side and exit reason', ()
   assert.equal(buy.trades, 2);
   assert.equal(buy.wins, 1);
   assert.equal(buy.losses, 1);
-  assert.equal(buy.expectancy_R, 0.2);
+  assert.ok(Math.abs(buy.expectancy_R - 0.2) < 1e-9);
   assert.equal(sell.trades, 1);
   assert.equal(sell.expectancy_R, -0.5);
   assert.equal(diagnostics.by_exit_reason.find((row) => row.group === 'DATA_GAP').trades, 1);
