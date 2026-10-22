@@ -15,6 +15,7 @@ import { buildForwardMonitorSnapshot } from './src/forward_monitor.js';
 import { buildGoldSignalDiagnosticLog } from './src/gold_signal_diagnostics.js';
 import { validateUtcBarTimestamp } from './src/market_time.js';
 import { recordGoldSignalEvaluated, recordGoldSignalOutcome, recordGoldSignalRequest, recordGoldSignalTimeRejection } from './src/gold_diagnostics.js';
+import { buildGoldPostTrace } from './src/gold_post_trace.js';
 
 const app=express();
 const __filename=fileURLToPath(import.meta.url);
@@ -35,29 +36,12 @@ function timingSafeEquals(a,b){const left=Buffer.from(String(a||''));const right
 function auth(req,res,next){const expected=process.env.GOLD_API_KEY;if(!expected)return res.status(503).json({ok:false,error:'GOLD_API_KEY is not configured'});const supplied=String(req.headers['x-gold-api-key']||'');if(!timingSafeEquals(supplied,expected))return res.status(401).json({ok:false,error:'unauthorized'});next();}
 function nowIso(){return new Date().toISOString();}
 function logGoldSignalPostTrace({req,requestId,symbol,timeframe,features={},event='REQUEST',reason=null}={}){
-  // Trace only routing metadata: never log API keys, full request bodies, prices, or account data.
-  const forwardedFor=String(req?.headers?.['x-forwarded-for']||'').split(',').map(v=>v.trim()).filter(Boolean);
-  const sourceAddress=forwardedFor.length?forwardedFor[forwardedFor.length-1]:String(req?.socket?.remoteAddress||'');
-  const fingerprintKey=String(process.env.DIAGNOSTIC_FINGERPRINT_SALT||process.env.GOLD_API_KEY||'gold-post-source-trace');
-  const sourceFingerprint=sourceAddress?crypto.createHmac('sha256',fingerprintKey).update(sourceAddress).digest('hex').slice(0,12):'unknown';
-  const rawClientId=String(req?.headers?.['x-gold-client-id']||'').trim();
-  const clientId=/^[A-Za-z0-9._:-]{1,64}$/.test(rawClientId)?rawClientId:null;
-  const userAgent=String(req?.headers?.['user-agent']||'').replace(/[\r\n\t]/g,' ').slice(0,120)||null;
-  const barEpoch=Number(features?.barTime??features?.bar_time);
-  const barTimeUtc=Number.isFinite(barEpoch)&&barEpoch>0?new Date(barEpoch*1000).toISOString():null;
-  console.log('[GOLD POST SOURCE] '+JSON.stringify({
-    event:String(event||'REQUEST').slice(0,32),
-    request_id:String(requestId||'').slice(0,100)||null,
-    received_at:nowIso(),
-    source_fingerprint:sourceFingerprint,
-    forwarded_hops:forwardedFor.length,
-    client_id:clientId,
-    user_agent:userAgent,
-    symbol:String(symbol||'').slice(0,24),
-    timeframe:String(timeframe||'').slice(0,12),
-    bar_time_utc:barTimeUtc,
-    reason:reason===null?null:String(reason).slice(0,80)
-  }));
+  const record=buildGoldPostTrace({
+    req,requestId,symbol,timeframe,features,event,reason,
+    receivedAt:nowIso(),
+    fingerprintSecret:process.env.DIAGNOSTIC_FINGERPRINT_SALT||process.env.GOLD_API_KEY||'gold-post-source-trace'
+  });
+  console.log('[GOLD POST SOURCE] '+JSON.stringify(record));
 }
 
 function rejectInvalidGoldBarTime({res,features,requestId,symbol,timeframe,serverUtcOffsetSeconds,trackSignalDiagnostics=false}){
