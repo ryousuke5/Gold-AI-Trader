@@ -42,7 +42,7 @@ function logGoldSignalPostTrace({req,requestId,symbol,timeframe,features={},even
   const sourceFingerprint=sourceAddress?crypto.createHmac('sha256',fingerprintKey).update(sourceAddress).digest('hex').slice(0,12):'unknown';
   const rawClientId=String(req?.headers?.['x-gold-client-id']||'').trim();
   const clientId=/^[A-Za-z0-9._:-]{1,64}$/.test(rawClientId)?rawClientId:null;
-  const userAgent=String(req?.headers?.['user-agent']||'').replace(/[\\r\\n\\t]/g,' ').slice(0,120)||null;
+  const userAgent=String(req?.headers?.['user-agent']||'').replace(/[\r\n\t]/g,' ').slice(0,120)||null;
   const barEpoch=Number(features?.barTime??features?.bar_time);
   const barTimeUtc=Number.isFinite(barEpoch)&&barEpoch>0?new Date(barEpoch*1000).toISOString():null;
   console.log('[GOLD POST SOURCE] '+JSON.stringify({
