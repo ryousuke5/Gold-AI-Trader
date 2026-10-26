@@ -44,7 +44,7 @@ string NumOrBlank(double x, int digits)
 
 string TicketGlobal(string stem, int ticket)
 {
-   return "GDEMO_" + IntegerToString(ProbeMagicNumber) + "_" + stem + "_" + IntegerToString(ticket);
+   return "GDEMO_" + IntegerToString(ProbeMagicNumber) + "_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "_" + stem + "_" + IntegerToString(ticket);
 }
 
 void EnsureAppendFile(int &handle, string name, string header)
