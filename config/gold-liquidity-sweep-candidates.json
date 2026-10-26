@@ -1,0 +1,164 @@
+[
+  {
+    "id": "ls_12_s05",
+    "strategy_parameters": {
+      "rangeLookback": 12,
+      "minSweepAtr": 0.05,
+      "closeBackAtr": 0.05,
+      "buyRsiMax": 40,
+      "sellRsiMin": 60,
+      "minCloseLocation": 0.6,
+      "maxCloseLocation": 0.4,
+      "stopBufferAtr": 0.1,
+      "minStopAtr": 0.5,
+      "maxStopAtr": 2.5,
+      "takeProfitR": 1.5,
+      "sessionStartUtc": 7,
+      "sessionEndUtc": 20
+    }
+  },
+  {
+    "id": "ls_12_s10",
+    "strategy_parameters": {
+      "rangeLookback": 12,
+      "minSweepAtr": 0.1,
+      "closeBackAtr": 0.05,
+      "buyRsiMax": 40,
+      "sellRsiMin": 60,
+      "minCloseLocation": 0.6,
+      "maxCloseLocation": 0.4,
+      "stopBufferAtr": 0.1,
+      "minStopAtr": 0.5,
+      "maxStopAtr": 2.5,
+      "takeProfitR": 1.5,
+      "sessionStartUtc": 7,
+      "sessionEndUtc": 20
+    }
+  },
+  {
+    "id": "ls_12_s20",
+    "strategy_parameters": {
+      "rangeLookback": 12,
+      "minSweepAtr": 0.2,
+      "closeBackAtr": 0.05,
+      "buyRsiMax": 40,
+      "sellRsiMin": 60,
+      "minCloseLocation": 0.6,
+      "maxCloseLocation": 0.4,
+      "stopBufferAtr": 0.1,
+      "minStopAtr": 0.5,
+      "maxStopAtr": 2.5,
+      "takeProfitR": 1.5,
+      "sessionStartUtc": 7,
+      "sessionEndUtc": 20
+    }
+  },
+  {
+    "id": "ls_24_s05",
+    "strategy_parameters": {
+      "rangeLookback": 24,
+      "minSweepAtr": 0.05,
+      "closeBackAtr": 0.05,
+      "buyRsiMax": 40,
+      "sellRsiMin": 60,
+      "minCloseLocation": 0.6,
+      "maxCloseLocation": 0.4,
+      "stopBufferAtr": 0.1,
+      "minStopAtr": 0.5,
+      "maxStopAtr": 2.5,
+      "takeProfitR": 1.5,
+      "sessionStartUtc": 7,
+      "sessionEndUtc": 20
+    }
+  },
+  {
+    "id": "ls_24_s10",
+    "strategy_parameters": {
+      "rangeLookback": 24,
+      "minSweepAtr": 0.1,
+      "closeBackAtr": 0.05,
+      "buyRsiMax": 40,
+      "sellRsiMin": 60,
+      "minCloseLocation": 0.6,
+      "maxCloseLocation": 0.4,
+      "stopBufferAtr": 0.1,
+      "minStopAtr": 0.5,
+      "maxStopAtr": 2.5,
+      "takeProfitR": 1.5,
+      "sessionStartUtc": 7,
+      "sessionEndUtc": 20
+    }
+  },
+  {
+    "id": "ls_24_s20",
+    "strategy_parameters": {
+      "rangeLookback": 24,
+      "minSweepAtr": 0.2,
+      "closeBackAtr": 0.05,
+      "buyRsiMax": 40,
+      "sellRsiMin": 60,
+      "minCloseLocation": 0.6,
+      "maxCloseLocation": 0.4,
+      "stopBufferAtr": 0.1,
+      "minStopAtr": 0.5,
+      "maxStopAtr": 2.5,
+      "takeProfitR": 1.5,
+      "sessionStartUtc": 7,
+      "sessionEndUtc": 20
+    }
+  },
+  {
+    "id": "ls_36_s05",
+    "strategy_parameters": {
+      "rangeLookback": 36,
+      "minSweepAtr": 0.05,
+      "closeBackAtr": 0.05,
+      "buyRsiMax": 40,
+      "sellRsiMin": 60,
+      "minCloseLocation": 0.6,
+      "maxCloseLocation": 0.4,
+      "stopBufferAtr": 0.1,
+      "minStopAtr": 0.5,
+      "maxStopAtr": 2.5,
+      "takeProfitR": 1.5,
+      "sessionStartUtc": 7,
+      "sessionEndUtc": 20
+    }
+  },
+  {
+    "id": "ls_36_s10",
+    "strategy_parameters": {
+      "rangeLookback": 36,
+      "minSweepAtr": 0.1,
+      "closeBackAtr": 0.05,
+      "buyRsiMax": 40,
+      "sellRsiMin": 60,
+      "minCloseLocation": 0.6,
+      "maxCloseLocation": 0.4,
+      "stopBufferAtr": 0.1,
+      "minStopAtr": 0.5,
+      "maxStopAtr": 2.5,
+      "takeProfitR": 1.5,
+      "sessionStartUtc": 7,
+      "sessionEndUtc": 20
+    }
+  },
+  {
+    "id": "ls_36_s20",
+    "strategy_parameters": {
+      "rangeLookback": 36,
+      "minSweepAtr": 0.2,
+      "closeBackAtr": 0.05,
+      "buyRsiMax": 40,
+      "sellRsiMin": 60,
+      "minCloseLocation": 0.6,
+      "maxCloseLocation": 0.4,
+      "stopBufferAtr": 0.1,
+      "minStopAtr": 0.5,
+      "maxStopAtr": 2.5,
+      "takeProfitR": 1.5,
+      "sessionStartUtc": 7,
+      "sessionEndUtc": 20
+    }
+  }
+]
