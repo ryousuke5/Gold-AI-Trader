@@ -1,6 +1,9 @@
 name: GOLD H1 Momentum Persistence — IS Selection and Frozen OOS
 
 on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
   push:
     branches: [research/gold-h1-momentum-persistence]
     paths:
