@@ -1,0 +1,22 @@
+<escape>{
+  "audit_status": "CURRENT_RAW_CSV_RECONCILED; LEGACY_LONG_SUMMARY_NOT_REPRODUCIBLE_FROM_THIS_FILE",
+  "source_file": "GOLD_KIWAMI_SpreadLog.csv",
+  "sha256": "706e22e86a46ef8d659a8a5639e0a06822aa2eb741b283fa0a1e6ca95fd3b8fe",
+  "rows": 321100,
+  "first_gmt_utc": "2026-10-22T06:15:12+00:00",
+  "last_gmt_utc": "2026-10-23T05:44:02+00:00",
+  "duration_hours": 23.480555555555554,
+  "symbols": {"GOLD#": 321100},
+  "log_labels": {"KIWAMI_REAL": 321100},
+  "account_servers_in_source_metadata": {"XMTrading-Real 11": 321100},
+  "connection_flags": {"1": 321100},
+  "invalid_bid_ask_rows": 0,
+  "spread_arithmetic_mismatch_rows": 0,
+  "exact_duplicate_rows_beyond_first": 9400,
+  "all_rows": {"rows":321100,"mean":0.2604831516661476,"median":0.26,"p90":0.28,"p95":0.29,"p99":0.29,"p995":0.29,"max":0.41,"gt_0_50":0,"gt_0_75":0},
+  "active_utc_hours_07_to_20": {"rows":220897,"mean":0.2604622516376411,"median":0.26,"p90":0.28,"p95":0.29,"p99":0.29,"p995":0.29,"max":0.41,"gt_0_50":0,"gt_0_75":0},
+  "legacy_summary_rows": 562986,
+  "missing_rows_to_legacy_count": 241886,
+  "legacy_summary_matches_raw_row_count": false,
+  "reconciliation_note": "The legacy summary describes a later/different CSV snapshot through 2026-10-26. The matching raw CSV is not currently available; do not infer or fabricate missing ticks."
+}</escape>
