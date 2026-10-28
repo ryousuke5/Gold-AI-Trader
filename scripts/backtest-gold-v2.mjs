@@ -780,7 +780,7 @@ async function main() {
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
-  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':'gold_v2';
+  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':STRATEGY_VARIANT==='halfback_v2'?'gold_halfback_v2':'gold_v2';
   await fs.writeFile(path.join(outDir,outputPrefix+'_backtest_report.json'),JSON.stringify(report,null,2));
   for(const [name,r] of Object.entries(results)) {
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));
