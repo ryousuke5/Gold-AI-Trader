@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { normalizeFeatures, validateFeatures, ruleCandidate } from './src/features.js';
 import { buildGoldV2Setup } from './src/gold_strategy_v2.js';
+import { buildGoldH1M5HalfbackV1Setup } from './src/gold_h1_m5_halfback_v1.js';
 import { buildGoldV2H1TrendDiagnostics } from './src/gold_h1_trend_diagnostics.js';
 import { analyzeWithOpenAI } from './src/ai.js';
 import { evaluateRisk, getRiskLimits, safeDecision } from './src/risk.js';
@@ -73,6 +74,30 @@ function getGoldV2Config(){
     sessionEndUtc: envNumber('GOLD_SESSION_END_UTC', 20)
   };
 }
+function getGoldHalfbackV1Config(){
+  return {
+    swingLeftBars: envNumber('GOLD_HALFBACK_SWING_LEFT_BARS', 2),
+    swingRightBars: envNumber('GOLD_HALFBACK_SWING_RIGHT_BARS', 2),
+    minImpulseBars: envNumber('GOLD_HALFBACK_MIN_IMPULSE_BARS', 5),
+    maxImpulseBars: envNumber('GOLD_HALFBACK_MAX_IMPULSE_BARS', 40),
+    minImpulseAtr: envNumber('GOLD_HALFBACK_MIN_IMPULSE_ATR', 1.5),
+    retracementMin: envNumber('GOLD_HALFBACK_RETRACE_MIN', 0.45),
+    retracementMax: envNumber('GOLD_HALFBACK_RETRACE_MAX', 0.55),
+    minBodyAtr: envNumber('GOLD_HALFBACK_MIN_BODY_ATR', 0.25),
+    minH1RsiBuy: envNumber('GOLD_HALFBACK_MIN_H1_RSI_BUY', 50),
+    maxH1RsiBuy: envNumber('GOLD_HALFBACK_MAX_H1_RSI_BUY', 72),
+    minH1RsiSell: envNumber('GOLD_HALFBACK_MIN_H1_RSI_SELL', 28),
+    maxH1RsiSell: envNumber('GOLD_HALFBACK_MAX_H1_RSI_SELL', 50),
+    minCloseLocationBuy: envNumber('GOLD_HALFBACK_MIN_CLOSE_LOCATION_BUY', 0.60),
+    maxCloseLocationSell: envNumber('GOLD_HALFBACK_MAX_CLOSE_LOCATION_SELL', 0.40),
+    stopBufferAtr: envNumber('GOLD_HALFBACK_STOP_BUFFER_ATR', 0.15),
+    minStopAtr: envNumber('GOLD_HALFBACK_MIN_STOP_ATR', 0.50),
+    maxStopAtr: envNumber('GOLD_HALFBACK_MAX_STOP_ATR', 2.50),
+    takeProfitR: envNumber('GOLD_HALFBACK_TAKE_PROFIT_R', 2.00),
+    sessionStartUtc: envNumber('GOLD_HALFBACK_SESSION_START_UTC', 7),
+    sessionEndUtc: envNumber('GOLD_HALFBACK_SESSION_END_UTC', 20)
+  };
+}
 function attachGoldV2H1Diagnostics(setup, features){
   if(strategyVersion!=='gold-m5-h1-v2'||!setup||typeof setup!=='object')return setup;
   if(['session_filter','missing_or_invalid_features'].includes(String(setup.reason||'')))return setup;
@@ -99,6 +124,49 @@ app.get('/api/forward-monitor',auth,async(req,res)=>{
   } catch(error) {
     console.error('[forward-monitor]',error);
     res.status(500).json({ok:false,error:error.message||'forward monitor failed'});
+  }
+});
+
+app.post('/api/gold/halfback/signal',auth,(req,res)=>{
+  const requestId=String(req.headers['x-request-id']||crypto.randomUUID());
+  try {
+    const body=req.body||{};
+    const symbol=String(body.symbol||defaultSymbol);
+    const timeframe=String(body.timeframe||'M5');
+    if(timeframe!=='M5')return res.status(400).json({ok:false,error:'halfback V1 supports M5 only',request_id:requestId});
+    if(!/(XAU|GOLD)/i.test(symbol))return res.status(400).json({ok:false,error:'symbol_not_gold',request_id:requestId});
+    const features=normalizeFeatures(body.features||body);
+    if(rejectInvalidGoldBarTime({res,features,requestId,symbol,timeframe,serverUtcOffsetSeconds:body.features?.server_utc_offset_seconds??body.server_utc_offset_seconds}))return;
+    const featureErrors=validateFeatures(features);
+    if(featureErrors.length)return res.status(400).json({ok:false,error:'invalid_features',reasons:featureErrors,request_id:requestId});
+    const setup=buildGoldH1M5HalfbackV1Setup(features,getGoldHalfbackV1Config());
+    const candidate=typeof setup==='string'?setup:String(setup?.candidate||'WAIT');
+    const decision={
+      decision:candidate,
+      entry:Number(setup?.entry_reference)||0,
+      stop_loss:Number(setup?.stop_loss)||0,
+      take_profit:Number(setup?.take_profit)||0,
+      risk_reward:Number(setup?.risk_reward)||0,
+      reason:String(setup?.reason||'halfback_setup_wait'),
+      confidence:0,
+      execution_mode:'MONITOR_ONLY'
+    };
+    console.log('[GOLD HALFBACK V1] '+JSON.stringify({
+      request_id:requestId,symbol,timeframe,bar_time:features.barTime,
+      candidate,reason:setup?.reason||null,order_allowed:false
+    }));
+    return res.json({
+      ok:true,request_id:requestId,symbol,timeframe,
+      strategy_version:'gold-h1-m5-halfback-v1',
+      setup,candidate,decision,
+      risk:{approved:false,reasons:['strategy_monitor_only']},
+      order_allowed:false,risk_approved:false,
+      persistence:{signal:false,risk:false},
+      persisted:false,orders_executed:false,monitor_only:true
+    });
+  } catch(error) {
+    console.error('[gold/halfback/signal]',requestId,error);
+    return res.status(500).json({ok:false,error:error.message||'halfback signal evaluation failed',request_id:requestId});
   }
 });
 

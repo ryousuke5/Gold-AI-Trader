@@ -1,0 +1,90 @@
+name: GOLD H1 M5 Halfback V1 Backtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      end_utc:
+        description: Fixed end timestamp for the five-year XAUUSD window (UTC)
+        required: true
+        default: '2026-10-05T23:59:59Z'
+        type: string
+
+jobs:
+  halfback-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GOLD_BACKTEST_STRATEGY_VARIANT: halfback_v1
+      GOLD_BACKTEST_LOOKBACK_DAYS: '1825'
+      GOLD_BACKTEST_END_UTC: ${{ inputs.end_utc }}
+      GOLD_BACKTEST_INITIAL_EQUITY: '100000'
+      GOLD_BACKTEST_RISK_PCT: '0.25'
+      GOLD_BACKTEST_SPREAD_PRICE: '0.50'
+      GOLD_BACKTEST_SLIPPAGE_PRICE: '0.05'
+      GOLD_BACKTEST_OUTPUT_DIR: gold-halfback-output
+      GOLD_HALFBACK_RETRACE_MIN: '0.45'
+      GOLD_HALFBACK_RETRACE_MAX: '0.55'
+      GOLD_HALFBACK_SWING_LEFT_BARS: '2'
+      GOLD_HALFBACK_SWING_RIGHT_BARS: '2'
+      GOLD_HALFBACK_MIN_IMPULSE_ATR: '1.5'
+      GOLD_HALFBACK_MAX_IMPULSE_BARS: '40'
+      GOLD_HALFBACK_TAKE_PROFIT_R: '2.0'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Unit and safety tests
+        run: npm test
+
+      - name: Syntax checks
+        run: |
+          node --check server.js
+          node --check src/gold_h1_m5_halfback_v1.js
+          node --check scripts/backtest-gold-v2.mjs
+
+      - name: Run fixed-window halfback backtest with two cost scenarios
+        run: node scripts/backtest-gold-v2.mjs
+
+      - name: Verify report contract
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'gold-halfback-output/gold_halfback_v1_backtest_report.json';
+          const r = JSON.parse(fs.readFileSync(path));
+          if (r.strategy_variant !== 'halfback_v1') throw new Error('Wrong strategy variant');
+          if (new Date(r.test_period?.requested_end).toISOString() !== new Date(process.env.GOLD_BACKTEST_END_UTC).toISOString()) throw new Error('Fixed end date mismatch');
+          for (const scenario of ['baseline', 'conservative']) {
+            const result = r.results?.[scenario];
+            if (!result || !Number.isFinite(Number(result.signals_evaluated))) {
+              throw new Error('Missing backtest scenario or signal count: ' + scenario);
+            }
+            for (const key of ['trades', 'profit_factor', 'expectancy_R', 'max_drawdown_pct']) {
+              if (result.summary?.[key] === undefined) throw new Error('Missing metric ' + key + ' in ' + scenario);
+            }
+          }
+          console.log('HALFBACK V1 REPORT CONTRACT PASS');
+          console.log(JSON.stringify({
+            strategy_variant: r.strategy_variant,
+            test_period: r.test_period,
+            baseline: r.results.baseline.summary,
+            conservative: r.results.conservative.summary,
+            oos730_baseline: r.results.baseline.oos730
+          }, null, 2));
+          NODE
+
+      - name: Upload backtest artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-h1-m5-halfback-v1-backtest
+          path: gold-halfback-output/
+          if-no-files-found: warn
+          retention-days: 30
