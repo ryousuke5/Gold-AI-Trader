@@ -1,6 +1,14 @@
 name: GOLD H1 M5 Halfback V1 Backtest
 
 on:
+  push:
+    branches:
+      - 'feat/gold-h1-m5-halfback-v1'
+    paths:
+      - '.github/workflows/gold-h1-m5-halfback-v1-backtest.yml'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'src/gold_h1_m5_halfback_v1.js'
+      - 'src/features.js'
   workflow_dispatch:
     inputs:
       end_utc:
@@ -16,7 +24,7 @@ jobs:
     env:
       GOLD_BACKTEST_STRATEGY_VARIANT: halfback_v1
       GOLD_BACKTEST_LOOKBACK_DAYS: '1825'
-      GOLD_BACKTEST_END_UTC: ${{ inputs.end_utc }}
+      GOLD_BACKTEST_END_UTC: ${{ inputs.end_utc || '2026-10-05T23:59:59Z' }}
       GOLD_BACKTEST_INITIAL_EQUITY: '100000'
       GOLD_BACKTEST_RISK_PCT: '0.25'
       GOLD_BACKTEST_SPREAD_PRICE: '0.50'
