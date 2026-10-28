@@ -5,11 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
+import { buildGoldM5EmaCrossTrendV1Setup } from '../src/gold_m5_ema_cross_trend_v1.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
-  if (!['breakout_v2', 'pullback_retest', 'halfback_v1'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest or halfback_v1.`);
+  if (!['breakout_v2', 'pullback_retest', 'halfback_v1', 'ema_cross_v1'].includes(variant)) {
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest or halfback_v1 or ema_cross_v1.`);
   }
   return variant;
 }
@@ -42,9 +43,27 @@ const HALFBACK_STRATEGY = {
   sessionStartUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SESSION_START_UTC', 7)))),
   sessionEndUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SESSION_END_UTC', 20))))
 };
+const EMA_CROSS_STRATEGY = {
+  stopLookbackBars: Math.max(3, Math.floor(backtestEnvNumber('GOLD_EMA_CROSS_STOP_LOOKBACK_BARS', 8))),
+  minBodyAtr: Math.max(0, backtestEnvNumber('GOLD_EMA_CROSS_MIN_BODY_ATR', 0.20)),
+  minCloseLocationBuy: Math.max(0.5, Math.min(0.99, backtestEnvNumber('GOLD_EMA_CROSS_MIN_CLOSE_LOCATION_BUY', 0.60))),
+  maxCloseLocationSell: Math.max(0.01, Math.min(0.5, backtestEnvNumber('GOLD_EMA_CROSS_MAX_CLOSE_LOCATION_SELL', 0.40))),
+  minH1TrendSeparationAtr: Math.max(0, backtestEnvNumber('GOLD_EMA_CROSS_MIN_H1_TREND_SEPARATION_ATR', 0.15)),
+  maxH1DistanceEma20Atr: Math.max(0.1, backtestEnvNumber('GOLD_EMA_CROSS_MAX_H1_DISTANCE_EMA20_ATR', 2.00)),
+  minH1RsiBuy: Math.max(1, backtestEnvNumber('GOLD_EMA_CROSS_MIN_H1_RSI_BUY', 52)),
+  maxH1RsiSell: Math.min(99, backtestEnvNumber('GOLD_EMA_CROSS_MAX_H1_RSI_SELL', 48)),
+  stopBufferAtr: Math.max(0, backtestEnvNumber('GOLD_EMA_CROSS_STOP_BUFFER_ATR', 0.10)),
+  minStopAtr: Math.max(0.1, backtestEnvNumber('GOLD_EMA_CROSS_MIN_STOP_ATR', 0.40)),
+  maxStopAtr: Math.max(0.2, backtestEnvNumber('GOLD_EMA_CROSS_MAX_STOP_ATR', 2.00)),
+  takeProfitR: Math.max(1, backtestEnvNumber('GOLD_EMA_CROSS_TAKE_PROFIT_R', 1.50)),
+  sessionStartUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_EMA_CROSS_SESSION_START_UTC', 7)))),
+  sessionEndUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_EMA_CROSS_SESSION_END_UTC', 20))))
+};
 const buildSelectedSetup = STRATEGY_VARIANT === 'halfback_v1'
   ? (features) => buildGoldH1M5HalfbackV1Setup(features, HALFBACK_STRATEGY)
-  : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
+  : STRATEGY_VARIANT === 'ema_cross_v1'
+    ? (features) => buildGoldM5EmaCrossTrendV1Setup(features, EMA_CROSS_STRATEGY)
+    : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -566,7 +585,9 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const setup=buildSelectedSetup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
-      recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
+      recentM5:recentBars(m5Ind,i,STRATEGY_VARIANT === 'ema_cross_v1'
+        ? Math.max(2, Number(strategy.stopLookbackBars) || 8)
+        : Math.max(80, Number(strategy.rangeLookback ?? 12)+1))
     },strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
@@ -716,7 +737,7 @@ async function main() {
   }
   const config={...BASE_CONFIG,lookbackDays};
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
-  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
+  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : STRATEGY_VARIANT==='ema_cross_v1' ? EMA_CROSS_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
   for(const cost of costScenarios(config)) {
     const runConfig={...config,...cost};
@@ -727,9 +748,11 @@ async function main() {
   const report={
     strategy: STRATEGY_VARIANT === 'halfback_v1'
       ? 'XAUUSD research-only H1 trend + confirmed M5 impulse + 45-55% halfback + continuation reconfirmation'
-      : STRATEGY_VARIANT === 'pullback_retest'
-        ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
-        : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
+      : STRATEGY_VARIANT === 'ema_cross_v1'
+        ? 'XAUUSD research-only H1 direction + fresh M5 EMA20/EMA50 crossover'
+        : STRATEGY_VARIANT === 'pullback_retest'
+          ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
+          : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
     strategy_variant: STRATEGY_VARIANT,
     fundamental_backtest_status:'NOT_RUN',
     fundamental_backtest_note:'AI/web-search environment filtering is intentionally excluded from historical technical performance because point-in-time AI outputs are not available in this price dataset.',
@@ -775,7 +798,7 @@ async function main() {
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
-  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':'gold_v2';
+  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':STRATEGY_VARIANT==='ema_cross_v1'?'gold_m5_ema_cross_v1':'gold_v2';
   await fs.writeFile(path.join(outDir,outputPrefix+'_backtest_report.json'),JSON.stringify(report,null,2));
   for(const [name,r] of Object.entries(results)) {
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));

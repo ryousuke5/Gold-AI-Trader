@@ -1,0 +1,201 @@
+name: GOLD M5 EMA Cross Trend V1 Fixed IS Screen
+
+on:
+  push:
+    branches:
+      - 'research/gold-m5-ema-cross-trend-v1-is'
+    paths:
+      - '.github/workflows/gold-m5-ema-cross-trend-v1-is-screen.yml'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'src/gold_m5_ema_cross_trend_v1.js'
+      - 'tests/gold_m5_ema_cross_trend_v1.test.js'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gold-m5-ema-cross-trend-v1-is-screen.yml'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'src/gold_m5_ema_cross_trend_v1.js'
+      - 'tests/gold_m5_ema_cross_trend_v1.test.js'
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful GOLD V2 Five-Year Research run ID; blank selects the latest successful run
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  ema-cross-is-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GOLD_BACKTEST_STRATEGY_VARIANT: ema_cross_v1
+      GOLD_BACKTEST_LOOKBACK_DAYS: '1095'
+      GOLD_BACKTEST_START_UTC: '2021-10-06T00:00:00Z'
+      GOLD_BACKTEST_END_UTC: '2024-10-05T00:00:00Z'
+      GOLD_BACKTEST_INITIAL_EQUITY: '100000'
+      GOLD_BACKTEST_RISK_PCT: '0.25'
+      GOLD_BACKTEST_SPREAD_PRICE: '0.50'
+      GOLD_BACKTEST_SLIPPAGE_PRICE: '0.05'
+      GOLD_BACKTEST_OUTPUT_DIR: gold-m5-ema-cross-v1-is-output
+      GOLD_BACKTEST_DATA_FILE: gold-xauusd-data-is/xauusd-m5-is.json.gz
+      GOLD_EMA_CROSS_STOP_LOOKBACK_BARS: '8'
+      GOLD_EMA_CROSS_MIN_BODY_ATR: '0.20'
+      GOLD_EMA_CROSS_MIN_CLOSE_LOCATION_BUY: '0.60'
+      GOLD_EMA_CROSS_MAX_CLOSE_LOCATION_SELL: '0.40'
+      GOLD_EMA_CROSS_MIN_H1_TREND_SEPARATION_ATR: '0.15'
+      GOLD_EMA_CROSS_MAX_H1_DISTANCE_EMA20_ATR: '2.00'
+      GOLD_EMA_CROSS_MIN_H1_RSI_BUY: '52'
+      GOLD_EMA_CROSS_MAX_H1_RSI_SELL: '48'
+      GOLD_EMA_CROSS_STOP_BUFFER_ATR: '0.10'
+      GOLD_EMA_CROSS_MIN_STOP_ATR: '0.40'
+      GOLD_EMA_CROSS_MAX_STOP_ATR: '2.00'
+      GOLD_EMA_CROSS_TAKE_PROFIT_R: '1.50'
+      GOLD_EMA_CROSS_SESSION_START_UTC: '7'
+      GOLD_EMA_CROSS_SESSION_END_UTC: '20'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Resolve source GOLD V2 research run
+        id: source
+        env:
+          INPUT_RUN_ID: ${{ inputs.source_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          RUN_ID="$INPUT_RUN_ID"
+          if [ -z "$RUN_ID" ]; then
+            RUN_ID="$(gh run list \
+              --workflow 'GOLD V2 Five-Year Research' \
+              --limit 50 \
+              --json databaseId,status,conclusion \
+              --jq '[.[] | select(.status == "completed" and .conclusion == "success") | .databaseId] | .[0]')"
+          fi
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "No successful GOLD V2 Five-Year Research run found." >&2
+            exit 1
+          fi
+          echo "Using source research run: $RUN_ID"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Download prepared five-year XAUUSD dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: ${{ steps.source.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare the frozen three-year IS dataset
+        run: |
+          python3 - <<'PY'
+          import datetime as dt
+          import gzip
+          import json
+          from pathlib import Path
+
+          source = Path("gold-xauusd-data/xauusd-m5.json.gz")
+          output = Path("gold-xauusd-data-is/xauusd-m5-is.json.gz")
+          start = int(dt.datetime.fromisoformat("2021-10-06T00:00:00+00:00").timestamp())
+          end = int(dt.datetime.fromisoformat("2024-10-05T00:00:00+00:00").timestamp())
+          with gzip.open(source, "rt", encoding="utf-8") as fh:
+              bars = json.load(fh)
+          selected = [bar for bar in bars if start <= int(bar["time"]) < end]
+          if len(selected) < 200000:
+              raise SystemExit(f"Insufficient IS bars after fixed-window trim: {len(selected)}")
+          output.parent.mkdir(parents=True, exist_ok=True)
+          with gzip.open(output, "wt", encoding="utf-8") as fh:
+              json.dump(selected, fh, separators=(",", ":"))
+          manifest = {
+              "start_utc": dt.datetime.fromtimestamp(selected[0]["time"], dt.timezone.utc).isoformat(),
+              "end_exclusive_utc": dt.datetime.fromtimestamp(selected[-1]["time"] + 300, dt.timezone.utc).isoformat(),
+              "requested_start_utc": "2021-10-06T00:00:00Z",
+              "requested_end_exclusive_utc": "2024-10-05T00:00:00Z",
+              "m5_rows": len(selected),
+              "source_artifact": "gold-xauusd-m5-1825d"
+          }
+          Path("gold-xauusd-data-is/is_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+          print(json.dumps(manifest, indent=2))
+          PY
+
+      - name: Unit and safety tests
+        run: npm test
+
+      - name: Syntax checks
+        run: |
+          node --check src/gold_m5_ema_cross_trend_v1.js
+          node --check scripts/backtest-gold-v2.mjs
+
+      - name: Run the fixed IS-only screen with two cost scenarios
+        run: node scripts/backtest-gold-v2.mjs
+
+      - name: Evaluate frozen IS selection gate
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const reportPath = 'gold-m5-ema-cross-v1-is-output/gold_m5_ema_cross_v1_backtest_report.json';
+          const report = JSON.parse(fs.readFileSync(reportPath));
+          if (report.strategy_variant !== 'ema_cross_v1') throw new Error('Wrong strategy variant');
+          if (new Date(report.test_period.requested_start).toISOString() !== '2021-10-06T00:00:00.000Z') throw new Error('Unexpected IS start');
+          if (new Date(report.test_period.requested_end).toISOString() !== '2024-10-05T00:00:00.000Z') throw new Error('Unexpected IS end');
+
+          const baseline = report.results?.baseline;
+          const conservative = report.results?.conservative;
+          for (const [name, result] of [['baseline', baseline], ['conservative', conservative]]) {
+            if (!result || !Number.isFinite(Number(result.summary?.profit_factor))) throw new Error('Missing summary: ' + name);
+            for (const key of ['trades', 'expectancy_R', 'max_drawdown_pct']) {
+              if (!Number.isFinite(Number(result.summary[key]))) throw new Error('Missing ' + key + ' in ' + name);
+            }
+          }
+
+          const gates = {
+            baseline_trades: baseline.summary.trades >= 30,
+            baseline_profit_factor: baseline.summary.profit_factor >= 1.15,
+            baseline_expectancy: baseline.summary.expectancy_R >= 0.05,
+            baseline_max_drawdown: baseline.summary.max_drawdown_pct <= 5,
+            baseline_positive_years: Number(baseline.positiveYears) >= 2,
+            conservative_trades: conservative.summary.trades >= 20,
+            conservative_profit_factor: conservative.summary.profit_factor >= 1.00,
+            conservative_expectancy: conservative.summary.expectancy_R > 0
+          };
+          const decision = {
+            strategy_variant: report.strategy_variant,
+            test_period: report.test_period,
+            data_quality: report.data_quality,
+            baseline: baseline.summary,
+            baseline_positive_years: baseline.positiveYears,
+            conservative: conservative.summary,
+            gates,
+            passed: Object.values(gates).every(Boolean),
+            decision: Object.values(gates).every(Boolean) ? 'PASS_IS_ONLY_ELIGIBLE_FOR_SEPARATE_OOS_REVIEW' : 'REJECT_NO_OOS_NO_IS_TUNING'
+          };
+          fs.writeFileSync('gold-m5-ema-cross-v1-is-output/is_screen_decision.json', JSON.stringify(decision, null, 2));
+          console.log('EMA CROSS TREND V1 IS SCREEN DECISION');
+          console.log(JSON.stringify(decision, null, 2));
+          NODE
+
+      - name: Upload IS screen artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-m5-ema-cross-trend-v1-is-screen
+          path: |
+            gold-m5-ema-cross-v1-is-output/
+            gold-xauusd-data-is/is_manifest.json
+          if-no-files-found: warn
+          retention-days: 30
