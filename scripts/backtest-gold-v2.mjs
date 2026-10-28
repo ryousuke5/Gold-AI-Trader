@@ -682,16 +682,6 @@ async function runOne(rawM5, rawH1, config, strategy) {
     actual: diagnoseTradeOutcomes(trades),
     post_drawdown_lock_shadow: diagnoseTradeOutcomes(postDrawdownShadowTrades)
   };
-  const qualityGate = {
-    minimum_trades_5y: 30,
-    minimum_profit_factor_5y: 1.15,
-    minimum_expectancy_R_5y: 0.05,
-    maximum_max_drawdown_pct_5y: 5,
-    minimum_recent365_trades: 8,
-    minimum_recent365_profit_factor: 1.00,
-    minimum_positive_years: 3,
-    passed: Boolean(summary.trades >= 30 && summary.profit_factor >= 1.15 && summary.expectancy_R >= 0.05 && summary.max_drawdown_pct <= 5 && recent365.trades >= 8 && recent365.profit_factor >= 1.00 && positiveYears >= 3)
-  };
   return {
     evaluation_mode: config.isOnly ? 'IS_ONLY_CANDIDATE_SCREEN' : 'FULL_HISTORY_WITH_IS_OOS_SPLIT',
     summary,recent365,is1095,oos730,annual:yearly,positiveYears,positiveYearsWithSample,qualityGate,trades,
