@@ -55,7 +55,6 @@ function chooseImpulse({ bars, pivots, side, cfg }) {
         const range = high.price - low.price;
         const rangeAtr = range / cfg.m5Atr;
         if (range > 0 && rangeAtr >= cfg.minImpulseAtr) return { low, high, range, rangeAtr };
-        break;
       }
     }
   } else {
@@ -71,7 +70,6 @@ function chooseImpulse({ bars, pivots, side, cfg }) {
         const range = high.price - low.price;
         const rangeAtr = range / cfg.m5Atr;
         if (range > 0 && rangeAtr >= cfg.minImpulseAtr) return { high, low, range, rangeAtr };
-        break;
       }
     }
   }
