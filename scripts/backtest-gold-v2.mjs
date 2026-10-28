@@ -691,7 +691,32 @@ async function main() {
   }
   const config={...BASE_CONFIG,lookbackDays};
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
-  const strategy=JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
+  const baseStrategy=JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
+  const envStrategyNumber=(name,fallback)=>{
+    const value=Number(process.env[name]);
+    return Number.isFinite(value)?value:fallback;
+  };
+  const strategy=STRATEGY_VARIANT==='h1_m5_pullback_v1' ? {
+    ...baseStrategy,
+    minH1RsiBuy: envStrategyNumber('GOLD_PULLBACK_MIN_H1_RSI_BUY', baseStrategy.minH1RsiBuy ?? 50),
+    maxH1RsiBuy: envStrategyNumber('GOLD_PULLBACK_MAX_H1_RSI_BUY', baseStrategy.maxH1RsiBuy ?? 72),
+    minH1RsiSell: envStrategyNumber('GOLD_PULLBACK_MIN_H1_RSI_SELL', baseStrategy.minH1RsiSell ?? 28),
+    maxH1RsiSell: envStrategyNumber('GOLD_PULLBACK_MAX_H1_RSI_SELL', baseStrategy.maxH1RsiSell ?? 50),
+    buyRsiMin: envStrategyNumber('GOLD_PULLBACK_BUY_RSI_MIN', baseStrategy.buyRsiMin ?? 52),
+    buyRsiMax: envStrategyNumber('GOLD_PULLBACK_BUY_RSI_MAX', baseStrategy.buyRsiMax ?? 75),
+    sellRsiMin: envStrategyNumber('GOLD_PULLBACK_SELL_RSI_MIN', baseStrategy.sellRsiMin ?? 25),
+    sellRsiMax: envStrategyNumber('GOLD_PULLBACK_SELL_RSI_MAX', baseStrategy.sellRsiMax ?? 48),
+    pullbackTouchAtr: envStrategyNumber('GOLD_PULLBACK_TOUCH_ATR', baseStrategy.pullbackTouchAtr ?? 0.15),
+    pullbackCloseToleranceAtr: envStrategyNumber('GOLD_PULLBACK_CLOSE_TOLERANCE_ATR', baseStrategy.pullbackCloseToleranceAtr ?? 0.35),
+    maxExtensionAtr: envStrategyNumber('GOLD_PULLBACK_MAX_EXTENSION_ATR', baseStrategy.maxExtensionAtr ?? 1.50),
+    stopBufferAtr: envStrategyNumber('GOLD_PULLBACK_STOP_BUFFER_ATR', baseStrategy.stopBufferAtr ?? 0.15),
+    minStopAtr: envStrategyNumber('GOLD_PULLBACK_MIN_STOP_ATR', baseStrategy.minStopAtr ?? 0.80),
+    maxStopAtr: envStrategyNumber('GOLD_PULLBACK_MAX_STOP_ATR', baseStrategy.maxStopAtr ?? 2.00),
+    takeProfitR: envStrategyNumber('GOLD_PULLBACK_TAKE_PROFIT_R', baseStrategy.takeProfitR ?? 2.00),
+    sessionStartUtc: envStrategyNumber('GOLD_PULLBACK_SESSION_START_UTC', baseStrategy.sessionStartUtc ?? 7),
+    sessionEndUtc: envStrategyNumber('GOLD_PULLBACK_SESSION_END_UTC', baseStrategy.sessionEndUtc ?? 20),
+    h1TrendMode: 'strict'
+  } : baseStrategy;
   const results={};
   for(const cost of costScenarios(config)) {
     const runConfig={...config,...cost};
@@ -700,9 +725,11 @@ async function main() {
     console.log(cost.name, out.summary);
   }
   const report={
-    strategy: STRATEGY_VARIANT === 'pullback_retest'
-      ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
-      : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
+    strategy: STRATEGY_VARIANT === 'h1_m5_pullback_v1'
+      ? 'XAUUSD H1 trend + M5 EMA20 pullback/reconfirmation V1'
+      : STRATEGY_VARIANT === 'pullback_retest'
+        ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
+        : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
     strategy_variant: STRATEGY_VARIANT,
     fundamental_backtest_status:'NOT_RUN',
     fundamental_backtest_note:'AI/web-search environment filtering is intentionally excluded from historical technical performance because point-in-time AI outputs are not available in this price dataset.',
