@@ -5,11 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
+import { buildGoldM5FailedBreakoutV1Setup } from '../src/gold_m5_failed_breakout_v1.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
-  if (!['breakout_v2', 'pullback_retest', 'halfback_v1'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest or halfback_v1.`);
+  if (!['breakout_v2', 'pullback_retest', 'halfback_v1', 'failed_breakout_v1'].includes(variant)) {
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest or halfback_v1 or failed_breakout_v1.`);
   }
   return variant;
 }
@@ -42,9 +43,27 @@ const HALFBACK_STRATEGY = {
   sessionStartUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SESSION_START_UTC', 7)))),
   sessionEndUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SESSION_END_UTC', 20))))
 };
+const FAILED_BREAKOUT_STRATEGY = {
+  rangeLookbackBars: Math.max(6, Math.floor(backtestEnvNumber('GOLD_FAILED_BREAKOUT_RANGE_LOOKBACK_BARS', 12))),
+  minSweepAtr: Math.max(0.01, backtestEnvNumber('GOLD_FAILED_BREAKOUT_MIN_SWEEP_ATR', 0.10)),
+  minBodyAtr: Math.max(0, backtestEnvNumber('GOLD_FAILED_BREAKOUT_MIN_BODY_ATR', 0.25)),
+  minRejectionWickAtr: Math.max(0, backtestEnvNumber('GOLD_FAILED_BREAKOUT_MIN_REJECTION_WICK_ATR', 0.10)),
+  minCloseLocationBuy: Math.max(0.5, Math.min(0.99, backtestEnvNumber('GOLD_FAILED_BREAKOUT_MIN_CLOSE_LOCATION_BUY', 0.60))),
+  maxCloseLocationSell: Math.max(0.01, Math.min(0.5, backtestEnvNumber('GOLD_FAILED_BREAKOUT_MAX_CLOSE_LOCATION_SELL', 0.40))),
+  maxH1EmaSpreadAtr: Math.max(0.05, backtestEnvNumber('GOLD_FAILED_BREAKOUT_MAX_H1_EMA_SPREAD_ATR', 0.60)),
+  maxH1CloseDistanceEma20Atr: Math.max(0.1, backtestEnvNumber('GOLD_FAILED_BREAKOUT_MAX_H1_CLOSE_DISTANCE_EMA20_ATR', 1.25)),
+  stopBufferAtr: Math.max(0, backtestEnvNumber('GOLD_FAILED_BREAKOUT_STOP_BUFFER_ATR', 0.10)),
+  minStopAtr: Math.max(0.1, backtestEnvNumber('GOLD_FAILED_BREAKOUT_MIN_STOP_ATR', 0.25)),
+  maxStopAtr: Math.max(0.2, backtestEnvNumber('GOLD_FAILED_BREAKOUT_MAX_STOP_ATR', 2.00)),
+  takeProfitR: Math.max(1, backtestEnvNumber('GOLD_FAILED_BREAKOUT_TAKE_PROFIT_R', 1.50)),
+  sessionStartUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_FAILED_BREAKOUT_SESSION_START_UTC', 7)))),
+  sessionEndUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_FAILED_BREAKOUT_SESSION_END_UTC', 20))))
+};
 const buildSelectedSetup = STRATEGY_VARIANT === 'halfback_v1'
   ? (features) => buildGoldH1M5HalfbackV1Setup(features, HALFBACK_STRATEGY)
-  : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
+  : STRATEGY_VARIANT === 'failed_breakout_v1'
+    ? (features) => buildGoldM5FailedBreakoutV1Setup(features, FAILED_BREAKOUT_STRATEGY)
+    : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -566,7 +585,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const setup=buildSelectedSetup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
-      recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
+      recentM5:recentBars(m5Ind,i,Math.max(80,Number(strategy.rangeLookbackBars ?? strategy.rangeLookback ?? 0)+1))
     },strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
@@ -716,7 +735,7 @@ async function main() {
   }
   const config={...BASE_CONFIG,lookbackDays};
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
-  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
+  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : STRATEGY_VARIANT==='failed_breakout_v1' ? FAILED_BREAKOUT_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
   for(const cost of costScenarios(config)) {
     const runConfig={...config,...cost};
@@ -727,6 +746,8 @@ async function main() {
   const report={
     strategy: STRATEGY_VARIANT === 'halfback_v1'
       ? 'XAUUSD research-only H1 trend + confirmed M5 impulse + 45-55% halfback + continuation reconfirmation'
+      : STRATEGY_VARIANT === 'failed_breakout_v1'
+        ? 'XAUUSD research-only M5 prior-range sweep + close back inside + H1 range-like regime + rejection reversal'
       : STRATEGY_VARIANT === 'pullback_retest'
         ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
         : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
@@ -775,7 +796,7 @@ async function main() {
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
-  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':'gold_v2';
+  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':STRATEGY_VARIANT==='failed_breakout_v1'?'gold_failed_breakout_v1':'gold_v2';
   await fs.writeFile(path.join(outDir,outputPrefix+'_backtest_report.json'),JSON.stringify(report,null,2));
   for(const [name,r] of Object.entries(results)) {
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));
