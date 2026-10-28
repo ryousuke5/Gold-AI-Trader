@@ -9,7 +9,7 @@ import { buildGoldH1M5PullbackV1Setup } from '../src/gold_h1_m5_pullback_v1.js';
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
   if (!['breakout_v2', 'pullback_retest', 'h1_m5_pullback_v1'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2, pullback_retest, or h1_m5_pullback_v1.`);
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest or h1_m5_pullback_v1.`);
   }
   return variant;
 }
