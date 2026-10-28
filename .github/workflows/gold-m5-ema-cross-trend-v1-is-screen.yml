@@ -67,8 +67,8 @@ jobs:
       - name: Resolve source GOLD V2 research run
         id: source
         env:
-          INPUT_RUN_ID: \${{ inputs.source_run_id }}
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          INPUT_RUN_ID: ${{ inputs.source_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           RUN_ID="$INPUT_RUN_ID"
@@ -91,8 +91,8 @@ jobs:
         with:
           name: gold-xauusd-m5-1825d
           path: gold-xauusd-data
-          run-id: \${{ steps.source.outputs.run_id }}
-          github-token: \${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.source.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepare the frozen three-year IS dataset
         run: |
