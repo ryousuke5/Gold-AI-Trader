@@ -4,17 +4,47 @@ import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
+import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
-  if (!['breakout_v2', 'pullback_retest'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest.`);
+  if (!['breakout_v2', 'pullback_retest', 'halfback_v1'].includes(variant)) {
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2, pullback_retest, or halfback_v1.`);
   }
   return variant;
 }
 
 const STRATEGY_VARIANT = normalizeBacktestStrategyVariant(process.env.GOLD_BACKTEST_STRATEGY_VARIANT || 'breakout_v2');
-const buildSelectedSetup = STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
+function backtestEnvNumber(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) ? value : fallback;
+}
+const HALFBACK_STRATEGY = {
+  rangeLookback: 12,
+  swingLeftBars: Math.max(1, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SWING_LEFT_BARS', 2))),
+  swingRightBars: Math.max(1, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SWING_RIGHT_BARS', 2))),
+  minImpulseBars: Math.max(3, Math.floor(backtestEnvNumber('GOLD_HALFBACK_MIN_IMPULSE_BARS', 5))),
+  maxImpulseBars: Math.max(6, Math.floor(backtestEnvNumber('GOLD_HALFBACK_MAX_IMPULSE_BARS', 40))),
+  minImpulseAtr: Math.max(0.1, backtestEnvNumber('GOLD_HALFBACK_MIN_IMPULSE_ATR', 1.5)),
+  retracementMin: Math.min(0.9, Math.max(0.1, backtestEnvNumber('GOLD_HALFBACK_RETRACE_MIN', 0.45))),
+  retracementMax: Math.min(0.9, Math.max(0.1, backtestEnvNumber('GOLD_HALFBACK_RETRACE_MAX', 0.55))),
+  minBodyAtr: Math.max(0, backtestEnvNumber('GOLD_HALFBACK_MIN_BODY_ATR', 0.25)),
+  minH1RsiBuy: Math.max(1, backtestEnvNumber('GOLD_HALFBACK_MIN_H1_RSI_BUY', 50)),
+  maxH1RsiBuy: Math.min(99, backtestEnvNumber('GOLD_HALFBACK_MAX_H1_RSI_BUY', 72)),
+  minH1RsiSell: Math.max(1, backtestEnvNumber('GOLD_HALFBACK_MIN_H1_RSI_SELL', 28)),
+  maxH1RsiSell: Math.min(99, backtestEnvNumber('GOLD_HALFBACK_MAX_H1_RSI_SELL', 50)),
+  minCloseLocationBuy: Math.max(0.5, Math.min(0.99, backtestEnvNumber('GOLD_HALFBACK_MIN_CLOSE_LOCATION_BUY', 0.60))),
+  maxCloseLocationSell: Math.max(0.01, Math.min(0.5, backtestEnvNumber('GOLD_HALFBACK_MAX_CLOSE_LOCATION_SELL', 0.40))),
+  stopBufferAtr: Math.max(0, backtestEnvNumber('GOLD_HALFBACK_STOP_BUFFER_ATR', 0.15)),
+  minStopAtr: Math.max(0.1, backtestEnvNumber('GOLD_HALFBACK_MIN_STOP_ATR', 0.50)),
+  maxStopAtr: Math.max(0.2, backtestEnvNumber('GOLD_HALFBACK_MAX_STOP_ATR', 2.50)),
+  takeProfitR: Math.max(1, backtestEnvNumber('GOLD_HALFBACK_TAKE_PROFIT_R', 2.00)),
+  sessionStartUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SESSION_START_UTC', 7)))),
+  sessionEndUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SESSION_END_UTC', 20))))
+};
+const buildSelectedSetup = STRATEGY_VARIANT === 'halfback_v1'
+  ? (features) => buildGoldH1M5HalfbackV1Setup(features, HALFBACK_STRATEGY)
+  : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -670,7 +700,9 @@ function costScenarios(config) {
 async function main() {
   const args=parseArgs();
   const lookbackDays=Math.max(365,Number(args.get('lookback-days')||BASE_CONFIG.lookbackDays));
-  const requestedEnd=new Date(), requestedStart=new Date(requestedEnd.getTime()-lookbackDays*86400000);
+  const requestedEnd=process.env.GOLD_BACKTEST_END_UTC ? new Date(process.env.GOLD_BACKTEST_END_UTC) : new Date();
+  const requestedStart=process.env.GOLD_BACKTEST_START_UTC ? new Date(process.env.GOLD_BACKTEST_START_UTC) : new Date(requestedEnd.getTime()-lookbackDays*86400000);
+  if(Number.isNaN(requestedStart.getTime()) || Number.isNaN(requestedEnd.getTime()) || requestedStart>=requestedEnd) throw new Error('Invalid GOLD_BACKTEST_START_UTC / GOLD_BACKTEST_END_UTC range.');
   let rawM5;
   const dataFile=process.env.GOLD_BACKTEST_DATA_FILE;
   if (dataFile) {
@@ -684,7 +716,7 @@ async function main() {
   }
   const config={...BASE_CONFIG,lookbackDays};
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
-  const strategy=JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
+  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
   for(const cost of costScenarios(config)) {
     const runConfig={...config,...cost};
@@ -693,9 +725,11 @@ async function main() {
     console.log(cost.name, out.summary);
   }
   const report={
-    strategy: STRATEGY_VARIANT === 'pullback_retest'
-      ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
-      : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
+    strategy: STRATEGY_VARIANT === 'halfback_v1'
+      ? 'XAUUSD research-only H1 trend + confirmed M5 impulse + 45-55% halfback + continuation reconfirmation'
+      : STRATEGY_VARIANT === 'pullback_retest'
+        ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
+        : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
     strategy_variant: STRATEGY_VARIANT,
     fundamental_backtest_status:'NOT_RUN',
     fundamental_backtest_note:'AI/web-search environment filtering is intentionally excluded from historical technical performance because point-in-time AI outputs are not available in this price dataset.',
@@ -741,10 +775,11 @@ async function main() {
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
-  await fs.writeFile(path.join(outDir,'gold_v2_backtest_report.json'),JSON.stringify(report,null,2));
+  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':'gold_v2';
+  await fs.writeFile(path.join(outDir,outputPrefix+'_backtest_report.json'),JSON.stringify(report,null,2));
   for(const [name,r] of Object.entries(results)) {
-    await fs.writeFile(path.join(outDir,'gold_v2_trades_'+name+'.csv'),toCsv(r.trades));
-    await fs.writeFile(path.join(outDir,'gold_v2_trades_after_drawdown_lock_'+name+'.csv'),toCsv(r.post_drawdown_shadow.trades));
+    await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));
+    await fs.writeFile(path.join(outDir,outputPrefix+'_trades_after_drawdown_lock_'+name+'.csv'),toCsv(r.post_drawdown_shadow.trades));
   }
   console.log('=== GOLD V2 BACKTEST ===');
   for(const [name,r] of Object.entries(results)) console.log(name, 'trades='+r.summary.trades,'PF='+r.summary.profit_factor,'expectancy_R='+r.summary.expectancy_R,'return='+r.summary.return_pct+'%','maxDD='+r.summary.max_drawdown_pct+'%','recent365_trades='+r.recent365.trades,'recent365_PF='+r.recent365.profit_factor,'positiveYears='+r.positiveYears,'QUALITY_GATE='+r.qualityGate.passed);
