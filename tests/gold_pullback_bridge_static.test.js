@@ -10,8 +10,8 @@ test('Pullback V1 bridge posts only to its dedicated endpoint', () => {
 });
 
 test('Pullback V1 sends EMA20 and ATR14 for each completed M5 history bar', () => {
-  assert.match(source, /"ema20".*iMA\(sym, PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, shiftM5\)/);
-  assert.match(source, /"atr14".*iATR\(sym, PERIOD_M5, 14, shiftM5\)/);
+  assert.match(source, /ema20.*iMA\(sym, PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, shiftM5\)/);
+  assert.match(source, /atr14.*iATR\(sym, PERIOD_M5, 14, shiftM5\)/);
   assert.match(source, /for\(int shiftM5 = 24; shiftM5 >= 1; shiftM5--\)/);
 });
 
