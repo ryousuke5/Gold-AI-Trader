@@ -25,10 +25,6 @@ on:
         default: ''
         type: string
 
-concurrency:
-  group: gold-m5-ema-cross-trend-v1-fixed-is
-  cancel-in-progress: true
-
 permissions:
   actions: read
   contents: read
