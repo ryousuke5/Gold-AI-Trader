@@ -6,6 +6,9 @@ on:
       - 'research/gold-m5-ema-cross-trend-v1-is'
     paths:
       - '.github/workflows/gold-m5-ema-cross-trend-v1-is-screen.yml'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'src/gold_m5_ema_cross_trend_v1.js'
+      - 'tests/gold_m5_ema_cross_trend_v1.test.js'
   pull_request:
     branches:
       - main
