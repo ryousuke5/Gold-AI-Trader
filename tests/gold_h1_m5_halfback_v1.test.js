@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
+import { buildGoldH1M5HalfbackV2Setup } from '../src/gold_h1_m5_halfback_v2.js';
 import { normalizeBacktestStrategyVariant } from '../scripts/backtest-gold-v2.mjs';
 import { normalizeFeatures } from '../src/features.js';
 
@@ -84,6 +85,7 @@ test('halfback V1 does not treat the latest unconfirmed high as a confirmed impu
 
 test('backtest selector accepts the independent halfback variant and rejects typos', () => {
   assert.equal(normalizeBacktestStrategyVariant('HALFBACK_V1'), 'halfback_v1');
+  assert.equal(normalizeBacktestStrategyVariant('HALFBACK_V2'), 'halfback_v2');
   assert.throws(() => normalizeBacktestStrategyVariant('halfback'), /Invalid GOLD_BACKTEST_STRATEGY_VARIANT/);
 });
 
@@ -101,4 +103,44 @@ test('feature normalization retains up to 64 completed M5 candles for confirmed 
   assert.equal(normalized.recentM5.length, 64);
   assert.equal(normalized.recentM5[0].time, recent_m5.at(-64).time);
   assert.equal(normalized.recentM5.at(-1).time, recent_m5.at(-1).time);
+});
+
+
+test('halfback V2 requires an EMA20 reclaim and aligned rising slope for BUY', () => {
+  const features = bullishFeatures();
+  features.recentM5.forEach((bar, i) => { bar.ema20 = 100 + i * 0.4; });
+  features.recentM5.at(-4).ema20 = 109.5;
+  features.recentM5.at(-3).ema20 = 110;
+  features.recentM5.at(-2).ema20 = 111;
+  features.recentM5.at(-1).ema20 = 112;
+  const setup = buildGoldH1M5HalfbackV2Setup(features);
+  assert.equal(setup.candidate, 'BUY');
+  assert.equal(setup.setup_type, 'H1_TREND_M5_HALFBACK_EMA20_RECLAIM_V2');
+  assert.equal(setup.reason, 'halfback_ema20_reclaimed');
+  assert.equal(setup.diagnostics.ema20_reclaimed, true);
+  assert.equal(setup.diagnostics.ema20_slope_aligned, true);
+});
+
+test('halfback V2 mirrors the EMA20 reclaim and falling slope for SELL', () => {
+  const features = bearishFeatures();
+  features.recentM5.forEach((bar, i) => { bar.ema20 = 120 - i * 0.4; });
+  features.recentM5.at(-4).ema20 = 110;
+  features.recentM5.at(-3).ema20 = 109.5;
+  features.recentM5.at(-2).ema20 = 109;
+  features.recentM5.at(-1).ema20 = 108.5;
+  const setup = buildGoldH1M5HalfbackV2Setup(features);
+  assert.equal(setup.candidate, 'SELL');
+  assert.equal(setup.reason, 'halfback_ema20_reclaimed');
+});
+
+test('halfback V2 rejects a halfback setup when M5 EMA20 slope is not aligned', () => {
+  const features = bullishFeatures();
+  features.recentM5.forEach((bar, i) => { bar.ema20 = 108; });
+  features.recentM5.at(-4).ema20 = 112;
+  features.recentM5.at(-3).ema20 = 113;
+  features.recentM5.at(-2).ema20 = 113;
+  features.recentM5.at(-1).ema20 = 111;
+  const setup = buildGoldH1M5HalfbackV2Setup(features);
+  assert.equal(setup.candidate, 'WAIT');
+  assert.equal(setup.reason, 'm5_ema20_slope_not_aligned');
 });

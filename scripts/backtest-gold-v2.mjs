@@ -5,11 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
+import { buildGoldH1M5HalfbackV2Setup } from '../src/gold_h1_m5_halfback_v2.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
-  if (!['breakout_v2', 'pullback_retest', 'halfback_v1'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest or halfback_v1.`);
+  if (!['breakout_v2', 'pullback_retest', 'halfback_v1', 'halfback_v2'].includes(variant)) {
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest or halfback_v1 or halfback_v2.`);
   }
   return variant;
 }
@@ -44,7 +45,9 @@ const HALFBACK_STRATEGY = {
 };
 const buildSelectedSetup = STRATEGY_VARIANT === 'halfback_v1'
   ? (features) => buildGoldH1M5HalfbackV1Setup(features, HALFBACK_STRATEGY)
-  : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
+  : STRATEGY_VARIANT === 'halfback_v2'
+    ? (features) => buildGoldH1M5HalfbackV2Setup(features, HALFBACK_STRATEGY)
+    : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -716,7 +719,7 @@ async function main() {
   }
   const config={...BASE_CONFIG,lookbackDays};
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
-  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
+  const strategy=['halfback_v1','halfback_v2'].includes(STRATEGY_VARIANT) ? HALFBACK_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
   for(const cost of costScenarios(config)) {
     const runConfig={...config,...cost};
@@ -727,6 +730,8 @@ async function main() {
   const report={
     strategy: STRATEGY_VARIANT === 'halfback_v1'
       ? 'XAUUSD research-only H1 trend + confirmed M5 impulse + 45-55% halfback + continuation reconfirmation'
+      : STRATEGY_VARIANT === 'halfback_v2'
+        ? 'XAUUSD research-only H1 trend + 45-55% M5 halfback + M5 EMA20 reclaim and slope aligned'
       : STRATEGY_VARIANT === 'pullback_retest'
         ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
         : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
@@ -775,7 +780,7 @@ async function main() {
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
-  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':'gold_v2';
+  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':STRATEGY_VARIANT==='halfback_v2'?'gold_halfback_v2':'gold_v2';
   await fs.writeFile(path.join(outDir,outputPrefix+'_backtest_report.json'),JSON.stringify(report,null,2));
   for(const [name,r] of Object.entries(results)) {
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));
