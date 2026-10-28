@@ -1,5 +1,9 @@
 name: GOLD H1 M5 Halfback V2 IS Screen
 
+concurrency:
+  group: gold-halfback-v2-is-screen
+  cancel-in-progress: true
+
 on:
   push:
     branches:
@@ -124,7 +128,7 @@ jobs:
         run: |
           node <<'NODE'
           const fs = require('fs');
-          const report = JSON.parse(fs.readFileSync('gold-halfback-v2-is-output/gold_halfback_v1_backtest_report.json'));
+          const report = JSON.parse(fs.readFileSync('gold-halfback-v2-is-output/gold_halfback_v2_backtest_report.json'));
           if (report.strategy_variant !== 'halfback_v2') throw new Error('Wrong strategy variant');
           if (new Date(report.test_period.requested_start).toISOString() !== '2021-10-06T00:00:00.000Z') throw new Error('Unexpected IS start');
           if (new Date(report.test_period.requested_end).toISOString() !== '2024-10-05T00:00:00.000Z') throw new Error('Unexpected IS end');
