@@ -113,7 +113,7 @@ jobs:
               raise SystemExit(f"Insufficient M5 rows: {manifest['m5_rows']}")
 
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
-              fh.write(f"GOLD_BACKTEST_START_UTC={expected_start}T00:00:00Z\\n")
+              fh.write(f"GOLD_BACKTEST_START_UTC={expected_start}T00:00:00Z\n")
 
           print(json.dumps({
               "window_start": expected_start,
