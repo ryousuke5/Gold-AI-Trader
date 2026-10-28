@@ -79,10 +79,10 @@ test('failed-breakout V1 rejects a strong H1 directional regime', () => {
 test('failed-breakout V1 rejects ambiguous candles that sweep both sides of the range', () => {
   const features = failedHighSweepFeatures();
   const signal = features.recentM5.at(-1);
-  signal.open = 100;
+  signal.open = 100.5;
   signal.high = 101.2;
   signal.low = 98.8;
-  signal.close = 100.1;
+  signal.close = 100;
   const setup = buildGoldM5FailedBreakoutV1Setup(features);
   assert.equal(setup.candidate, 'WAIT');
   assert.equal(setup.reason, 'ambiguous_double_sweep');
