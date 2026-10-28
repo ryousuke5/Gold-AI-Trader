@@ -18,7 +18,7 @@ on:
         type: string
 
 concurrency:
-  group: gold-m5-failed-breakout-v1-is-screen
+  group: gold-m5-failed-breakout-v1-is-screen-fixed-lookback
   cancel-in-progress: true
 
 jobs:
