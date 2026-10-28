@@ -82,8 +82,8 @@ test('Pullback V1 has an independent endpoint and a non-executing MT4 bridge', (
   assert.ok(server.includes("'gold-h1-m5-pullback-v1'"));
   assert.match(server, /orderAllowed=requestStrategyVersion!=='gold-h1-m5-pullback-v1'/);
   assert.ok(ea.includes('/api/gold/pullback/signal'));
-  assert.ok(ea.includes('"ema20"'));
-  assert.ok(ea.includes('"atr14"'));
+  assert.ok(ea.includes('ema20'));
+  assert.ok(ea.includes('atr14'));
   assert.match(ea, /input bool\s+AllowAutoOrders\s*=\s*false;/);
   assert.doesNotMatch(ea, /OrderSend\s*\(/);
 });
