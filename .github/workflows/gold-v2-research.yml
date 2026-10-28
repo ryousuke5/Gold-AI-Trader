@@ -14,11 +14,15 @@ on:
     paths:
       - 'config/gold-v2-data-window.json'
       - 'src/gold_strategy_v2.js'
+      - 'src/gold_h1_m5_halfback_v1.js'
+      - 'src/gold_backtest_split.js'
       - 'scripts/backtest-gold-v2.mjs'
       - 'scripts/backtest-gold-v2-resumable.mjs'
       - 'scripts/fetch-xauusd-m5-chunk.py'
       - 'scripts/assemble-xauusd-m5.py'
       - 'tests/gold_strategy_v2.test.js'
+      - 'tests/gold_h1_m5_halfback_v1.test.js'
+      - 'tests/gold_backtest_split.test.js'
       - '.github/workflows/gold-v2-research.yml'
   workflow_dispatch:
     inputs:
@@ -225,6 +229,54 @@ jobs:
             gold-xauusd-data/xauusd_m5_manifest.json
           retention-days: 7
           if-no-files-found: error
+
+  halfback-is-only:
+    needs: assemble-data
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Download the shared five-year XAUUSD M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+
+      - name: Run repository tests
+        run: npm test
+
+      - name: Evaluate halfback candidate on IS only (3 years)
+        env:
+          GOLD_BACKTEST_STRATEGY_VARIANT: halfback_v1
+          GOLD_BACKTEST_IS_ONLY: "true"
+          GOLD_BACKTEST_LOOKBACK_DAYS: "1825"
+          GOLD_BACKTEST_INITIAL_EQUITY: "100000"
+          GOLD_BACKTEST_RISK_PCT: "0.25"
+          GOLD_BACKTEST_SPREAD_PRICE: "0.50"
+          GOLD_BACKTEST_SLIPPAGE_PRICE: "0.05"
+          GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: "2"
+          GOLD_BACKTEST_MAX_DRAWDOWN_PCT: "5"
+          GOLD_BACKTEST_MAX_HOLD_BARS: "96"
+          GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: "0.50"
+          GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+          GOLD_BACKTEST_OUTPUT_DIR: gold-halfback-is-only-output
+        run: node scripts/backtest-gold-v2.mjs
+
+      - name: Upload IS-only candidate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-halfback-v1-is-only-results
+          path: gold-halfback-is-only-output/
+          retention-days: 30
+          if-no-files-found: warn
 
   research:
     needs: assemble-data

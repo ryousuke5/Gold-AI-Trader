@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
+import { isolateIsWindow } from '../src/gold_backtest_split.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
@@ -72,6 +73,7 @@ const BASE_CONFIG = {
   maxDrawdownPct: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_DRAWDOWN_PCT || 5)),
   maxHoldBars: Math.max(1, Math.floor(Number(process.env.GOLD_BACKTEST_MAX_HOLD_BARS || 96))),
   maxEntryGapAtr: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_ENTRY_GAP_ATR || 0.50)),
+  isOnly: process.env.GOLD_BACKTEST_IS_ONLY === 'true',
   maxBarsWithoutSetup: 0,
   serverTimezone: process.env.GOLD_BACKTEST_SERVER_TIMEZONE || 'Europe/Nicosia'
 };
@@ -625,15 +627,40 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const exitIndex=firstIndexAfterTime(m5Ind,trade.exit_time,i+2);
     nextAvailable=exitIndex<0?m5Ind.length:exitIndex;
   }
-  // Fixed 3y IS / 2y OOS split anchored to the dataset's latest available bar.
-  // These windows are evaluation-only and do not alter candidate generation.
-  const oos730 = periodSummary(trades, config.initialEquity, 730, latest);
-  const oosStart = latest - 730 * 86400;
-  const is1095 = periodSummary(trades, config.initialEquity, 1095, oosStart);
-  const recent365 = periodSummary(trades, config.initialEquity, 365, latest);
+  const summary = summarize(trades, config.initialEquity);
   const yearly = annualSummary(trades, config.initialEquity);
   const positiveYears = yearly.filter((y)=>y.net_r > 0).length;
-  const summary = summarize(trades, config.initialEquity);
+  const positiveYearsWithSample = yearly.filter((y)=>y.trades >= 15 && y.net_r > 0).length;
+  const oosStart = latest - 730 * 86400;
+  const oos730 = config.isOnly ? null : periodSummary(trades, config.initialEquity, 730, latest);
+  const is1095 = config.isOnly ? null : periodSummary(trades, config.initialEquity, 1095, oosStart);
+  const recent365 = config.isOnly ? null : periodSummary(trades, config.initialEquity, 365, latest);
+  const qualityGate = config.isOnly ? {
+    mode: 'IS_ONLY_CANDIDATE_SCREEN',
+    minimum_trades_is: 20,
+    minimum_profit_factor_is: 1.10,
+    minimum_expectancy_R_is: 0.05,
+    maximum_max_drawdown_pct_is: 5,
+    minimum_positive_calendar_years_with_15plus_trades_is: 2,
+    observed_positive_calendar_years_with_15plus_trades_is: positiveYearsWithSample,
+    passed: Boolean(
+      summary.trades >= 20 &&
+      summary.profit_factor >= 1.10 &&
+      summary.expectancy_R >= 0.05 &&
+      summary.max_drawdown_pct <= 5 &&
+      positiveYearsWithSample >= 2
+    )
+  } : {
+    mode: 'FULL_HISTORY_PROMOTION_SCREEN',
+    minimum_trades_5y: 30,
+    minimum_profit_factor_5y: 1.15,
+    minimum_expectancy_R_5y: 0.05,
+    maximum_max_drawdown_pct_5y: 5,
+    minimum_recent365_trades: 8,
+    minimum_recent365_profit_factor: 1.00,
+    minimum_positive_years: 3,
+    passed: Boolean(summary.trades >= 30 && summary.profit_factor >= 1.15 && summary.expectancy_R >= 0.05 && summary.max_drawdown_pct <= 5 && recent365.trades >= 8 && recent365.profit_factor >= 1.00 && positiveYears >= 3)
+  };
   const postDrawdownShadow = {
     lock_reached: drawdownLockReached,
     first_blocked_candidate_time_utc: firstBlockedCandidateTime,
@@ -645,9 +672,9 @@ async function runOne(rawM5, rawH1, config, strategy) {
     shadow_rejected_entry_gap: postLockRejectedEntryGap,
     trade_count: postDrawdownShadowTrades.length,
     summary: summarize(postDrawdownShadowTrades, config.initialEquity),
-    recent365: periodSummary(postDrawdownShadowTrades, config.initialEquity, 365, latest),
-    is1095: periodSummary(postDrawdownShadowTrades, config.initialEquity, 1095, latest - 730 * 86400),
-    oos730: periodSummary(postDrawdownShadowTrades, config.initialEquity, 730, latest),
+    recent365: config.isOnly ? null : periodSummary(postDrawdownShadowTrades, config.initialEquity, 365, latest),
+    is1095: config.isOnly ? null : periodSummary(postDrawdownShadowTrades, config.initialEquity, 1095, latest - 730 * 86400),
+    oos730: config.isOnly ? null : periodSummary(postDrawdownShadowTrades, config.initialEquity, 730, latest),
     annual: annualSummary(postDrawdownShadowTrades, config.initialEquity),
     trades: postDrawdownShadowTrades
   };
@@ -666,7 +693,8 @@ async function runOne(rawM5, rawH1, config, strategy) {
     passed: Boolean(summary.trades >= 30 && summary.profit_factor >= 1.15 && summary.expectancy_R >= 0.05 && summary.max_drawdown_pct <= 5 && recent365.trades >= 8 && recent365.profit_factor >= 1.00 && positiveYears >= 3)
   };
   return {
-    summary,recent365,is1095,oos730,annual:yearly,positiveYears,qualityGate,trades,
+    evaluation_mode: config.isOnly ? 'IS_ONLY_CANDIDATE_SCREEN' : 'FULL_HISTORY_WITH_IS_OOS_SPLIT',
+    summary,recent365,is1095,oos730,annual:yearly,positiveYears,positiveYearsWithSample,qualityGate,trades,
     signals_evaluated:signalsEvaluated,
     candidates,candidates_buy:candidatesBuy,candidates_sell:candidatesSell,
     setup_wait_reasons:setupWaitReasons,
@@ -715,6 +743,19 @@ async function main() {
     if(rawM5.length<200000) throw new Error('Insufficient Dukascopy XAUUSD M5 data: '+rawM5.length);
   }
   const config={...BASE_CONFIG,lookbackDays};
+  if (config.isOnly) {
+    const isWindow = isolateIsWindow(rawM5, { oosDays: 730, barSeconds: 300, minBars: 200000 });
+    rawM5 = isWindow.bars;
+    console.log('IS_ONLY_WINDOW', JSON.stringify({
+      source_rows: isWindow.sourceRows,
+      is_rows: isWindow.isRows,
+      oos_rows_excluded: isWindow.sourceRows - isWindow.isRows,
+      is_end_utc: new Date(isWindow.isEndTime * 1000).toISOString(),
+      full_data_end_utc: new Date(isWindow.fullDataEndTime * 1000).toISOString()
+    }));
+  }
+  const effectiveRequestedStart = config.isOnly ? new Date(rawM5[0].time * 1000) : requestedStart;
+  const effectiveRequestedEnd = config.isOnly ? new Date((rawM5.at(-1).time + 300) * 1000) : requestedEnd;
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
   const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
@@ -731,6 +772,8 @@ async function main() {
         ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
         : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
     strategy_variant: STRATEGY_VARIANT,
+    evaluation_mode: config.isOnly ? 'IS_ONLY_CANDIDATE_SCREEN' : 'FULL_HISTORY_WITH_IS_OOS_SPLIT',
+    oos_prices_used_for_signal_generation: !config.isOnly,
     fundamental_backtest_status:'NOT_RUN',
     fundamental_backtest_note:'AI/web-search environment filtering is intentionally excluded from historical technical performance because point-in-time AI outputs are not available in this price dataset.',
     data_source:{m5:dataFile?'PREPARED_DUKASCOPY_XAUUSD':'DUKASCOPY_XAUUSD',h1:'FROM_M5'},
@@ -740,16 +783,16 @@ async function main() {
     test_period:{
       start:new Date(rawM5[0].time*1000).toISOString(),
       end:new Date((rawM5[rawM5.length-1].time+300)*1000).toISOString(),
-      requested_start:requestedStart.toISOString(),
-      requested_end:requestedEnd.toISOString()
+      requested_start:effectiveRequestedStart.toISOString(),
+      requested_end:effectiveRequestedEnd.toISOString()
     },
     prepared_data_file:dataFile||null,
-    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side',direction_filter_for_research_only:config.allowedSideFilter,strategy_variant:STRATEGY_VARIANT},
+    assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side',direction_filter_for_research_only:config.allowedSideFilter,strategy_variant:STRATEGY_VARIANT,evaluation_mode:config.isOnly?'IS_ONLY_CANDIDATE_SCREEN':'FULL_HISTORY_WITH_IS_OOS_SPLIT'},
     strategy_parameters:strategy,
     data_quality:dataQuality(rawM5),
     cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{spread_price:costScenarios(config).find(c=>c.name===name).spreadPrice,slippage_price:costScenarios(config).find(c=>c.name===name).slippagePrice}])),
     results:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{
-      summary:r.summary,recent365:r.recent365,is1095:r.is1095,oos730:r.oos730,annual:r.annual,positiveYears:r.positiveYears,qualityGate:r.qualityGate,
+      evaluation_mode:r.evaluation_mode,summary:r.summary,recent365:r.recent365,is1095:r.is1095,oos730:r.oos730,annual:r.annual,positiveYears:r.positiveYears,positiveYearsWithSample:r.positiveYearsWithSample,qualityGate:r.qualityGate,
       signals_evaluated:r.signals_evaluated,candidates:r.candidates,candidates_buy:r.candidates_buy,candidates_sell:r.candidates_sell,
       setup_wait_reasons:r.setup_wait_reasons,risk_gate_blocks:r.risk_gate_blocks,
       rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap,
@@ -781,8 +824,8 @@ async function main() {
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_after_drawdown_lock_'+name+'.csv'),toCsv(r.post_drawdown_shadow.trades));
   }
-  console.log('=== GOLD V2 BACKTEST ===');
-  for(const [name,r] of Object.entries(results)) console.log(name, 'trades='+r.summary.trades,'PF='+r.summary.profit_factor,'expectancy_R='+r.summary.expectancy_R,'return='+r.summary.return_pct+'%','maxDD='+r.summary.max_drawdown_pct+'%','recent365_trades='+r.recent365.trades,'recent365_PF='+r.recent365.profit_factor,'positiveYears='+r.positiveYears,'QUALITY_GATE='+r.qualityGate.passed);
+  console.log('=== GOLD BACKTEST ===');
+  for(const [name,r] of Object.entries(results)) console.log(name, 'mode='+r.evaluation_mode,'trades='+r.summary.trades,'PF='+r.summary.profit_factor,'expectancy_R='+r.summary.expectancy_R,'return='+r.summary.return_pct+'%','maxDD='+r.summary.max_drawdown_pct+'%','recent365_trades='+(r.recent365?.trades ?? 'NOT_REPORTED'),'recent365_PF='+(r.recent365?.profit_factor ?? 'NOT_REPORTED'),'positiveYears='+r.positiveYears,'QUALITY_GATE='+r.qualityGate.passed);
 }
 
 if(import.meta.url===`file://${process.argv[1]}`) main();
