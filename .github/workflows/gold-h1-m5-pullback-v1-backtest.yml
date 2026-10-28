@@ -1,0 +1,177 @@
+name: GOLD H1 Trend + M5 Pullback V1 IS/OOS Cost Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gold-h1-m5-pullback-v1-backtest.yml'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'src/gold_h1_m5_pullback_v1.js'
+      - 'tests/gold_h1_m5_pullback_v1.test.js'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: gold-h1-m5-pullback-v1-research
+  cancel-in-progress: true
+
+jobs:
+  validate-and-compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies and run tests
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+      - name: Find latest successful prepared five-year data artifact
+        id: dataset_run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=""
+          run_ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/gold-v2-research.yml/runs?status=success&per_page=20" --jq '.workflow_runs[] | select(.conclusion == "success") | .id')
+          while read -r candidate; do
+            [ -n "$candidate" ] || continue
+            artifact_count=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$candidate/artifacts?per_page=100" --jq '[.artifacts[] | select(.name == "gold-xauusd-m5-1825d" and .expired == false)] | length')
+            if [ "$artifact_count" -gt 0 ]; then
+              found="$candidate"
+              break
+            fi
+          done <<< "$run_ids"
+          if [ -z "$found" ]; then
+            echo "No unexpired prepared five-year GOLD M5 dataset found in the latest 20 successful research runs."
+            exit 1
+          fi
+          echo "run_id=$found" >> "$GITHUB_OUTPUT"
+      - name: Download prepared XAUUSD M5 data
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: ${{ steps.dataset_run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate fixed dataset window
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          const m = JSON.parse(await fs.readFile('gold-xauusd-data/xauusd_m5_manifest.json','utf8'));
+          if (m.requested_start_date_utc !== '2021-10-06' || m.requested_end_date_exclusive_utc !== '2026-10-05') {
+            throw new Error('Unexpected fixed dataset window: ' + JSON.stringify(m));
+          }
+          const st = await fs.stat('gold-xauusd-data/xauusd-m5.json.gz');
+          if (st.size < 1000000) throw new Error('Prepared M5 dataset missing or too small');
+          console.log(JSON.stringify({instrument:m.instrument,provider:m.provider,start:m.requested_start_date_utc,end_exclusive:m.requested_end_date_exclusive_utc,bytes:st.size},null,2));
+          NODE
+      - name: Run frozen strategy across spread scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATA_FILE="$GITHUB_WORKSPACE/gold-xauusd-data/xauusd-m5.json.gz"
+          OUT_ROOT="$GITHUB_WORKSPACE/gold-h1-m5-pullback-v1-results"
+          mkdir -p "$OUT_ROOT"
+          for spread in 0.26 0.30 0.40 0.50 0.55 0.75; do
+            case "$spread" in
+              0.26) tag=026 ;;
+              0.30) tag=030 ;;
+              0.40) tag=040 ;;
+              0.50) tag=050 ;;
+              0.55) tag=055 ;;
+              0.75) tag=075 ;;
+              *) echo "Unexpected spread: $spread"; exit 2 ;;
+            esac
+            out="$OUT_ROOT/spread_$tag"
+            echo "===== V1 spread_price=$spread ====="
+            env \
+              GOLD_BACKTEST_STRATEGY_VARIANT=h1_m5_pullback_v1 \
+              GOLD_BACKTEST_LOOKBACK_DAYS=1825 \
+              GOLD_BACKTEST_INITIAL_EQUITY=100000 \
+              GOLD_BACKTEST_RISK_PCT=0.25 \
+              GOLD_BACKTEST_SPREAD_PRICE="$spread" \
+              GOLD_BACKTEST_SLIPPAGE_PRICE=0.05 \
+              GOLD_BACKTEST_MAX_DAILY_LOSS_PCT=2 \
+              GOLD_BACKTEST_MAX_DRAWDOWN_PCT=5 \
+              GOLD_BACKTEST_MAX_HOLD_BARS=96 \
+              GOLD_BACKTEST_MAX_ENTRY_GAP_ATR=0.50 \
+              GOLD_BACKTEST_SERVER_TIMEZONE=Europe/Nicosia \
+              GOLD_BACKTEST_ALLOWED_SIDE=BOTH \
+              GOLD_H1_TREND_MODE=strict \
+              GOLD_PULLBACK_SESSION_START_UTC=7 \
+              GOLD_PULLBACK_SESSION_END_UTC=20 \
+              GOLD_PULLBACK_MIN_H1_RSI_BUY=50 \
+              GOLD_PULLBACK_MAX_H1_RSI_BUY=72 \
+              GOLD_PULLBACK_MIN_H1_RSI_SELL=28 \
+              GOLD_PULLBACK_MAX_H1_RSI_SELL=50 \
+              GOLD_PULLBACK_BUY_RSI_MIN=52 \
+              GOLD_PULLBACK_BUY_RSI_MAX=75 \
+              GOLD_PULLBACK_SELL_RSI_MIN=25 \
+              GOLD_PULLBACK_SELL_RSI_MAX=48 \
+              GOLD_PULLBACK_TOUCH_ATR=0.15 \
+              GOLD_PULLBACK_CLOSE_TOLERANCE_ATR=0.35 \
+              GOLD_PULLBACK_MAX_EXTENSION_ATR=1.50 \
+              GOLD_PULLBACK_STOP_BUFFER_ATR=0.15 \
+              GOLD_PULLBACK_MIN_STOP_ATR=0.80 \
+              GOLD_PULLBACK_MAX_STOP_ATR=2.00 \
+              GOLD_PULLBACK_TAKE_PROFIT_R=2.00 \
+              GOLD_BACKTEST_DATA_FILE="$DATA_FILE" \
+              GOLD_BACKTEST_OUTPUT_DIR="$out" \
+              node scripts/backtest-gold-v2.mjs
+          done
+      - name: Validate output reports and build compact CSV
+        run: |
+          python3 - <<'PY'
+          import csv, json
+          from pathlib import Path
+          root=Path("gold-h1-m5-pullback-v1-results")
+          rows=[]
+          for p in sorted(root.glob("*/gold_v2_backtest_report.json")):
+              r=json.loads(p.read_text(encoding="utf-8"))
+              if r.get("strategy_variant") != "h1_m5_pullback_v1":
+                  raise SystemExit(f"Wrong strategy version in {p}: {r.get('strategy_variant')}")
+              base=r.get("results",{}).get("baseline",{})
+              s=base.get("summary",{})
+              is3=base.get("is1095",{})
+              oos2=base.get("oos730",{})
+              recent=base.get("recent365",{})
+              rows.append({
+                "report":str(p.parent.name),
+                "spread_price":r.get("cost_scenarios",{}).get("baseline",{}).get("spread_price"),
+                "trades":s.get("trades"),
+                "profit_factor":s.get("profit_factor"),
+                "expectancy_R":s.get("expectancy_R"),
+                "net_profit":s.get("net_profit"),
+                "max_drawdown_pct":s.get("max_drawdown_pct"),
+                "IS_3y_trades":is3.get("trades"),
+                "IS_3y_PF":is3.get("profit_factor"),
+                "IS_3y_expectancy_R":is3.get("expectancy_R"),
+                "OOS_2y_trades":oos2.get("trades"),
+                "OOS_2y_PF":oos2.get("profit_factor"),
+                "OOS_2y_expectancy_R":oos2.get("expectancy_R"),
+                "OOS_2y_maxDD_pct":oos2.get("max_drawdown_pct"),
+                "recent365_trades":recent.get("trades"),
+                "recent365_PF":recent.get("profit_factor")
+              })
+          if len(rows) != 6:
+              raise SystemExit(f"Expected 6 cost reports, found {len(rows)}")
+          with (root/"summary.csv").open("w",newline="",encoding="utf-8") as f:
+              w=csv.DictWriter(f,fieldnames=list(rows[0]))
+              w.writeheader()
+              w.writerows(rows)
+          print((root/"summary.csv").read_text(encoding="utf-8"))
+          PY
+      - name: Upload V1 cost sensitivity reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-h1-m5-pullback-v1-is-oos-cost-results
+          path: gold-h1-m5-pullback-v1-results/
+          if-no-files-found: error
+          retention-days: 90

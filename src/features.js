@@ -5,7 +5,8 @@ function n(v, fallback = 0) {
 function bars(input) {
   if (!Array.isArray(input)) return [];
   return input.slice(-24).map((b) => ({
-    time: n(b.time), open: n(b.open), high: n(b.high), low: n(b.low), close: n(b.close), volume: n(b.volume)
+    time: n(b.time), open: n(b.open), high: n(b.high), low: n(b.low), close: n(b.close), volume: n(b.volume),
+    ema20: n(b.ema20), ema50: n(b.ema50), ema200: n(b.ema200), rsi14: n(b.rsi14), atr14: n(b.atr14)
   }));
 }
 export function normalizeFeatures(input = {}) {
