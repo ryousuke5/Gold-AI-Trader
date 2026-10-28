@@ -6,6 +6,9 @@ on:
       - 'feat/gold-m5-failed-breakout-v1'
     paths:
       - '.github/workflows/gold-m5-failed-breakout-v1-is-screen.yml'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'src/gold_m5_failed_breakout_v1.js'
+      - 'tests/gold_m5_failed_breakout_v1.test.js'
   workflow_dispatch:
     inputs:
       source_run_id:
