@@ -14,20 +14,23 @@ export function buildGoldH1M5HalfbackV2Setup(features = {}, config = {}) {
     return { candidate: 'WAIT', trend: base.trend, reason: 'insufficient_m5_ema20_slope_history' };
   }
   const signal = bars.at(-1);
+  const pullback = bars.at(-2);
   const earlier = bars.at(-4);
   const signalEma20 = Number(signal?.ema20);
+  const pullbackEma20 = Number(pullback?.ema20);
   const earlierEma20 = Number(earlier?.ema20);
   const close = Number(signal?.close);
-  if (![signalEma20, earlierEma20, close].every(Number.isFinite)) {
+  const pullbackClose = Number(pullback?.close);
+  if (![signalEma20, pullbackEma20, earlierEma20, close, pullbackClose].every(Number.isFinite)) {
     return { candidate: 'WAIT', trend: base.trend, reason: 'missing_m5_ema20_slope_features' };
   }
 
   const direction = base.candidate;
-  const aboveEma20 = close > signalEma20;
-  const belowEma20 = close < signalEma20;
+  const buyCross = pullbackClose <= pullbackEma20 && close > signalEma20;
+  const sellCross = pullbackClose >= pullbackEma20 && close < signalEma20;
   const ema20Rising = signalEma20 > earlierEma20;
   const ema20Falling = signalEma20 < earlierEma20;
-  if (direction === 'BUY' && !aboveEma20) {
+  if (direction === 'BUY' && !buyCross) {
     return {
       candidate: 'WAIT',
       trend: 'UP',
@@ -35,7 +38,7 @@ export function buildGoldH1M5HalfbackV2Setup(features = {}, config = {}) {
       diagnostics: { ...(base.diagnostics || {}), signal_ema20: signalEma20, signal_close: close }
     };
   }
-  if (direction === 'SELL' && !belowEma20) {
+  if (direction === 'SELL' && !sellCross) {
     return {
       candidate: 'WAIT',
       trend: 'DOWN',
