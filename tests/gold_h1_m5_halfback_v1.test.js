@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
 import { normalizeBacktestStrategyVariant } from '../scripts/backtest-gold-v2.mjs';
+import { normalizeFeatures } from '../src/features.js';
 
 function bullishFeatures() {
   const start = Date.parse('2026-01-12T13:00:00Z') / 1000;
@@ -84,4 +85,20 @@ test('halfback V1 does not treat the latest unconfirmed high as a confirmed impu
 test('backtest selector accepts the independent halfback variant and rejects typos', () => {
   assert.equal(normalizeBacktestStrategyVariant('HALFBACK_V1'), 'halfback_v1');
   assert.throws(() => normalizeBacktestStrategyVariant('halfback'), /Invalid GOLD_BACKTEST_STRATEGY_VARIANT/);
+});
+
+test('feature normalization retains up to 64 completed M5 candles for confirmed pivots', () => {
+  const recent_m5 = Array.from({ length: 80 }, (_, i) => ({
+    time: 1700000000 + i * 300, open: 100, high: 101, low: 99, close: 100.5, volume: 10
+  }));
+  const normalized = normalizeFeatures({
+    bid: 100, ask: 100.1, point: 0.01, spread: 0.1, spread_points: 10,
+    bar_time: recent_m5.at(-1).time,
+    m5: { ema20: 100, ema50: 99, rsi14: 55, atr14: 1, high20: 101, low20: 99 },
+    h1: { close: 100, ema20: 99, ema50: 98, ema200: 95, rsi14: 55, atr14: 4 },
+    recent_m5
+  });
+  assert.equal(normalized.recentM5.length, 64);
+  assert.equal(normalized.recentM5[0].time, recent_m5.at(-64).time);
+  assert.equal(normalized.recentM5.at(-1).time, recent_m5.at(-1).time);
 });
