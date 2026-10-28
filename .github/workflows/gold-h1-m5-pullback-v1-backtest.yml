@@ -80,7 +80,15 @@ jobs:
           OUT_ROOT="$GITHUB_WORKSPACE/gold-h1-m5-pullback-v1-results"
           mkdir -p "$OUT_ROOT"
           for spread in 0.26 0.30 0.40 0.50 0.55 0.75; do
-            tag=$(python3 -c "print(f'{float(\"$spread\")*100:03.0f}')")
+            case "$spread" in
+              0.26) tag=026 ;;
+              0.30) tag=030 ;;
+              0.40) tag=040 ;;
+              0.50) tag=050 ;;
+              0.55) tag=055 ;;
+              0.75) tag=075 ;;
+              *) echo "Unexpected spread: $spread"; exit 2 ;;
+            esac
             out="$OUT_ROOT/spread_$tag"
             echo "===== V1 spread_price=$spread ====="
             env \
