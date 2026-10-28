@@ -12,9 +12,14 @@ on:
   workflow_dispatch:
     inputs:
       end_utc:
-        description: Fixed end timestamp for the five-year XAUUSD window (UTC)
+        description: Exclusive UTC end timestamp matching the prepared five-year dataset
         required: true
-        default: '2026-10-05T23:59:59Z'
+        default: '2026-10-05T00:00:00Z'
+        type: string
+      source_run_id:
+        description: Successful GOLD V2 Five-Year Research run ID; blank selects the latest successful run
+        required: false
+        default: ''
         type: string
 
 jobs:
@@ -24,12 +29,13 @@ jobs:
     env:
       GOLD_BACKTEST_STRATEGY_VARIANT: halfback_v1
       GOLD_BACKTEST_LOOKBACK_DAYS: '1825'
-      GOLD_BACKTEST_END_UTC: ${{ inputs.end_utc || '2026-10-05T23:59:59Z' }}
+      GOLD_BACKTEST_END_UTC: ${{ inputs.end_utc || '2026-10-05T00:00:00Z' }}
       GOLD_BACKTEST_INITIAL_EQUITY: '100000'
       GOLD_BACKTEST_RISK_PCT: '0.25'
       GOLD_BACKTEST_SPREAD_PRICE: '0.50'
       GOLD_BACKTEST_SLIPPAGE_PRICE: '0.05'
       GOLD_BACKTEST_OUTPUT_DIR: gold-halfback-output
+      GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
       GOLD_HALFBACK_RETRACE_MIN: '0.45'
       GOLD_HALFBACK_RETRACE_MAX: '0.55'
       GOLD_HALFBACK_SWING_LEFT_BARS: '2'
@@ -48,6 +54,73 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Resolve source GOLD V2 research run
+        id: source
+        env:
+          INPUT_RUN_ID: ${{ inputs.source_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_RUN_ID:-}" ]; then
+            RUN_ID="$INPUT_RUN_ID"
+          else
+            RUN_ID="$(gh run list \
+              --workflow 'GOLD V2 Five-Year Research' \
+              --limit 50 \
+              --json databaseId,status,conclusion \
+              --jq '[.[] | select(.status == "completed" and .conclusion == "success") | .databaseId] | .[0]')"
+          fi
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "No successful GOLD V2 Five-Year Research run found." >&2
+            exit 1
+          fi
+          echo "Using source research run: $RUN_ID"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Download prepared XAUUSD M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: ${{ steps.source.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate fixed research window and data manifest
+        run: |
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          from pathlib import Path
+
+          cfg = json.loads(Path("config/gold-v2-data-window.json").read_text(encoding="utf-8"))
+          manifest = json.loads(Path("gold-xauusd-data/xauusd_m5_manifest.json").read_text(encoding="utf-8"))
+          end_day = dt.date.fromisoformat(cfg["end_date_utc"])
+          start_day = end_day - dt.timedelta(days=int(cfg["lookback_days"]))
+          expected_start = start_day.isoformat()
+          expected_end = end_day.isoformat()
+          supplied_end = dt.datetime.fromisoformat(os.environ["GOLD_BACKTEST_END_UTC"].replace("Z", "+00:00"))
+          expected_end_dt = dt.datetime.combine(end_day, dt.time(), tzinfo=dt.timezone.utc)
+
+          if supplied_end != expected_end_dt:
+              raise SystemExit(f"Input end must match prepared data window: {expected_end}T00:00:00Z")
+          if manifest["requested_start_date_utc"] != expected_start:
+              raise SystemExit(f"Unexpected data start: {manifest['requested_start_date_utc']} != {expected_start}")
+          if manifest["requested_end_date_exclusive_utc"] != expected_end:
+              raise SystemExit(f"Unexpected data end: {manifest['requested_end_date_exclusive_utc']} != {expected_end}")
+          if int(manifest["m5_rows"]) < 200000:
+              raise SystemExit(f"Insufficient M5 rows: {manifest['m5_rows']}")
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
+              fh.write(f"GOLD_BACKTEST_START_UTC={expected_start}T00:00:00Z\\n")
+
+          print(json.dumps({
+              "window_start": expected_start,
+              "window_end_exclusive": expected_end,
+              "m5_rows": manifest["m5_rows"],
+              "output_sha256": manifest["output_sha256"]
+          }, indent=2))
 
       - name: Unit and safety tests
         run: npm test
