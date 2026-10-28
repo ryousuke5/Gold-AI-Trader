@@ -1,0 +1,691 @@
+#property strict
+#property version   "1.0"
+#property description "GOLD H1 trend + M5 halfback/reconfirmation V1 monitor. Auto trading is disabled."
+
+input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
+input string ApiKey = "CHANGE_ME";
+input string SymbolName = "";
+input bool   RequireGoldSymbol = true;
+input bool   EnableSignalRequests = true;
+input bool   RunAITestOnce = false;
+input bool   AllowAutoOrders = false;
+input int    TimerSeconds = 5;
+input int    MagicNumber = 26102801;
+input double MaxSpreadPrice = 0.50;
+input int    RequestTimeoutMs = 8000;
+
+datetime g_lastClosedM5Bar = 0;
+datetime g_lastAttemptedM5Bar = 0;
+datetime g_lastAttemptAt = 0;
+int g_retrySeconds = 30;
+bool g_apiConfigReady = false;
+bool g_apiConfigWarningLogged = false;
+
+//---------------------------------------------------------
+// String helpers
+//---------------------------------------------------------
+string TrimText(string value)
+{
+   value = StringTrimLeft(value);
+   value = StringTrimRight(value);
+   return value;
+}
+
+string TradeSymbol()
+{
+   string configured = TrimText(SymbolName);
+   if(StringLen(configured) > 0)
+      return configured;
+
+   return Symbol();
+}
+
+bool IsGoldSymbol(string sym)
+{
+   if(!RequireGoldSymbol)
+      return true;
+
+   if(StringFind(sym, "XAU") >= 0)
+      return true;
+   if(StringFind(sym, "xau") >= 0)
+      return true;
+   if(StringFind(sym, "GOLD") >= 0)
+      return true;
+   if(StringFind(sym, "gold") >= 0)
+      return true;
+
+   return false;
+}
+
+string JsonEscape(string value)
+{
+   StringReplace(value, "\\", "\\\\");
+   StringReplace(value, "\"", "\\\"");
+   StringReplace(value, "\r", "\\r");
+   StringReplace(value, "\n", "\\n");
+   StringReplace(value, "\t", "\\t");
+   return value;
+}
+
+string JsonNumber(double value, int digits)
+{
+   return DoubleToString(value, digits);
+}
+
+bool IsValidApiConfiguration()
+{
+   bool urlOk = (StringFind(TrimText(ApiBaseUrl), "https://") == 0);
+   bool keyOk = (StringLen(TrimText(ApiKey)) >= 16 && TrimText(ApiKey) != "CHANGE_ME");
+
+   Print("GoldAITrader Halfback: API config check. url_ok=",
+         (urlOk ? "true" : "false"),
+         " key_ok=",
+         (keyOk ? "true" : "false"));
+
+   if(!urlOk)
+   {
+      Print("GoldAITrader Halfback: ApiBaseUrl must start with https://");
+      return false;
+   }
+
+   if(!keyOk)
+   {
+      Print("GoldAITrader Halfback: ApiKey is not configured or is too short.");
+      return false;
+   }
+
+   return true;
+}
+
+//---------------------------------------------------------
+// Market helpers
+//---------------------------------------------------------
+bool SymbolReady(string sym)
+{
+   if(!SymbolSelect(sym, true))
+   {
+      Print("GoldAITrader Halfback: SymbolSelect failed for ", sym,
+            " error=", GetLastError());
+      return false;
+   }
+
+   int m5Bars = iBars(sym, PERIOD_M5);
+   int h1Bars = iBars(sym, PERIOD_H1);
+
+   if(m5Bars < 100 || h1Bars < 250)
+   {
+      Print("GoldAITrader Halfback: insufficient history. M5=", m5Bars,
+            " H1=", h1Bars);
+      return false;
+   }
+
+   datetime m5Time = iTime(sym, PERIOD_M5, 1);
+   datetime h1Time = iTime(sym, PERIOD_H1, 1);
+
+   if(m5Time <= 0 || h1Time <= 0)
+   {
+      Print("GoldAITrader Halfback: price history is not ready.");
+      return false;
+   }
+
+   return true;
+}
+
+int OpenPositions(string sym)
+{
+   int count = 0;
+
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+         continue;
+
+      if(OrderSymbol() != sym)
+         continue;
+
+      if(OrderMagicNumber() != MagicNumber)
+         continue;
+
+      int type = OrderType();
+      if(type == OP_BUY || type == OP_SELL)
+         count++;
+   }
+
+   return count;
+}
+
+double DailyRealizedPnl(string sym)
+{
+   datetime dayStart = StrToTime(TimeToString(TimeCurrent(), TIME_DATE));
+   double realized = 0.0;
+
+   for(int i = OrdersHistoryTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY))
+         continue;
+
+      if(OrderSymbol() != sym)
+         continue;
+
+      if(OrderMagicNumber() != MagicNumber)
+         continue;
+
+      if(OrderCloseTime() < dayStart)
+         continue;
+
+      int type = OrderType();
+      if(type != OP_BUY && type != OP_SELL)
+         continue;
+
+      realized += OrderProfit() + OrderSwap() + OrderCommission();
+   }
+
+   return realized;
+}
+
+double PeakEquity()
+{
+   string key = "GoldAITrader Halfback:PeakEquity";
+   double equity = AccountEquity();
+
+   if(!GlobalVariableCheck(key))
+   {
+      GlobalVariableSet(key, equity);
+      return equity;
+   }
+
+   double peak = GlobalVariableGet(key);
+
+   if(equity > peak)
+   {
+      peak = equity;
+      GlobalVariableSet(key, peak);
+   }
+
+   return peak;
+}
+
+//---------------------------------------------------------
+// Convert broker-server candle timestamps to UTC before sending to the API.
+// TimeGMT follows the terminal computer's clock settings, so the PC clock must be synchronized.
+bool GetServerUtcOffsetSeconds(int &offsetSeconds)
+{
+   datetime serverNow = TimeCurrent();
+   datetime utcNow = TimeGMT();
+   if(serverNow <= 0 || utcNow <= 0)
+      return false;
+
+   int rawOffset = (int)(serverNow - utcNow);
+   int roundedOffset = (int)(MathRound((double)rawOffset / 900.0) * 900.0);
+
+   // Accept quarter-hour offsets only; fail closed if the machine clock or broker offset looks wrong.
+   if(MathAbs(rawOffset - roundedOffset) > 120 || MathAbs(roundedOffset) > 14 * 3600)
+      return false;
+
+   offsetSeconds = roundedOffset;
+   return true;
+}
+
+// Build API payload
+//---------------------------------------------------------
+bool BuildSignalPayload(string &payload)
+{
+   string sym = TradeSymbol();
+
+   if(!SymbolReady(sym))
+      return false;
+
+   RefreshRates();
+
+   int serverUtcOffsetSeconds = 0;
+   if(!GetServerUtcOffsetSeconds(serverUtcOffsetSeconds))
+   {
+      Print("GoldAITrader Halfback: UTC offset validation failed; skipping signal request.");
+      return false;
+   }
+
+   int digits = (int)MarketInfo(sym, MODE_DIGITS);
+   double point = MarketInfo(sym, MODE_POINT);
+   double bid = MarketInfo(sym, MODE_BID);
+   double ask = MarketInfo(sym, MODE_ASK);
+   double spread = ask - bid;
+   double spreadPoints = 0.0;
+
+   if(spread > MaxSpreadPrice)
+      Print("GoldAITrader Halfback: spread is above local observation threshold. spread=", DoubleToString(spread, digits), " max=", DoubleToString(MaxSpreadPrice, digits));
+
+   if(point > 0.0)
+      spreadPoints = spread / point;
+
+   datetime closedBarOpen = iTime(sym, PERIOD_M5, 1);
+   if(closedBarOpen <= 0)
+      return false;
+
+   datetime closedBarTime = closedBarOpen + 300;
+   datetime closedBarTimeUtc = closedBarTime - serverUtcOffsetSeconds;
+   // Log enough information to verify UTC conversion in MT4's Experts log before API deployment.
+   Print("[GOLD UTC DIAG] server_utc_offset_seconds=", serverUtcOffsetSeconds,
+         " server_time=", TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+         " terminal_gmt=", TimeToString(TimeGMT(), TIME_DATE|TIME_SECONDS),
+         " bar_time_utc=", TimeToString(closedBarTimeUtc, TIME_DATE|TIME_SECONDS),
+         " bar_time_epoch=", IntegerToString((int)closedBarTimeUtc));
+
+   double m5Ema20 = iMA(sym, PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double m5Ema50 = iMA(sym, PERIOD_M5, 50, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double m5Rsi14 = iRSI(sym, PERIOD_M5, 14, PRICE_CLOSE, 1);
+   double m5Atr14 = iATR(sym, PERIOD_M5, 14, 1);
+
+   int highShift = iHighest(sym, PERIOD_M5, MODE_HIGH, 20, 1);
+   int lowShift = iLowest(sym, PERIOD_M5, MODE_LOW, 20, 1);
+
+   double m5High20 = 0.0;
+   double m5Low20 = 0.0;
+
+   if(highShift >= 0)
+      m5High20 = iHigh(sym, PERIOD_M5, highShift);
+
+   if(lowShift >= 0)
+      m5Low20 = iLow(sym, PERIOD_M5, lowShift);
+
+   double h1Ema20 = iMA(sym, PERIOD_H1, 20, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double h1Ema50 = iMA(sym, PERIOD_H1, 50, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double h1Ema200 = iMA(sym, PERIOD_H1, 200, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double h1Rsi14 = iRSI(sym, PERIOD_H1, 14, PRICE_CLOSE, 1);
+   double h1Atr14 = iATR(sym, PERIOD_H1, 14, 1);
+
+   double equity = AccountEquity();
+   double balance = AccountBalance();
+   double dailyPnl = DailyRealizedPnl(sym);
+
+   double dayStartBalance = balance - dailyPnl;
+   double dailyPnlPct = 0.0;
+
+   if(dayStartBalance > 0.0)
+      dailyPnlPct = ((equity - dayStartBalance) / dayStartBalance) * 100.0;
+
+   double peakEquity = PeakEquity();
+   double drawdownPct = 0.0;
+
+   if(peakEquity > 0.0)
+      drawdownPct = ((peakEquity - equity) / peakEquity) * 100.0;
+
+   double tickSize = MarketInfo(sym, MODE_TICKSIZE);
+   double tickValue = MarketInfo(sym, MODE_TICKVALUE);
+   double minLot = MarketInfo(sym, MODE_MINLOT);
+   double maxLot = MarketInfo(sym, MODE_MAXLOT);
+   double lotStep = MarketInfo(sym, MODE_LOTSTEP);
+   int stopLevelPoints = (int)MarketInfo(sym, MODE_STOPLEVEL);
+   int freezeLevelPoints = (int)MarketInfo(sym, MODE_FREEZELEVEL);
+   int tradeAllowed = (int)MarketInfo(sym, MODE_TRADEALLOWED);
+
+   bool riskDataReady =
+      (equity > 0.0 &&
+       point > 0.0 &&
+       tickSize > 0.0 &&
+       tickValue > 0.0 &&
+       minLot > 0.0 &&
+       maxLot >= minLot &&
+       lotStep > 0.0);
+
+   string json = "";
+
+   json += "{";
+   json += "\"symbol\":\"" + JsonEscape(sym) + "\",";
+   json += "\"timeframe\":\"M5\",";
+   json += "\"features\":{";
+   json += "\"bid\":" + JsonNumber(bid, digits) + ",";
+   json += "\"ask\":" + JsonNumber(ask, digits) + ",";
+   json += "\"point\":" + JsonNumber(point, digits) + ",";
+   json += "\"spread\":" + JsonNumber(spread, digits) + ",";
+   json += "\"spread_points\":" + JsonNumber(spreadPoints, 2) + ",";
+   json += "\"server_utc_offset_seconds\":" + IntegerToString(serverUtcOffsetSeconds) + ",";
+   // Send the completed M5 close time as UTC epoch seconds.
+   json += "\"bar_time\":" + IntegerToString((int)closedBarTimeUtc) + ",";
+   json += "\"m5\":{";
+   json += "\"ema20\":" + JsonNumber(m5Ema20, digits) + ",";
+   json += "\"ema50\":" + JsonNumber(m5Ema50, digits) + ",";
+   json += "\"rsi14\":" + JsonNumber(m5Rsi14, 2) + ",";
+   json += "\"atr14\":" + JsonNumber(m5Atr14, digits) + ",";
+   json += "\"high20\":" + JsonNumber(m5High20, digits) + ",";
+   json += "\"low20\":" + JsonNumber(m5Low20, digits);
+   json += "},";
+   json += "\"h1\":{";
+   json += "\"close\":" + JsonNumber(iClose(sym, PERIOD_H1, 1), digits) + ",";
+   json += "\"ema20\":" + JsonNumber(h1Ema20, digits) + ",";
+   json += "\"ema50\":" + JsonNumber(h1Ema50, digits) + ",";
+   json += "\"ema200\":" + JsonNumber(h1Ema200, digits) + ",";
+   json += "\"rsi14\":" + JsonNumber(h1Rsi14, 2) + ",";
+   json += "\"atr14\":" + JsonNumber(h1Atr14, digits);
+   json += "},";
+
+   // Send the completed M5/H1 bars required by GOLD Halfback V1. Times are close-times,
+   // matching the backtest convention and preventing the current forming bar from entering the setup.
+   json += "\"recent_m5\":[";
+   bool firstM5 = true;
+   for(int shiftM5 = 64; shiftM5 >= 1; shiftM5--)
+   {
+      datetime barOpenM5 = iTime(sym, PERIOD_M5, shiftM5);
+      if(barOpenM5 <= 0)
+         continue;
+
+      if(!firstM5)
+         json += ",";
+
+      json += "{\"time\":" + IntegerToString((int)(barOpenM5 + 300 - serverUtcOffsetSeconds));
+      json += ",\"open\":" + JsonNumber(iOpen(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"high\":" + JsonNumber(iHigh(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"low\":" + JsonNumber(iLow(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"close\":" + JsonNumber(iClose(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"volume\":" + JsonNumber(iVolume(sym, PERIOD_M5, shiftM5), 0);
+      json += ",\"ema20\":" + JsonNumber(iMA(sym, PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, shiftM5), digits);
+      json += ",\"atr14\":" + JsonNumber(iATR(sym, PERIOD_M5, 14, shiftM5), digits);
+      json += "}";
+      firstM5 = false;
+   }
+   json += "],";
+
+   json += "\"recent_h1\":[";
+   bool firstH1 = true;
+   for(int shiftH1 = 24; shiftH1 >= 1; shiftH1--)
+   {
+      datetime barOpenH1 = iTime(sym, PERIOD_H1, shiftH1);
+      if(barOpenH1 <= 0)
+         continue;
+
+      if(!firstH1)
+         json += ",";
+
+      json += "{\"time\":" + IntegerToString((int)(barOpenH1 + 3600 - serverUtcOffsetSeconds));
+      json += ",\"open\":" + JsonNumber(iOpen(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"high\":" + JsonNumber(iHigh(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"low\":" + JsonNumber(iLow(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"close\":" + JsonNumber(iClose(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"volume\":" + JsonNumber(iVolume(sym, PERIOD_H1, shiftH1), 0);
+      json += "}";
+      firstH1 = false;
+   }
+   json += "]";
+   json += "},";
+   json += "\"account\":{";
+   json += "\"equity\":" + JsonNumber(equity, 2) + ",";
+   json += "\"balance\":" + JsonNumber(balance, 2) + ",";
+   json += "\"open_positions\":" + IntegerToString(OpenPositions(sym)) + ",";
+   json += "\"daily_pnl_pct\":" + JsonNumber(dailyPnlPct, 4) + ",";
+   json += "\"drawdown_pct\":" + JsonNumber(drawdownPct, 4) + ",";
+   json += "\"tick_size\":" + JsonNumber(tickSize, digits) + ",";
+   json += "\"tick_value\":" + JsonNumber(tickValue, 8) + ",";
+   json += "\"min_lot\":" + JsonNumber(minLot, 8) + ",";
+   json += "\"max_lot\":" + JsonNumber(maxLot, 8) + ",";
+   json += "\"lot_step\":" + JsonNumber(lotStep, 8) + ",";
+   json += "\"point\":" + JsonNumber(point, digits) + ",";
+   json += "\"digits\":" + IntegerToString(digits) + ",";
+   json += "\"stop_level_points\":" + IntegerToString(stopLevelPoints) + ",";
+   json += "\"freeze_level_points\":" + IntegerToString(freezeLevelPoints) + ",";
+   json += "\"trade_allowed\":" + IntegerToString(tradeAllowed) + ",";
+   json += "\"risk_data_ready\":" + (riskDataReady ? "true" : "false");
+   json += "}";
+   json += "}";
+
+
+   payload = json;
+   return true;
+}
+
+//---------------------------------------------------------
+// HTTP
+//---------------------------------------------------------
+bool PostJson(string path, string payload, string &response)
+{
+   string url = ApiBaseUrl + path;
+
+   string headers = "Content-Type: application/json\r\n";
+   headers += "X-Gold-API-Key: " + TrimText(ApiKey) + "\r\n";
+   headers += "X-Request-Id: " + IntegerToString((int)GetTickCount()) + "\r\n";
+
+   Print("GoldAITrader Halfback V1.0: request header length=", StringLen(headers),
+         " api_key_length=", StringLen(TrimText(ApiKey)));
+
+   uchar postData[];
+   uchar result[];
+   string resultHeaders = "";
+
+   int payloadLength = StringLen(payload);
+   ArrayResize(postData, payloadLength);
+
+   if(payloadLength > 0)
+      StringToCharArray(payload, postData, 0, payloadLength, CP_UTF8);
+
+   ResetLastError();
+
+   int httpCode = WebRequest(
+      "POST",
+      url,
+      headers,
+      RequestTimeoutMs,
+      postData,
+      result,
+      resultHeaders
+   );
+
+   int errorCode = GetLastError();
+
+   response = CharArrayToString(result, 0, -1, CP_UTF8);
+
+   if(httpCode == 409 && StringFind(response, "\"error\":\"duplicate_bar\"") >= 0)
+   {
+      Print("GoldAITrader Halfback: duplicate_bar accepted as already processed. path=", path);
+      return true;
+   }
+
+   if(httpCode < 200 || httpCode >= 300)
+   {
+      Print("GoldAITrader Halfback: WebRequest failed. HTTP=",
+            httpCode,
+            " error=",
+            errorCode,
+            " path=",
+            path,
+            " response=",
+            response);
+      return false;
+   }
+
+   return true;
+}
+
+//---------------------------------------------------------
+// Reject non-retryable stale-bar responses from the API.
+// The same completed M5 candle can never become newer, so retrying it every
+// 30 seconds only adds noise. Keep transient HTTP/network failures retryable.
+//---------------------------------------------------------
+bool IsStaleBarTimeRejection(string response)
+{
+   return StringFind(response, "invalid_bar_time") >= 0 &&
+          StringFind(response, "bar_time_too_old") >= 0;
+}
+
+//---------------------------------------------------------
+// Main timer
+//---------------------------------------------------------
+void OnTimer()
+{
+   if(!EnableSignalRequests)
+      return;
+
+   if(!g_apiConfigReady)
+   {
+      if(!g_apiConfigWarningLogged)
+      {
+         Print("GoldAITrader Halfback: signal requests paused until ApiBaseUrl and ApiKey are configured.");
+         g_apiConfigWarningLogged = true;
+      }
+      return;
+   }
+
+   string sym = TradeSymbol();
+
+   if(!IsGoldSymbol(sym))
+      return;
+
+   if(!SymbolReady(sym))
+      return;
+
+   datetime closedBar = iTime(sym, PERIOD_M5, 1);
+
+   if(closedBar <= 0)
+      return;
+
+   if(closedBar == g_lastClosedM5Bar)
+      return;
+
+   datetime now = TimeCurrent();
+
+   if(closedBar == g_lastAttemptedM5Bar &&
+      g_lastAttemptAt > 0 &&
+      (now - g_lastAttemptAt) < g_retrySeconds)
+      return;
+
+   g_lastAttemptedM5Bar = closedBar;
+   g_lastAttemptAt = now;
+
+   string payload = "";
+   string response = "";
+
+   if(!BuildSignalPayload(payload))
+      return;
+
+   Print("GoldAITrader Halfback V1.0: local ApiKey length=", StringLen(TrimText(ApiKey)),
+         " url_length=", StringLen(TrimText(ApiBaseUrl)));
+
+   if(RunAITestOnce)
+   {
+      string aiTestDoneKey = "GoldAITraderV18:AI_TEST_DONE";
+      if(!GlobalVariableCheck(aiTestDoneKey))
+      {
+         string aiTestResponse = "";
+         if(PostJson("/api/gold/ai-test", payload, aiTestResponse))
+         {
+            GlobalVariableSet(aiTestDoneKey, TimeCurrent());
+            Print("GoldAITrader Halfback V1.0: AI test response = ", aiTestResponse);
+         }
+         else
+         {
+            Print("GoldAITrader Halfback V1.0: AI test request failed; will retry.");
+         }
+      }
+      else
+      {
+         Print("GoldAITrader Halfback V1.0: one-shot AI test already completed; normal signal mode is paused while RunAITestOnce=true.");
+      }
+      return;
+   }
+
+   bool requestSucceeded = PostJson("/api/gold/halfback/signal", payload, response);
+   if(requestSucceeded)
+   {
+      g_lastClosedM5Bar = closedBar;
+      Print("GoldAITrader Halfback: signal response = ", response);
+
+      if(AllowAutoOrders)
+      {
+         Print("GoldAITrader Halfback: AllowAutoOrders=true is ignored in V1.2 analysis bridge. No orders are sent.");
+      }
+   }
+   else if(IsStaleBarTimeRejection(response))
+   {
+      // A stale timestamp is not transient for this specific candle. Skip it
+      // until a newer completed M5 candle exists; never loosen server checks.
+      g_lastClosedM5Bar = closedBar;
+      Print("GoldAITrader Halfback: stale completed M5 bar rejected; suppressing retries until a newer bar. bar_open=",
+            TimeToString(closedBar, TIME_DATE|TIME_MINUTES),
+            " reason=bar_time_too_old");
+   }
+}
+
+//---------------------------------------------------------
+// EA lifecycle
+//---------------------------------------------------------
+int OnInit()
+{
+   string sym = TradeSymbol();
+
+   Print("GoldAITrader Halfback V1.0 BUILD=20260930B: starting initialization. symbol=", sym,
+         " api=", ApiBaseUrl,
+         " timer=", TimerSeconds,
+         " timeoutMs=", RequestTimeoutMs,
+         " signalRequests=", (EnableSignalRequests ? "true" : "false"),
+         " autoOrders=", (AllowAutoOrders ? "requested-but-disabled" : "off"));
+
+   g_apiConfigReady = IsValidApiConfiguration();
+
+   if(!g_apiConfigReady)
+   {
+      Print("GoldAITrader Halfback: API configuration is incomplete. EA will stay attached, but signal requests are paused.");
+   }
+
+   if(!IsGoldSymbol(sym))
+   {
+      Print("GoldAITrader Halfback: chart symbol is not recognized as gold: ", sym);
+      return INIT_FAILED;
+   }
+
+   ResetLastError();
+
+   if(!SymbolSelect(sym, true))
+   {
+      Print("GoldAITrader Halfback: SymbolSelect failed during initialization. error=", GetLastError(),
+            " symbol=", sym);
+      return INIT_FAILED;
+   }
+
+   if(TimerSeconds < 1)
+   {
+      Print("GoldAITrader Halfback: TimerSeconds must be >= 1. current=", TimerSeconds);
+      return INIT_FAILED;
+   }
+
+   if(RequestTimeoutMs < 1000)
+   {
+      Print("GoldAITrader Halfback: RequestTimeoutMs must be >= 1000. current=", RequestTimeoutMs);
+      return INIT_FAILED;
+   }
+
+   ResetLastError();
+
+   if(!EventSetTimer(TimerSeconds))
+   {
+      Print("GoldAITrader Halfback: EventSetTimer failed. error=", GetLastError(),
+            " timer=", TimerSeconds);
+      return INIT_FAILED;
+   }
+
+   int digits = (int)MarketInfo(sym, MODE_DIGITS);
+   double point = MarketInfo(sym, MODE_POINT);
+   double tickSize = MarketInfo(sym, MODE_TICKSIZE);
+   double tickValue = MarketInfo(sym, MODE_TICKVALUE);
+   double minLot = MarketInfo(sym, MODE_MINLOT);
+   double lotStep = MarketInfo(sym, MODE_LOTSTEP);
+
+   Print(
+      "GoldAITrader initialized.",
+      " symbol=", sym,
+      " digits=", digits,
+      " point=", DoubleToString(point, 10),
+      " tickSize=", DoubleToString(tickSize, 10),
+      " tickValue=", DoubleToString(tickValue, 8),
+      " minLot=", DoubleToString(minLot, 8),
+      " lotStep=", DoubleToString(lotStep, 8),
+      " autoOrders=", (AllowAutoOrders ? "requested-but-disabled" : "off")
+   );
+
+   return INIT_SUCCEEDED;
+}
+
+void OnDeinit(const int reason)
+{
+   EventKillTimer();
+}
+
+void OnTick()
+{
+}
