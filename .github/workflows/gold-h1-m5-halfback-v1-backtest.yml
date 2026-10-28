@@ -60,7 +60,7 @@ jobs:
           const path = 'gold-halfback-output/gold_halfback_v1_backtest_report.json';
           const r = JSON.parse(fs.readFileSync(path));
           if (r.strategy_variant !== 'halfback_v1') throw new Error('Wrong strategy variant');
-          if (r.test_period?.requested_end !== process.env.GOLD_BACKTEST_END_UTC) throw new Error('Fixed end date mismatch');
+          if (new Date(r.test_period?.requested_end).toISOString() !== new Date(process.env.GOLD_BACKTEST_END_UTC).toISOString()) throw new Error('Fixed end date mismatch');
           for (const scenario of ['baseline', 'conservative']) {
             const result = r.results?.[scenario];
             if (!result || !Number.isFinite(Number(result.signals_evaluated))) {
