@@ -4,17 +4,22 @@ import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
+import { buildGoldH1M5PullbackV1Setup } from '../src/gold_h1_m5_pullback_v1.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
-  if (!['breakout_v2', 'pullback_retest'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest.`);
+  if (!['breakout_v2', 'pullback_retest', 'h1_m5_pullback_v1'].includes(variant)) {
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2, pullback_retest, or h1_m5_pullback_v1.`);
   }
   return variant;
 }
 
 const STRATEGY_VARIANT = normalizeBacktestStrategyVariant(process.env.GOLD_BACKTEST_STRATEGY_VARIANT || 'breakout_v2');
-const buildSelectedSetup = STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
+const buildSelectedSetup = STRATEGY_VARIANT === 'pullback_retest'
+  ? buildGoldPullbackRetestSetup
+  : STRATEGY_VARIANT === 'h1_m5_pullback_v1'
+    ? buildGoldH1M5PullbackV1Setup
+    : buildGoldV2Setup;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,6 +74,8 @@ const STRATEGY = {
   maxH1RsiSell: Math.min(99, Number(process.env.GOLD_MAX_H1_RSI_SELL || 50)),
   sessionStartUtc: Math.min(23, Math.max(0, Math.floor(Number(process.env.GOLD_SESSION_START_UTC || 7)))),
   sessionEndUtc: Math.min(23, Math.max(0, Math.floor(Number(process.env.GOLD_SESSION_END_UTC || 20)))),
+  pullbackTouchAtr: Math.max(0.01, Number(process.env.GOLD_PULLBACK_TOUCH_ATR || 0.15)),
+  pullbackCloseToleranceAtr: Math.max(0.05, Number(process.env.GOLD_PULLBACK_CLOSE_TOLERANCE_ATR || 0.35)),
   h1TrendMode: process.env.GOLD_H1_TREND_MODE === 'close_ema20_rsi' ? 'close_ema20_rsi' : 'strict'
 };
 
