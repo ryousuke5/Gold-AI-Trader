@@ -33,3 +33,34 @@ The candidate passes only if:
 - Conservative costs produce at least 20 trades, PF >= 1.00, and expectancy > 0R.
 
 A failed gate is a valid research outcome, not a workflow error. If it fails, reject this hypothesis and do not proceed to OOS or tune parameters on the same IS window.
+
+
+## IS screen result (completed 2026-10-28)
+
+**Decision: REJECT — no OOS and no parameter tuning on this IS window.**
+
+The workflow completed successfully, including unit/safety tests, syntax checks, the report contract, and artifact upload. The strategy failed all eight pre-registered IS gate checks.
+
+| Metric | Baseline cost | Conservative cost |
+|---|---:|---:|
+| Trades | 26 | 17 |
+| Wins / losses | 6 / 20 | 3 / 14 |
+| Win rate | 23.08% | 17.65% |
+| Profit factor | 0.224 | 0.136 |
+| Expectancy | -0.812R | -1.238R |
+| Net P/L on 100,000 starting research equity | -5,154.40 (-5.15%) | -5,139.88 (-5.14%) |
+| Maximum drawdown | 5.15% | 5.14% |
+| Positive calendar years | 0 | — |
+
+The baseline side breakdown was negative in both directions: BUY had 8 trades, 2 wins, and -4.68R; SELL had 18 trades, 4 wins, and -16.43R. Conservative costs also produced a negative result on the one BUY and 16 SELL trades.
+
+### Data quality and reproducibility
+
+- Requested IS: 2021-10-06T00:00:00Z to 2024-10-05T00:00:00Z (exclusive).
+- Source: fixed prepared XAUUSD M5 dataset created by the GOLD V2 Five-Year Research workflow.
+- Bars in IS dataset: 213,045; invalid OHLC rows: 0; positive-volume coverage: 100%.
+- The data-quality report shows 776 gaps over 7.5 minutes, including 624 non-weekend gaps. The strategy rejects setups whose reference bars are not contiguous, but the gap profile should still be considered when choosing future hypotheses.
+- Baseline modeled costs: spread 0.50 and slippage 0.05. Conservative scenario: spread at least 0.75 and slippage at least 0.10.
+- Actual last bar in the market data is 2024-10-04T21:00:00Z because the requested end timestamp falls on the weekend market closure.
+
+This is a completed technical-price backtest with simplified costs, not a broker-execution validation. It does not justify live deployment. No OOS was used to select or modify this hypothesis.
