@@ -57,6 +57,25 @@ jobs:
           if (!r.results?.baseline || !r.results?.conservative) throw new Error('Missing V4 cost scenarios');
           console.log('GOLD V4 BACKTEST SMOKE PASS');
           NODE
+      - name: GOLD H1 M5 pullback V1 synthetic backtest smoke test
+        run: |
+          GOLD_BACKTEST_STRATEGY_VARIANT=h1_m5_pullback_v1 \
+            GOLD_BACKTEST_DATA_FILE="$GITHUB_WORKSPACE/tmp-gold-v4-smoke/xauusd-m5.json.gz" \
+            GOLD_BACKTEST_LOOKBACK_DAYS=1825 \
+            GOLD_BACKTEST_OUTPUT_DIR="$GITHUB_WORKSPACE/tmp-gold-v4-smoke/out-pullback-v1" \
+            GOLD_BACKTEST_SPREAD_PRICE=0.50 \
+            GOLD_BACKTEST_SLIPPAGE_PRICE=0.05 \
+            node scripts/backtest-gold-v2.mjs
+          node <<'NODE'
+          const fs = require('fs');
+          const p = 'tmp-gold-v4-smoke/out-pullback-v1/gold_v2_backtest_report.json';
+          const r = JSON.parse(fs.readFileSync(p, 'utf8'));
+          if (r.strategy_variant !== 'h1_m5_pullback_v1') throw new Error('Unexpected pullback V1 report version');
+          if (!r.strategy?.includes('pullback/reconfirmation V1')) throw new Error('Missing pullback V1 strategy label');
+          if (!r.results?.baseline?.summary || !r.results?.conservative?.summary) throw new Error('Missing V1 cost scenarios');
+          if (r.strategy_parameters?.h1TrendMode !== 'strict') throw new Error('Unexpected H1 trend mode');
+          console.log('GOLD H1 M5 PULLBACK V1 BACKTEST SMOKE PASS');
+          NODE
       - run: python3 scripts/fetch-xauusd-m5.py --self-test
       - run: python3 scripts/fetch-xauusd-m5-chunk.py --self-test
       - run: python3 -m py_compile scripts/fetch-xauusd-m5-chunk.py scripts/assemble-xauusd-m5.py
