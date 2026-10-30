@@ -32,6 +32,92 @@ function baseFeatures() {
   };
 }
 
+
+function bearishFeatures() {
+  const f = baseFeatures();
+  f.h1 = { ...f.h1, close: 2488, ema20: 2490, ema50: 2495, ema200: 2510, rsi14: 40 };
+  f.m5 = { ...f.m5, ema20: 2501, ema50: 2503, rsi14: 40 };
+  Object.assign(f.recentM5.at(-1), {
+    open: 2502.5, high: 2503.5, low: 2499.5, close: 2500.5, volume: 140
+  });
+  return f;
+}
+
+function setFlatPriorRange(features) {
+  for (const bar of features.recentM5.slice(0, -1)) {
+    Object.assign(bar, { open: 2502, high: 2503, low: 2501, close: 2502.2, volume: 100 });
+  }
+  return features;
+}
+
+test('GOLD V2 accepts a valid SELL compression breakout and records positive directional distance', () => {
+  const result = buildGoldV2Setup(bearishFeatures());
+  assert.equal(result.candidate, 'SELL');
+  assert.equal(result.trend, 'DOWN');
+  assert.equal(result.setup_type, 'H1_TREND_M5_COMPRESSION_BREAKOUT');
+  assert.equal(result.diagnostics.breakout_direction, 'SELL');
+  assert.ok(result.diagnostics.breakout_distance > 0);
+  assert.ok(Math.abs(result.diagnostics.breakout_distance - 0.5) < 1e-9);
+  assert.ok(Math.abs(result.diagnostics.breakout_atr - 0.25) < 1e-9);
+  assert.equal(result.diagnostics.breakout_threshold_met, true);
+  assert.ok(result.stop_loss > result.entry_reference);
+  assert.ok(result.take_profit < result.entry_reference);
+});
+
+test('GOLD V2 rejects a BUY breakout below threshold and returns WAIT diagnostics', () => {
+  const f = baseFeatures();
+  Object.assign(f.recentM5.at(-1), {
+    open: 2502, high: 2504.5, low: 2500.5, close: 2503.3, volume: 140
+  });
+  const result = buildGoldV2Setup(f);
+  assert.equal(result.candidate, 'WAIT');
+  assert.equal(result.reason, 'breakout_trigger_filter');
+  assert.equal(result.diagnostics.breakout_direction, 'BUY');
+  assert.ok(Math.abs(result.diagnostics.breakout_distance - 0.1) < 1e-9);
+  assert.ok(Math.abs(result.diagnostics.breakout_atr - 0.05) < 1e-9);
+  assert.equal(result.diagnostics.required_breakout_atr, 0.1);
+  assert.ok(Math.abs(result.diagnostics.required_breakout_distance - 0.2) < 1e-9);
+  assert.ok(Math.abs(result.diagnostics.breakout_shortfall - 0.1) < 1e-9);
+  assert.equal(result.diagnostics.breakout_threshold_met, false);
+});
+
+test('GOLD V2 rejects a SELL breakout below threshold and returns WAIT diagnostics', () => {
+  const f = bearishFeatures();
+  Object.assign(f.recentM5.at(-1), {
+    open: 2502.5, high: 2503.5, low: 2499.5, close: 2500.9, volume: 140
+  });
+  const result = buildGoldV2Setup(f);
+  assert.equal(result.candidate, 'WAIT');
+  assert.equal(result.reason, 'breakout_trigger_filter');
+  assert.equal(result.diagnostics.breakout_direction, 'SELL');
+  assert.ok(Math.abs(result.diagnostics.breakout_distance - 0.1) < 1e-9);
+  assert.ok(Math.abs(result.diagnostics.breakout_atr - 0.05) < 1e-9);
+  assert.equal(result.diagnostics.required_breakout_atr, 0.1);
+  assert.ok(Math.abs(result.diagnostics.required_breakout_distance - 0.2) < 1e-9);
+  assert.ok(Math.abs(result.diagnostics.breakout_shortfall - 0.1) < 1e-9);
+  assert.equal(result.diagnostics.breakout_threshold_met, false);
+});
+
+test('GOLD V2 accepts BUY and SELL breakouts at the configured 0.10 ATR threshold', () => {
+  const buy = setFlatPriorRange(baseFeatures());
+  Object.assign(buy.recentM5.at(-1), {
+    open: 2502, high: 2504.5, low: 2500.5, close: 2503.2, volume: 140
+  });
+  const buyResult = buildGoldV2Setup(buy);
+  assert.equal(buyResult.candidate, 'BUY');
+  assert.ok(Math.abs(buyResult.diagnostics.breakout_atr - 0.1) < 1e-9);
+  assert.equal(buyResult.diagnostics.breakout_threshold_met, true);
+
+  const sell = setFlatPriorRange(bearishFeatures());
+  Object.assign(sell.recentM5.at(-1), {
+    open: 2502, high: 2503.5, low: 2499.5, close: 2500.8, volume: 140
+  });
+  const sellResult = buildGoldV2Setup(sell);
+  assert.equal(sellResult.candidate, 'SELL');
+  assert.ok(Math.abs(sellResult.diagnostics.breakout_atr - 0.1) < 1e-9);
+  assert.equal(sellResult.diagnostics.breakout_threshold_met, true);
+});
+
 test('GOLD V2 accepts a valid in-session compression breakout', () => {
   const result = buildGoldV2Setup(baseFeatures());
   assert.equal(result.candidate, 'BUY');
@@ -40,6 +126,10 @@ test('GOLD V2 accepts a valid in-session compression breakout', () => {
   assert.ok(result.stop_loss < result.entry_reference);
   assert.ok(result.take_profit > result.entry_reference);
   assert.equal(result.risk_reward, 2);
+  assert.equal(result.diagnostics.breakout_direction, 'BUY');
+  assert.ok(Math.abs(result.diagnostics.breakout_distance - 0.8) < 1e-9);
+  assert.ok(Math.abs(result.diagnostics.breakout_atr - 0.4) < 1e-9);
+  assert.equal(result.diagnostics.breakout_threshold_met, true);
 });
 
 test('GOLD V2 rejects a weak volume expansion', () => {
