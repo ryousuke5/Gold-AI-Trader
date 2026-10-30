@@ -258,7 +258,13 @@ string MarketSafetyKey(string suffix)
 void LoadMarketSafetyState()
 {
    string key = MarketSafetyKey("LAST_TICK_UTC");
-   if(GlobalVariableCheck(key)) g_lastObservedTickUtc = (datetime)GlobalVariableGet(key);
+   bool hasPersistedTick = GlobalVariableCheck(key);
+   if(hasPersistedTick) g_lastObservedTickUtc = (datetime)GlobalVariableGet(key);
+   else
+   {
+      g_reopenLockUntilUtc = TimeGMT() + 30 * 60;
+      Print("[GOLD MARKET SAFETY] first_startup_warmup_started duration_minutes=30");
+   }
    key = MarketSafetyKey("LAST_MID");
    if(GlobalVariableCheck(key)) g_lastAcceptedMid = GlobalVariableGet(key);
    key = MarketSafetyKey("REOPEN_LOCK_UTC");
@@ -344,7 +350,7 @@ void UpdateMarketSafety(string sym)
                  TimeHour(nowUtc) <= 23)
          {
             // First install / lost terminal state fallback around the observed Sunday reopen window.
-            g_reopenLockUntilUtc = nowUtc + MarketReopenLockMinutes * 60;
+            g_reopenLockUntilUtc = nowUtc + reopenLockMinutes * 60;
             Print("[GOLD MARKET SAFETY] first_observation_sunday_reopen_lock_started");
          }
 
@@ -756,28 +762,28 @@ void OnTimer()
    if(!BuildSignalPayload(payload))
       return;
 
-   Print("GoldAITrader V1.8: local ApiKey length=", StringLen(TrimText(ApiKey)),
+   Print("GoldAITrader V1.9: local ApiKey length=", StringLen(TrimText(ApiKey)),
          " url_length=", StringLen(TrimText(ApiBaseUrl)));
 
    if(RunAITestOnce)
    {
-      string aiTestDoneKey = "GoldAITraderV18:AI_TEST_DONE";
+      string aiTestDoneKey = "GoldAITraderV19:AI_TEST_DONE";
       if(!GlobalVariableCheck(aiTestDoneKey))
       {
          string aiTestResponse = "";
          if(PostJson("/api/gold/ai-test", payload, aiTestResponse))
          {
             GlobalVariableSet(aiTestDoneKey, TimeCurrent());
-            Print("GoldAITrader V1.7: AI test response = ", aiTestResponse);
+            Print("GoldAITrader V1.9: AI test response = ", aiTestResponse);
          }
          else
          {
-            Print("GoldAITrader V1.7: AI test request failed; will retry.");
+            Print("GoldAITrader V1.9: AI test request failed; will retry.");
          }
       }
       else
       {
-         Print("GoldAITrader V1.7: one-shot AI test already completed; normal signal mode is paused while RunAITestOnce=true.");
+         Print("GoldAITrader V1.9: one-shot AI test already completed; normal signal mode is paused while RunAITestOnce=true.");
       }
       return;
    }
