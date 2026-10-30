@@ -98,23 +98,32 @@ test('GOLD V2 rejects a SELL breakout below threshold and returns WAIT diagnosti
   assert.equal(result.diagnostics.breakout_threshold_met, false);
 });
 
-test('GOLD V2 accepts BUY and SELL breakouts at the configured 0.10 ATR threshold', () => {
+test('GOLD V2 accepts BUY and SELL at an exact binary-representable breakout threshold', () => {
+  // 0.125 ATR x 2.0 price ATR = 0.25 exactly in binary floating point.
+  // This tests the existing inclusive threshold boundary without changing
+  // production comparison logic or relying on decimal 0.10 representation.
+  const config = { breakoutAtr: 0.125 };
+
   const buy = setFlatPriorRange(baseFeatures());
   Object.assign(buy.recentM5.at(-1), {
-    open: 2502, high: 2504.5, low: 2500.5, close: 2503.2, volume: 140
+    open: 2502, high: 2504.5, low: 2500.5, close: 2503.25, volume: 140
   });
-  const buyResult = buildGoldV2Setup(buy);
+  const buyResult = buildGoldV2Setup(buy, config);
   assert.equal(buyResult.candidate, 'BUY');
-  assert.ok(Math.abs(buyResult.diagnostics.breakout_atr - 0.1) < 1e-9);
+  assert.equal(buyResult.diagnostics.required_breakout_distance, 0.25);
+  assert.equal(buyResult.diagnostics.breakout_distance, 0.25);
+  assert.equal(buyResult.diagnostics.breakout_atr, 0.125);
   assert.equal(buyResult.diagnostics.breakout_threshold_met, true);
 
   const sell = setFlatPriorRange(bearishFeatures());
   Object.assign(sell.recentM5.at(-1), {
-    open: 2502, high: 2503.5, low: 2499.5, close: 2500.8, volume: 140
+    open: 2502, high: 2503.5, low: 2499.5, close: 2500.75, volume: 140
   });
-  const sellResult = buildGoldV2Setup(sell);
+  const sellResult = buildGoldV2Setup(sell, config);
   assert.equal(sellResult.candidate, 'SELL');
-  assert.ok(Math.abs(sellResult.diagnostics.breakout_atr - 0.1) < 1e-9);
+  assert.equal(sellResult.diagnostics.required_breakout_distance, 0.25);
+  assert.equal(sellResult.diagnostics.breakout_distance, 0.25);
+  assert.equal(sellResult.diagnostics.breakout_atr, 0.125);
   assert.equal(sellResult.diagnostics.breakout_threshold_met, true);
 });
 
