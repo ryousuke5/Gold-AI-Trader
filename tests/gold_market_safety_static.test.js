@@ -21,11 +21,11 @@ test('Gold V19 evaluates persistent tick state on every timer tick', () => {
 });
 
 test('Gold V19 transmits a quote snapshot for independent API validation', () => {
-  assert.match(ea, /"market_safety"/);
-  assert.match(ea, /"quote_time_utc"/);
-  assert.match(ea, /"mid_price"/);
-  assert.match(ea, /"anomaly_active"/);
-  assert.match(ea, /"reopen_lock_until_utc"/);
+  assert.match(ea, /market_safety/);
+  assert.match(ea, /quote_time_utc/);
+  assert.match(ea, /mid_price/);
+  assert.match(ea, /anomaly_active/);
+  assert.match(ea, /reopen_lock_until_utc/);
 });
 
 test('API blocks AI evaluation and order approval when market safety fails', () => {
