@@ -488,13 +488,13 @@ export function summarizeGoldRangeAtr(rows = []) {
   const volumeCount = volumeSamples.length;
   const volumeValues = volumeSamples.map(item => item.ratio);
   const volumeThresholds = [...new Set(volumeSamples.map(item => item.threshold))];
-  const quantile = (values, q) => {
+  function quantile(values, q) {
     if (!values.length) return null;
     const position = (values.length - 1) * q;
     const low = Math.floor(position);
     const high = Math.ceil(position);
     return values[low] + (values[high] - values[low]) * (position - low);
-  };
+  }
   const belowThreshold = volumeSamples.filter(item => item.ratio < item.threshold).length;
   const volumeRatio = {
     observations: volumeCount,
