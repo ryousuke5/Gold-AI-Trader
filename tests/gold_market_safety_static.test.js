@@ -23,6 +23,11 @@ test('Gold V19 evaluates persistent tick state on every timer tick', () => {
   assert.match(ea, /first_startup_warmup_started/);
 });
 
+test('Gold V19 skips API signal requests while its local market-safety gate is blocked', () => {
+  assert.match(ea, /if\(!g_marketSafetyAllowed\)/);
+  assert.match(ea, /signal_skipped_before_api/);
+});
+
 test('Gold V19 transmits a quote snapshot for independent API validation', () => {
   assert.match(ea, /market_safety/);
   assert.match(ea, /quote_time_utc/);
