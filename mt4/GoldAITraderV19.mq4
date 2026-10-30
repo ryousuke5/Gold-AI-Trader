@@ -751,6 +751,20 @@ void OnTimer()
    if(closedBar == g_lastClosedM5Bar)
       return;
 
+   // Fail closed locally as well: do not post a signal to the currently deployed
+   // API while a market-reopen or abnormal-tick lock is active.
+   if(!g_marketSafetyAllowed)
+   {
+      g_lastClosedM5Bar = closedBar;
+      Print("[GOLD MARKET SAFETY] signal_skipped_before_api bar_open=",
+            TimeToString(closedBar, TIME_DATE|TIME_MINUTES),
+            " reason=", g_marketSafetyReason,
+            " spread=", DoubleToString(g_marketSafetySpread, 2),
+            " reopen_lock_until_utc=",
+            TimeToString(g_reopenLockUntilUtc, TIME_DATE|TIME_SECONDS));
+      return;
+   }
+
    datetime now = TimeCurrent();
 
    if(closedBar == g_lastAttemptedM5Bar &&
