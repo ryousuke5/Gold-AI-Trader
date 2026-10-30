@@ -85,6 +85,15 @@ export function buildGoldSignalDiagnosticLog({
     emergency_stopped: Boolean(state.emergency_stopped_at),
     h1,
     range_atr: numberOrNull(diagnostics.range_atr),
+    breakout_direction: boundedString(diagnostics.breakout_direction, 4),
+    breakout_distance: numberOrNull(diagnostics.breakout_distance),
+    breakout_atr: numberOrNull(diagnostics.breakout_atr),
+    required_breakout_atr: numberOrNull(diagnostics.required_breakout_atr),
+    required_breakout_distance: numberOrNull(diagnostics.required_breakout_distance),
+    breakout_shortfall: numberOrNull(diagnostics.breakout_shortfall),
+    breakout_threshold_met: typeof diagnostics.breakout_threshold_met === 'boolean'
+      ? diagnostics.breakout_threshold_met
+      : null,
     range_min_atr: numberOrNull(diagnostics.min_range_atr),
     range_max_atr: numberOrNull(diagnostics.max_range_atr),
     body_atr: numberOrNull(diagnostics.body_atr),
