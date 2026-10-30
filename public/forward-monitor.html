@@ -116,6 +116,17 @@ function reasonSummary(signals){
 }
 function rangeAtrSummary(stats){
   if(!stats||!stats.observations) return '<div class="kv"><span>Range ATR</span><b>新しい診断データ待ち</b></div>';
+  const b=stats.breakout||{};
+  const val=x=>x==null||!Number.isFinite(Number(x))?'—':Number(x).toFixed(2);
+  const breakoutHtml=b.observations
+    ? '<div class="kv" style="margin-top:8px">'+
+      '<span>ブレイク幅診断件数</span><b>'+fmt(b.observations)+'</b>'+
+      '<span>BUY / SELL</span><b>'+fmt(b.buy_count)+' / '+fmt(b.sell_count)+'</b>'+
+      '<span>Breakout ATR 平均 / 中央 / P90</span><b>'+val(b.mean_atr)+' / '+val(b.median_atr)+' / '+val(b.p90_atr)+'</b>'+
+      '<span>閾値未達 / 到達</span><b>'+fmt(b.threshold_failed_count)+' / '+fmt(b.threshold_met_count)+'</b>'+
+      '<span>突破幅 平均 / 不足幅 平均・最大</span><b>'+val(b.mean_distance)+' / '+val(b.mean_shortfall)+' / '+val(b.max_shortfall)+'</b>'+
+      '</div>'
+    : '<div class="kv" style="margin-top:8px"><span>ブレイク幅診断</span><b>対象データなし（上流フィルターで判定終了）</b></div>';
   return '<div class="kv">'+
     '<span>観測件数</span><b>'+fmt(stats.observations)+'</b>'+
     '<span>設定範囲</span><b>'+Number(stats.configured_min).toFixed(2)+' ～ '+Number(stats.configured_max).toFixed(2)+'</b>'+
@@ -124,7 +135,7 @@ function rangeAtrSummary(stats){
     '<span>下限未満</span><b>'+fmt(stats.below_min)+'</b>'+
     '<span>範囲内</span><b>'+fmt(stats.in_range)+'</b>'+
     '<span>上限超過</span><b>'+fmt(stats.above_max)+'</b>'+
-    '</div>';
+    '</div>'+breakoutHtml;
 }
 function volumeRatioSummary(stats){
   const v=stats?.volume_ratio;
