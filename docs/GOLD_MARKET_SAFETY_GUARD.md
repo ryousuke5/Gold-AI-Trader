@@ -11,7 +11,7 @@ The V18 EA remains unchanged. V19 is a separate monitor-only EA and still contai
 - Existing maximum spread remains 0.50 price units.
 - A market-data gap of at least 7,200 seconds starts a 30-minute new-entry lock from the first new quote.
 - If no prior terminal-global tick timestamp exists, V19 applies a 30-minute first-start warmup and also treats Sunday UTC 20:00–23:59 as a possible first-observation reopen window.
-- A single mid-price change greater than 1.50 price units starts tick-anomaly recovery.
+- A single mid-price change greater than 3.00 price units starts tick-anomaly recovery. V19 samples market safety every second to align the threshold with one-second quote observations.
 - Recovery requires three consecutive new quote timestamps, each within 0.50 of the prior recovery quote, and each with spread at or below 0.50.
 - Quotes older than 30 seconds, invalid quotes, UTC offset failures, and reversed tick timestamps fail closed.
 - Tick timestamps, last accepted mid, reopen lock, and anomaly recovery state are persisted in MT4 terminal Global Variables so EA restarts do not silently clear the guard.
