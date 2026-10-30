@@ -65,6 +65,14 @@ test('keeps the spread limit at 0.50 and rejects values above it', () => {
   assert.ok(result.reasons.includes('spread_too_wide'));
 });
 
+test('never allows configuration to raise the hard spread cap above 0.50', () => {
+  const wideFeatures = { ...features, ask: 4097.90, spread: 0.82 };
+  const wideSnapshot = snapshot({ mid_price: (wideFeatures.bid + wideFeatures.ask) / 2, spread_price: 0.82 });
+  const result = evaluateGoldMarketSafety(wideSnapshot, wideFeatures, { nowMs, maxSpreadPrice: 2.00 });
+  assert.equal(result.maxSpreadPrice, 0.50);
+  assert.ok(result.reasons.includes('spread_too_wide'));
+});
+
 test('blocks stale and future quote timestamps', () => {
   const stale = evaluateGoldMarketSafety(
     snapshot({ quote_time_utc: nowMs / 1000 - 45 }),
