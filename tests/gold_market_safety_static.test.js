@@ -16,6 +16,7 @@ test('Gold V19 evaluates persistent tick state on every timer tick', () => {
   assert.match(ea, /UpdateMarketSafety\(sym\);/);
   assert.match(ea, /MaxTickJumpPrice\s*=\s*1\.50/);
   assert.match(ea, /TickRecoverySamples\s*=\s*3/);
+  assert.match(ea, /TimerSeconds\\s*=\\s*1/);
   assert.match(ea, /MaxQuoteAgeSeconds\s*=\s*30/);
   assert.match(ea, /GlobalVariableSet\(MarketSafetyKey\("LAST_TICK_UTC"\)/);
 });
