@@ -268,7 +268,12 @@ void LoadMarketSafetyState()
    key = MarketSafetyKey("LAST_MID");
    if(GlobalVariableCheck(key)) g_lastAcceptedMid = GlobalVariableGet(key);
    key = MarketSafetyKey("REOPEN_LOCK_UTC");
-   if(GlobalVariableCheck(key)) g_reopenLockUntilUtc = (datetime)GlobalVariableGet(key);
+   if(GlobalVariableCheck(key))
+   {
+      datetime persistedLockUntil = (datetime)GlobalVariableGet(key);
+      if(persistedLockUntil > g_reopenLockUntilUtc)
+         g_reopenLockUntilUtc = persistedLockUntil;
+   }
    key = MarketSafetyKey("ANOMALY_ACTIVE");
    if(GlobalVariableCheck(key)) g_tickAnomalyActive = (GlobalVariableGet(key) > 0.5);
    key = MarketSafetyKey("RECOVERY_MID");
@@ -374,7 +379,7 @@ void UpdateMarketSafety(string sym)
                g_lastAcceptedMid = g_marketSafetyMid;
                g_recoveryStableCount = 0;
                Print("[GOLD MARKET SAFETY] tick_anomaly_recovered stable_ticks=",
-                     TickRecoverySamples,
+                     recoverySamplesRequired,
                      " mid=", DoubleToString(g_marketSafetyMid, digits));
             }
          }
