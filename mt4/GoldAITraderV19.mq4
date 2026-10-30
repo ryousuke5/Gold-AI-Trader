@@ -293,6 +293,13 @@ void UpdateMarketSafety(string sym)
       tickUtc = tickServerTime - offsetSeconds;
 
    int digits = (int)MarketInfo(sym, MODE_DIGITS);
+   int reopenGapSeconds = MathMax(1800, MathMin(7200, MarketReopenGapSeconds));
+   int reopenLockMinutes = MathMax(30, MarketReopenLockMinutes);
+   double maxSpreadPrice = MathMin(0.50, MathMax(0.0, MaxSpreadPrice));
+   double maxTickJumpPrice = MathMin(1.50, MathMax(0.01, MaxTickJumpPrice));
+   double recoveryBandPrice = MathMin(0.50, MathMax(0.01, TickRecoveryBandPrice));
+   int recoverySamplesRequired = MathMax(3, TickRecoverySamples);
+   int maxQuoteAgeSeconds = MathMin(30, MathMax(1, MaxQuoteAgeSeconds));
    g_marketSafetyBid = MarketInfo(sym, MODE_BID);
    g_marketSafetyAsk = MarketInfo(sym, MODE_ASK);
    g_marketSafetySpread = g_marketSafetyAsk - g_marketSafetyBid;
@@ -314,7 +321,7 @@ void UpdateMarketSafety(string sym)
       int quoteAgeSeconds = (int)(nowUtc - tickUtc);
       if(quoteAgeSeconds < -10)
          reason = "quote_time_invalid";
-      else if(quoteAgeSeconds > MaxQuoteAgeSeconds)
+      else if(quoteAgeSeconds > maxQuoteAgeSeconds)
          reason = "quote_stale";
 
       if(g_lastObservedTickUtc > 0 && tickUtc < g_lastObservedTickUtc)
@@ -323,13 +330,13 @@ void UpdateMarketSafety(string sym)
       if(tickUtc > g_lastObservedTickUtc)
       {
          if(g_lastObservedTickUtc > 0 &&
-            (tickUtc - g_lastObservedTickUtc) >= MarketReopenGapSeconds)
+            (tickUtc - g_lastObservedTickUtc) >= reopenGapSeconds)
          {
-            g_reopenLockUntilUtc = tickUtc + MarketReopenLockMinutes * 60;
+            g_reopenLockUntilUtc = tickUtc + reopenLockMinutes * 60;
             Print("[GOLD MARKET SAFETY] weekly_reopen_lock_started gap_seconds=",
                   (int)(tickUtc - g_lastObservedTickUtc),
                   " lock_until_utc=", TimeToString(g_reopenLockUntilUtc, TIME_DATE|TIME_SECONDS),
-                  " duration_minutes=", MarketReopenLockMinutes);
+                  " duration_minutes=", reopenLockMinutes);
          }
          else if(g_lastObservedTickUtc <= 0 &&
                  TimeDayOfWeek(nowUtc) == 0 &&
@@ -343,8 +350,8 @@ void UpdateMarketSafety(string sym)
 
          if(g_tickAnomalyActive)
          {
-            if(g_marketSafetySpread <= MaxSpreadPrice &&
-               MathAbs(g_marketSafetyMid - g_recoveryMid) <= TickRecoveryBandPrice)
+            if(g_marketSafetySpread <= maxSpreadPrice &&
+               MathAbs(g_marketSafetyMid - g_recoveryMid) <= recoveryBandPrice)
             {
                g_recoveryStableCount++;
                g_recoveryMid = g_marketSafetyMid;
@@ -352,10 +359,10 @@ void UpdateMarketSafety(string sym)
             else
             {
                g_recoveryMid = g_marketSafetyMid;
-               g_recoveryStableCount = (g_marketSafetySpread <= MaxSpreadPrice ? 1 : 0);
+               g_recoveryStableCount = (g_marketSafetySpread <= maxSpreadPrice ? 1 : 0);
             }
 
-            if(g_recoveryStableCount >= TickRecoverySamples)
+            if(g_recoveryStableCount >= recoverySamplesRequired)
             {
                g_tickAnomalyActive = false;
                g_lastAcceptedMid = g_marketSafetyMid;
@@ -366,16 +373,16 @@ void UpdateMarketSafety(string sym)
             }
          }
          else if(g_lastAcceptedMid > 0.0 &&
-                 MathAbs(g_marketSafetyMid - g_lastAcceptedMid) > MaxTickJumpPrice)
+                 MathAbs(g_marketSafetyMid - g_lastAcceptedMid) > maxTickJumpPrice)
          {
             g_tickAnomalyActive = true;
             g_recoveryMid = g_marketSafetyMid;
-            g_recoveryStableCount = (g_marketSafetySpread <= MaxSpreadPrice ? 1 : 0);
+            g_recoveryStableCount = (g_marketSafetySpread <= maxSpreadPrice ? 1 : 0);
             Print("[GOLD MARKET SAFETY] tick_anomaly_detected previous_mid=",
                   DoubleToString(g_lastAcceptedMid, digits),
                   " current_mid=", DoubleToString(g_marketSafetyMid, digits),
                   " jump=", DoubleToString(MathAbs(g_marketSafetyMid - g_lastAcceptedMid), digits),
-                  " threshold=", DoubleToString(MaxTickJumpPrice, digits));
+                  " threshold=", DoubleToString(maxTickJumpPrice, digits));
          }
          else
          {
@@ -390,7 +397,7 @@ void UpdateMarketSafety(string sym)
          reason = "market_reopen_lock";
       if(reason == "ok" && g_tickAnomalyActive)
          reason = "tick_anomaly_recovery";
-      if(reason == "ok" && g_marketSafetySpread > MaxSpreadPrice)
+      if(reason == "ok" && g_marketSafetySpread > maxSpreadPrice)
          reason = "spread_too_wide";
    }
 
