@@ -19,6 +19,8 @@ test('Gold V19 evaluates persistent tick state on every timer tick', () => {
   assert.match(ea, /TimerSeconds\s*=\s*1/);
   assert.match(ea, /MaxQuoteAgeSeconds\s*=\s*30/);
   assert.match(ea, /GlobalVariableSet\(MarketSafetyKey\("LAST_TICK_UTC"\)/);
+  assert.match(ea, /persistedLockUntil > g_reopenLockUntilUtc/);
+  assert.match(ea, /first_startup_warmup_started/);
 });
 
 test('Gold V19 transmits a quote snapshot for independent API validation', () => {
