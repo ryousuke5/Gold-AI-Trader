@@ -444,6 +444,35 @@ export function summarizeGoldRangeAtr(rows = []) {
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
   const count = observations.length;
+  const breakoutSamples = diagnosticRows.map(d => ({
+    direction: String(d.breakout_direction || '').toUpperCase(),
+    distance: Number(d.breakout_distance),
+    atr: Number(d.breakout_atr),
+    requiredAtr: Number(d.required_breakout_atr),
+    requiredDistance: Number(d.required_breakout_distance),
+    shortfall: Number(d.breakout_shortfall),
+    thresholdMet: typeof d.breakout_threshold_met === 'boolean' ? d.breakout_threshold_met : null
+  })).filter(item =>
+    ['BUY', 'SELL'].includes(item.direction) &&
+    [item.distance, item.atr, item.requiredAtr, item.requiredDistance, item.shortfall].every(Number.isFinite)
+  );
+  const breakoutAtrValues = breakoutSamples.map(item => item.atr).sort((a, b) => a - b);
+  const breakoutDistanceValues = breakoutSamples.map(item => item.distance).sort((a, b) => a - b);
+  const breakoutShortfalls = breakoutSamples.map(item => item.shortfall).sort((a, b) => a - b);
+  const breakout = {
+    observations: breakoutSamples.length,
+    buy_count: breakoutSamples.filter(item => item.direction === 'BUY').length,
+    sell_count: breakoutSamples.filter(item => item.direction === 'SELL').length,
+    threshold_met_count: breakoutSamples.filter(item => item.thresholdMet === true).length,
+    threshold_failed_count: breakoutSamples.filter(item => item.thresholdMet === false).length,
+    mean_atr: breakoutAtrValues.length ? breakoutAtrValues.reduce((sum, value) => sum + value, 0) / breakoutAtrValues.length : null,
+    median_atr: quantile(breakoutAtrValues, 0.5),
+    p90_atr: quantile(breakoutAtrValues, 0.9),
+    mean_distance: breakoutDistanceValues.length ? breakoutDistanceValues.reduce((sum, value) => sum + value, 0) / breakoutDistanceValues.length : null,
+    mean_shortfall: breakoutShortfalls.length ? breakoutShortfalls.reduce((sum, value) => sum + value, 0) / breakoutShortfalls.length : null,
+    max_shortfall: breakoutShortfalls.length ? breakoutShortfalls[breakoutShortfalls.length - 1] : null,
+    required_atr_values: [...new Set(breakoutSamples.map(item => item.requiredAtr))]
+  };
   const volumeSamples = diagnosticRows.map(d => {
     const ratio = Number(d.volume_ratio);
     const threshold = Number(d.min_volume_ratio);
@@ -516,7 +545,8 @@ export function summarizeGoldRangeAtr(rows = []) {
     above_max: observations.filter(value => value > maxBound).length,
     configured_min: minBound,
     configured_max: maxBound,
-    volume_ratio: volumeRatio
+    volume_ratio: volumeRatio,
+    breakout
   };
 }
 
