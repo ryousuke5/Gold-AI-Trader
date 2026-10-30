@@ -30,7 +30,10 @@ export function evaluateGoldMarketSafety(
 ) {
   const reasons = [];
   const nowSeconds = Number(nowMs) / 1000;
-  const spreadLimit = Number(maxSpreadPrice);
+  const requestedSpreadLimit = Number(maxSpreadPrice);
+  const spreadLimit = Number.isFinite(requestedSpreadLimit)
+    ? Math.min(DEFAULT_MAX_SPREAD_PRICE, requestedSpreadLimit)
+    : Number.NaN;
   const maxAge = Number(maxQuoteAgeSeconds);
 
   if (!Number.isFinite(nowSeconds) || nowSeconds <= 0) reasons.push('server_clock_invalid');
