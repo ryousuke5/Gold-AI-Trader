@@ -7,9 +7,9 @@
 // This EA records hypothetical entries/exits only. It contains no order API.
 
 input string ExpectedSymbol = "GOLD#";
-input int    MaxM5HistoryBars = 30000;
-input int    MinH4Bars = 260;
-input int    MinH1Bars = 100;
+input int    MaxM5HistoryBars = 60000;
+input int    MinH4Bars = 1000;
+input int    MinH1Bars = 1000;
 input int    MaxEntryDelaySeconds = 30;
 input bool   RequireDemoAccount = true;
 input bool   EnableEventCsv = true;
@@ -650,13 +650,16 @@ int OnInit()
       Print("H4H1PR01 refused to start: attach this research monitor to an XM DEMO account only.");
       return INIT_FAILED;
    }
-   if(!CurrentOffsetMatchesSchedule())
-   {
-      Print("H4H1PR01 refused to start: current MT4 server offset does not match the assumed UTC+2/UTC+3 EU DST schedule.");
-      return INIT_FAILED;
-   }
    g_prefix = "H4H1PR01_"+IntegerToString(AccountNumber())+"_"+Symbol()+"_";
    if(!OpenEventLog()) return INIT_FAILED;
+   // TimeCurrent() can be stale while markets are closed. Start safely in a
+   // blocked state and resume only after a fresh chart tick confirms the offset.
+   g_offsetGuardBlocked = !CurrentOffsetMatchesSchedule();
+   if(g_offsetGuardBlocked)
+      LogRow("MONITOR_BLOCKED","WAITING_FOR_FRESH_SERVER_UTC_OFFSET_CONFIRMATION",0,0,0,
+             EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
+             EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
+             EMPTY_DBL,EMPTY_DBL,0,0);
    LoadPersistentState();
 
    datetime nowUtc=TimeGMT();
@@ -698,7 +701,13 @@ void OnTick()
       }
       return;
    }
+   bool offsetWasBlocked = g_offsetGuardBlocked;
    g_offsetGuardBlocked=false;
+   if(offsetWasBlocked)
+      LogRow("MONITOR_RESUMED","FRESH_SERVER_UTC_OFFSET_CONFIRMED",0,0,0,
+             EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
+             EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
+             EMPTY_DBL,EMPTY_DBL,0,0);
    if(Bid<=0 || Ask<=Bid) return;
    datetime nowUtc=TimeGMT();
    datetime currentHourUtc=nowUtc-(nowUtc%H1_SECONDS);
