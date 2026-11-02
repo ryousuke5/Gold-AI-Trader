@@ -5,6 +5,8 @@
 凍結済み `H4_H1PR_01` の条件を、XMデモ口座のGOLD#チャートで**発注せず**に監視し、仮想エントリー・仮想決済を記録する研究用EAです。手動プローブEAとは別物です。
 
 - `OrderSend` / `OrderClose` / `OrderModify` などの発注APIを含みません。
+- H4 EMA200の初期値依存を抑えるため、初期値はM5履歴60,000本・完全なUTC H4足1,000本以上を要求します。MT4側に必要な履歴が不足する場合は監視を開始せず、履歴が揃うまで待機します。
+- 週末など `TimeCurrent()` が古く、現在のサーバーUTC+2/+3時差を確認できない状態でも初期化は可能です。ただし、時差確認が通る最初の新しいGOLD#ティックまで `MONITOR_BLOCKED` として監視・シグナル処理を停止します。
 - デフォルトでデモ口座のみを許可し、チャート銘柄は `GOLD#` に固定します。
 - MT4の完了済みM5 BID足からUTC基準のH1/H4を再構築します。H1/H4のサーバー足をそのまま使いません。
 - 不完全なM5集合、DST切替の曖昧な時間帯、UTC足境界と一致しないエントリーは除外し、理由を記録します。
@@ -33,7 +35,7 @@ MT4の履歴時刻からUTCへの変換は、XMサーバーが冬UTC+2／夏UTC+
 1. XMデモ口座のMT4のみを使います。
 2. 「ファイル → データフォルダを開く → MQL4 → Experts」に `GOLD_H4_H1PR01_VirtualMonitor.mq4` を配置します。
 3. MetaEditorでコンパイルします。コンパイルエラーがあればEAを起動せず、エラー全文を確認します。
-4. `GOLD#` チャートに添付します。 `RequireDemoAccount=true` のままにします。
+4. `GOLD#` チャートに添付します。 `RequireDemoAccount=true` のままにします。週末に添付した場合は、最初の新しいGOLD#ティックで時差確認が通るまで `MONITOR_BLOCKED` になります。
 5. Expertsログで「Virtual entries only」「No trading functions」の起動メッセージを確認します。
 6. `MQL4/Files/GOLD_H4_H1PR01_ForwardEvents.csv` に `MONITOR_START`、`SIGNAL_CHECK`、`VIRTUAL_ENTRY`、`VIRTUAL_EXIT` 等が出力されます。 `quote_based_R_pre_fee` はBid/Askに基づく仮想Rで、スリッページ・手数料・スワップ控除前です。
 
@@ -42,6 +44,8 @@ MT4の履歴時刻からUTCへの変換は、XMサーバーが冬UTC+2／夏UTC+
 ## 最初の受入確認
 
 - MetaEditorのコンパイル成功（警告も保存）。
+- `MONITOR_BLOCKED` の場合は、最初の新しいティックで `MONITOR_RESUMED` が出てから監視が始まること。
+- 完全なUTC H4足が1,000本以上再構築されていること（初期設定）。
 - Expertsログでデモ口座ガード・銘柄ガードが通過。
 - イベントCSVに時刻・UTC/サーバー時差・Bid/Ask/Spreadが出力。
 - 最初の起動時に過去シグナルを遡って仮想エントリーしない。
