@@ -364,7 +364,7 @@ function renderGoldMarketSafety(s){
     '<div class="diag-foot">最新理由: '+esc(s?.reason||'—')+' / API確認理由: '+esc(reasons)+
     ' / サーバー再起動後は次のV19ハートビート受信まで「未受信」になります。画面表示は監視用で、安全判定そのものはV19とAPI側で実施します。</div>';
 }
-function renderDiagnostics(d,system){function renderDiagnostics(d,system){
+function renderDiagnostics(d,system){
   const root=document.getElementById('diagnostics');
   if(!d){root.innerHTML='<h2>GOLD API 診断</h2><div class="meta">診断データがありません。サーバーを更新してください。</div>';return;}
   const c=d.counters||{},r=d.latest_request||null,s=d.latest_signal||null,t=d.latest_time_rejection||null;
