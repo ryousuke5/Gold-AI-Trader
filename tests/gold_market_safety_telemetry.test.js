@@ -44,6 +44,11 @@ test('records a fresh, valid V19 safety heartbeat as ALLOWED', () => {
   assert.equal(result.freshness, 'FRESH');
   assert.equal(result.display_allowed, true);
   assert.equal(result.spread_price, 0.28);
+  assert.equal(accepted.state_changed, true);
+  const repeated = recordGoldMarketSafetyHeartbeat({
+    symbol: 'GOLD#', marketSafety: marketSafety(), features, nowMs: nowMs + 10_000
+  });
+  assert.equal(repeated.state_changed, false);
 });
 
 test('shows a valid local market lock as BLOCKED rather than a telemetry failure', () => {

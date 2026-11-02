@@ -40,6 +40,14 @@ export function recordGoldMarketSafetyHeartbeat({
   const status = reportedAllowed
     ? (validation.allowed ? 'ALLOWED' : 'API_CHECK_FAILED')
     : 'BLOCKED';
+  const reason = String(snapshot?.reason || (snapshot ? 'unknown' : 'market_safety_missing'));
+  const anomalyActive = typeof snapshot?.anomaly_active === 'boolean' ? snapshot.anomaly_active : null;
+  const stableTickCount = Number.isInteger(Number(snapshot?.stable_tick_count))
+    ? Number(snapshot.stable_tick_count)
+    : null;
+  const stateChanged = !latestSnapshot || latestSnapshot.status !== status ||
+    latestSnapshot.reason !== reason || latestSnapshot.reported_allowed !== reportedAllowed ||
+    latestSnapshot.anomaly_active !== anomalyActive || latestSnapshot.stable_tick_count !== stableTickCount;
 
   latestSnapshot = {
     symbol: safeSymbol,
@@ -48,17 +56,15 @@ export function recordGoldMarketSafetyHeartbeat({
     status,
     reported_allowed: reportedAllowed,
     api_validation_allowed: validation.allowed,
-    reason: String(snapshot?.reason || (snapshot ? 'unknown' : 'market_safety_missing')),
+    reason,
     quote_time_utc: numberOrNull(snapshot?.quote_time_utc),
     quote_age_seconds: validation.quoteAgeSeconds,
     mid_price: numberOrNull(snapshot?.mid_price),
     spread_price: numberOrNull(snapshot?.spread_price),
     bid: numberOrNull(quoteFeatures.bid),
     ask: numberOrNull(quoteFeatures.ask),
-    stable_tick_count: Number.isInteger(Number(snapshot?.stable_tick_count))
-      ? Number(snapshot.stable_tick_count)
-      : null,
-    anomaly_active: typeof snapshot?.anomaly_active === 'boolean' ? snapshot.anomaly_active : null,
+    stable_tick_count: stableTickCount,
+    anomaly_active: anomalyActive,
     reopen_lock_until_utc: numberOrNull(snapshot?.reopen_lock_until_utc),
     api_validation_reasons: validation.reasons
   };
@@ -66,6 +72,7 @@ export function recordGoldMarketSafetyHeartbeat({
   return {
     ok: true,
     status,
+    state_changed: stateChanged,
     reported_allowed: reportedAllowed,
     api_validation_allowed: validation.allowed,
     api_validation_reasons: validation.reasons

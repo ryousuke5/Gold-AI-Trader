@@ -129,7 +129,7 @@ app.post('/api/gold/market-safety',auth,(req,res)=>{
       features:body.features,
       nowMs:Date.now()
     });
-    console.log('[GOLD MARKET SAFETY HEARTBEAT] '+JSON.stringify({symbol,status:result.status,reported_allowed:result.reported_allowed,api_validation_allowed:result.api_validation_allowed,reasons:result.api_validation_reasons,received_at:nowIso()}));
+    if(result.state_changed)console.log('[GOLD MARKET SAFETY STATE] '+JSON.stringify({symbol,status:result.status,reported_allowed:result.reported_allowed,api_validation_allowed:result.api_validation_allowed,reasons:result.api_validation_reasons,received_at:nowIso()}));
     res.set('Cache-Control','no-store');
     res.json(result);
   } catch(error) {
