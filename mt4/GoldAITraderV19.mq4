@@ -745,7 +745,7 @@ bool BuildSafetyHeartbeatPayload(string sym, string &payload)
 }
 
 //---------------------------------------------------------
-// Reject non-retryable stale-bar responses from the API.//---------------------------------------------------------
+//---------------------------------------------------------
 // Reject non-retryable stale-bar responses from the API.
 // The same completed M5 candle can never become newer, so retrying it every
 // 30 seconds only adds noise. Keep transient HTTP/network failures retryable.

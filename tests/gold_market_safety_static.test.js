@@ -63,5 +63,6 @@ test('Forward Monitor shows V19 safety heartbeat and no longer labels Gold V18',
   const monitor = readFileSync(new URL('../public/forward-monitor.html', import.meta.url), 'utf8');
   assert.match(monitor, /GOLD V19 市場安全ゲート/);
   assert.match(monitor, /gold_market_safety/);
+  assert.ok(monitor.indexOf("cardMarket(g.symbols") < monitor.indexOf("cardMarket(e.symbol"));
   assert.doesNotMatch(monitor, /現在のGold V18/);
 });
