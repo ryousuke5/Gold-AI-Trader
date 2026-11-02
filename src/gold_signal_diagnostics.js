@@ -87,6 +87,8 @@ export function buildGoldSignalDiagnosticLog({
     range_atr: numberOrNull(diagnostics.range_atr),
     range_min_atr: numberOrNull(diagnostics.min_range_atr),
     range_max_atr: numberOrNull(diagnostics.max_range_atr),
+    breakout_atr: numberOrNull(diagnostics.breakout_atr),
+    breakout_threshold_atr: numberOrNull(diagnostics.breakout_threshold_atr),
     body_atr: numberOrNull(diagnostics.body_atr),
     close_location: numberOrNull(diagnostics.close_location),
     signal_volume: numberOrNull(diagnostics.signal_volume),

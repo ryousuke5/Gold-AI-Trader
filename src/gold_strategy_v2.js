@@ -117,6 +117,10 @@ export function buildGoldV2Setup(features = {}, config = {}) {
 
   const breakoutDistanceUp = signal.close - range.high;
   const breakoutDistanceDown = range.low - signal.close;
+  // Diagnostic-only: positive means the close cleared the range in the H1 direction;
+  // negative means it remains inside/on the wrong side of that range boundary.
+  rangeDiagnostics.breakout_atr = (trendUp ? breakoutDistanceUp : breakoutDistanceDown) / m5.atr14;
+  rangeDiagnostics.breakout_threshold_atr = cfg.breakoutAtr;
 
   if (trendUp) {
     if (breakoutDistanceUp < cfg.breakoutAtr * m5.atr14) {
@@ -185,8 +189,7 @@ export function buildGoldV2Setup(features = {}, config = {}) {
       hour_utc: hour,
       range_high: range.high,
       range_low: range.low,
-      stop_atr: stopAtr,
-      breakout_atr: side === 'BUY' ? breakoutDistanceUp / m5.atr14 : breakoutDistanceDown / m5.atr14
+      stop_atr: stopAtr
     },
     reason: 'trend_compression_breakout_confirmed'
   };
