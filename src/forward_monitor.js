@@ -9,6 +9,7 @@ import {
 } from './db.js';
 import { getEurUsdForwardConfig, summarizeEurUsdForwardTrades } from './eurusd_forward.js';
 import { getEurUsdNewsFeedState } from './eurusd_news_feed.js';
+import { getGoldMarketSafetyTelemetrySnapshot } from './gold_market_safety_telemetry.js';
 import { getGoldDiagnosticSnapshot } from './gold_diagnostics.js';
 
 export const EURUSD_DIAGNOSTIC_SYMBOL = 'EURUSD#';
@@ -617,6 +618,7 @@ export async function buildForwardMonitorSnapshot(nowMs = Date.now()) {
       },
       gold_state: state || null,
       gold_diagnostics: getGoldDiagnosticSnapshot(nowMs),
+      gold_market_safety: getGoldMarketSafetyTelemetrySnapshot({ nowMs }),
       signal_engines: {
         eurusd: {
           enabled: true,
