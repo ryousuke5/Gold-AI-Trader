@@ -41,9 +41,9 @@ test('GOLD V2 accepts a valid in-session compression breakout', () => {
   assert.ok(result.take_profit > result.entry_reference);
   assert.equal(result.risk_reward, 2);
   // The range uses the 12 prior bars (not the signal candle): (2503.2 - 2501.0) / 2.0 = 1.1.
-  assert.equal(result.diagnostics.range_width, 2.2);
+  assert.ok(Math.abs(result.diagnostics.range_width - 2.2) < 1e-9);
   assert.equal(result.diagnostics.m5_atr, 2.0);
-  assert.equal(result.diagnostics.range_atr, 1.1);
+  assert.ok(Math.abs(result.diagnostics.range_atr - 1.1) < 1e-9);
 });
 
 test('GOLD V2 accepts a valid in-session SELL compression breakout', () => {
@@ -76,7 +76,7 @@ test('GOLD V2 reports directional breakout ATR when the breakout gate rejects a 
   const result = buildGoldV2Setup(f);
   assert.equal(result.candidate, 'WAIT');
   assert.equal(result.reason, 'breakout_trigger_filter');
-  assert.equal(result.diagnostics.breakout_atr, 0.05);
+  assert.ok(Math.abs(result.diagnostics.breakout_atr - 0.05) < 1e-9);
   assert.equal(result.diagnostics.breakout_threshold_atr, 0.10);
 });
 
