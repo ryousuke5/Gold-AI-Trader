@@ -4,7 +4,7 @@
 
 **REJECT the frozen V3 first-pass configuration for this IS screen. Do not proceed to OOS and do not merge/deploy V3 as a trading strategy.** The candidate frequency increased substantially, but the entry hypothesis did not produce positive expectancy even before modeled costs and deteriorated sharply under the observed-spread cost assumption.
 
-This is a preliminary independent reproduction of the frozen V3 rules, not a CI result and not yet an execution of the checked-in Node replay command. Re-run the repository script below to reproduce before treating these figures as a formal release artifact.
+This is a preliminary independent reproduction of the frozen V3 rules, not yet an execution of the checked-in Node replay command. The V3 source module and its six focused unit tests were copied from the research branch into an isolated Node.js v22.16.0 harness: **6/6 tests passed**. The full repository test suite, checked-in Node replay builder, and GitHub CI have not yet been run. Re-run the repository script below to reproduce the performance figures before treating them as a formal release artifact.
 
 ## Dataset and period
 
@@ -59,7 +59,7 @@ As a simple risk illustration, compounding 0.25% current-equity risk per trade w
 3. The source preparation removed inactive flat zero-volume M5 bars. Complete-hour H1 aggregation excludes any hour with one or more missing M5 bars; this can bias which market hours enter the trend series.
 4. OHLC replay cannot know intrabar ordering; conservative stop-first handling is used when both target and stop are touched.
 5. Swap/financing and account-specific commissions are not modeled.
-6. Results below are an independent local reproduction of the frozen V3 rules. The checked-in Node builder, tests, and report commands have not yet been executed in a GitHub runner in this task. GitHub reported no commit status checks for this PR at review time.
+6. Performance figures are an independent local reproduction of the frozen V3 rules. The focused V3 unit tests pass, but the full repository test suite, checked-in Node replay builder/report commands, and GitHub CI have not run in this task. GitHub reported no commit status checks for this PR at review time.
 
 ## Reproduction with the checked-in Node replay
 
