@@ -27,7 +27,10 @@ jobs:
           python -m py_compile research/gold_h4_h1_cost_validation/demo/summarize_demo_execution_costs.py
           python -m py_compile research/gold_h4_h1_cost_validation/demo/test_demo_cost_summarizer.py
           python -m py_compile research/gold_h4_h1_cost_validation/demo/test_logger_safety.py
+          python -m py_compile research/gold_h4_h1_cost_validation/forward/test_virtual_monitor_safety.py
       - name: Test demo cost aggregation with synthetic records
         run: python research/gold_h4_h1_cost_validation/demo/test_demo_cost_summarizer.py
       - name: Check demo logger safety guards
         run: python research/gold_h4_h1_cost_validation/demo/test_logger_safety.py
+      - name: Check virtual monitor has no order APIs
+        run: python research/gold_h4_h1_cost_validation/forward/test_virtual_monitor_safety.py
