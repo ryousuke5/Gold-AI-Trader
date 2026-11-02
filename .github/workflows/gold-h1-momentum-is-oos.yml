@@ -1,0 +1,258 @@
+name: GOLD H1 Momentum Persistence — IS Selection and Frozen OOS
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [research/gold-h1-momentum-persistence]
+    paths:
+      - '.github/workflows/gold-h1-momentum-is-oos.yml'
+      - 'config/gold-h1-momentum-candidates.json'
+      - 'scripts/backtest-gold-h1-momentum.py'
+      - 'tests/test_gold_h1_momentum.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: gold-h1-momentum-is-oos
+  cancel-in-progress: true
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout isolated research branch
+        uses: actions/checkout@v4
+
+      - name: Test research code and frozen candidate grid
+        run: |
+          python3 -m py_compile scripts/backtest-gold-h1-momentum.py
+          python3 -m unittest discover -s tests -p 'test_gold_h1_momentum.py' -v
+
+      - name: Resolve latest successful five-year data artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          source_run=""
+          runs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/gold-v2-research.yml/runs?status=success&per_page=30" --jq '.workflow_runs[] | select(.conclusion == "success") | .id')
+          while read -r candidate; do
+            [ -n "$candidate" ] || continue
+            count=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$candidate/artifacts?per_page=100" --jq '[.artifacts[] | select(.name == "gold-xauusd-m5-1825d" and .expired == false)] | length')
+            if [ "$count" -gt 0 ]; then source_run="$candidate"; break; fi
+          done <<< "$runs"
+          if [ -z "$source_run" ]; then
+            echo "No unexpired five-year gold-xauusd-m5-1825d artifact was found from a successful gold-v2-research.yml run." >&2
+            exit 1
+          fi
+          echo "SOURCE_RUN_ID=$source_run" >> "$GITHUB_ENV"
+          echo "Using successful source data run: $source_run"
+
+      - name: Download and validate fixed five-year dataset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh run download "$SOURCE_RUN_ID" --name gold-xauusd-m5-1825d --dir gold-xauusd-data
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('gold-xauusd-data/xauusd_m5_manifest.json')
+          m=json.loads(p.read_text())
+          assert m.get('requested_start_date_utc') == '2021-10-06', m
+          assert m.get('requested_end_date_exclusive_utc') == '2026-10-05', m
+          assert int(m.get('m5_rows',0)) >= 200000, m
+          print(json.dumps({k:m.get(k) for k in ('requested_start_date_utc','requested_end_date_exclusive_utc','m5_rows','output_sha256')},indent=2))
+          PY
+
+      - name: Evaluate all nine candidates on IS only (baseline and conservative costs)
+        run: |
+          set -euo pipefail
+          mkdir -p output/is
+          while IFS=' ' read -r candidate_id lookback threshold; do
+            echo "IS candidate: $candidate_id"
+            python3 scripts/backtest-gold-h1-momentum.py \
+              --data gold-xauusd-data/xauusd-m5.json.gz \
+              --start 2021-10-06T00:00:00Z --end 2024-10-06T00:00:00Z \
+              --lookback "$lookback" --threshold "$threshold" \
+              --spread 0.30 --slippage 0.05 --out "output/is/$candidate_id/baseline.json"
+            python3 scripts/backtest-gold-h1-momentum.py \
+              --data gold-xauusd-data/xauusd-m5.json.gz \
+              --start 2021-10-06T00:00:00Z --end 2024-10-06T00:00:00Z \
+              --lookback "$lookback" --threshold "$threshold" \
+              --spread 0.55 --slippage 0.10 --out "output/is/$candidate_id/conservative.json"
+          done < <(python3 - <<'PY'
+          import json
+          for c in json.load(open('config/gold-h1-momentum-candidates.json')):
+            print(c['id'], c['lookback_h1'], c['momentum_threshold'])
+          PY
+          )
+
+      - name: Select candidate from IS only and freeze its parameters
+        id: freeze
+        run: |
+          python3 - <<'PY'
+          import csv,json,os
+          from pathlib import Path
+          grid=json.loads(Path('config/gold-h1-momentum-candidates.json').read_text())
+          scores=[]
+          def pass_annual_blocks(summary):
+            blocks=list(summary.get('predeclared_annual_blocks',{}).values())
+            covered=[b for b in blocks if b.get('trades',0)>=10]
+            positive=sum(1 for b in covered if b.get('expectancy_R',0)>0)
+            return len(blocks)==3 and len(covered)==3 and positive>=2, positive, len(covered)
+          for c in grid:
+            base=json.loads((Path('output/is')/c['id']/'baseline.json').read_text())['summary']
+            stress=json.loads((Path('output/is')/c['id']/'conservative.json').read_text())['summary']
+            annual_ok,positive_years,covered_years=pass_annual_blocks(base)
+            base_ok=(base['trades']>=100 and base['profit_factor']>=1.05 and base['expectancy_R']>=0.02 and base['max_drawdown_R']<=20 and annual_ok)
+            stress_ok=(stress['trades']>=100 and stress['profit_factor']>=1.0 and stress['expectancy_R']>0 and stress['max_drawdown_R']<=20)
+            row={
+              'candidate_id':c['id'],'lookback_h1':c['lookback_h1'],'momentum_threshold':c['momentum_threshold'],
+              'baseline':{k:base[k] for k in ('trades','profit_factor','expectancy_R','max_drawdown_R','net_R')},
+              'conservative':{k:stress[k] for k in ('trades','profit_factor','expectancy_R','max_drawdown_R','net_R')},
+              'positive_annual_blocks':positive_years,'annual_blocks_with_10plus_trades':covered_years,
+              'baseline_pass':base_ok,'conservative_pass':stress_ok,'is_screen_passed':base_ok and stress_ok
+            }
+            scores.append(row)
+          passed=[x for x in scores if x['is_screen_passed']]
+          # Selection score is conservative-cost expectancy; deterministic tie-breakers were fixed in advance.
+          passed.sort(key=lambda x:(-x['conservative']['expectancy_R'],-x['conservative']['profit_factor'],x['conservative']['max_drawdown_R'],-x['conservative']['trades'],x['candidate_id']))
+          selected=passed[0] if passed else None
+          out={
+            'protocol':'GOLD_H1_MOMENTUM_IS_FROZEN_OOS_v1',
+            'dataset':'Dukascopy XAUUSD M5 BID, fixed 2021-10-06 through 2026-10-05 exclusive; not XM broker-native history',
+            'is_window':'2021-10-06T00:00:00Z inclusive to 2024-10-06T00:00:00Z exclusive',
+            'candidate_grid_size':len(scores),
+            'costs':{'baseline':{'spread_price':0.30,'slippage_each_side':0.05},'conservative':{'spread_price':0.55,'slippage_each_side':0.10}},
+            'selection_rule':'Only candidates passing all predeclared IS baseline, annual-block, drawdown and conservative-cost gates are eligible. Rank by conservative expectancy, then PF, lower DD, more trades, candidate ID. OOS never used for selection.',
+            'is_screen_passed':bool(selected),'selected':selected,'candidate_scores':scores,
+            'oos_window':'2024-10-06T00:00:00Z inclusive to 2026-10-05T00:00:00Z exclusive'
+          }
+          root=Path('output/selection'); root.mkdir(parents=True,exist_ok=True)
+          (root/'is_frozen_selection.json').write_text(json.dumps(out,indent=2))
+          with (root/'is_candidate_scores.csv').open('w',newline='') as f:
+            fields=['candidate_id','lookback_h1','momentum_threshold','baseline_trades','baseline_pf','baseline_expectancy_R','baseline_max_drawdown_R','conservative_trades','conservative_pf','conservative_expectancy_R','conservative_max_drawdown_R','positive_annual_blocks','annual_blocks_with_10plus_trades','is_screen_passed']
+            w=csv.DictWriter(f,fieldnames=fields); w.writeheader()
+            for x in scores:
+              w.writerow({'candidate_id':x['candidate_id'],'lookback_h1':x['lookback_h1'],'momentum_threshold':x['momentum_threshold'],
+                'baseline_trades':x['baseline']['trades'],'baseline_pf':x['baseline']['profit_factor'],'baseline_expectancy_R':x['baseline']['expectancy_R'],'baseline_max_drawdown_R':x['baseline']['max_drawdown_R'],
+                'conservative_trades':x['conservative']['trades'],'conservative_pf':x['conservative']['profit_factor'],'conservative_expectancy_R':x['conservative']['expectancy_R'],'conservative_max_drawdown_R':x['conservative']['max_drawdown_R'],
+                'positive_annual_blocks':x['positive_annual_blocks'],'annual_blocks_with_10plus_trades':x['annual_blocks_with_10plus_trades'],'is_screen_passed':x['is_screen_passed']})
+          print(json.dumps({'is_screen_passed':out['is_screen_passed'],'selected':selected,'candidate_scores':scores},indent=2))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write(f"is_passed={str(bool(selected)).lower()}\n")
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+            f.write('# GOLD H1 Momentum — IS candidate selection\n\n')
+            f.write('IS only; no OOS values used during selection.\n\n')
+            f.write('| Candidate | Baseline n | Baseline PF | Baseline E (R) | Conservative PF | Conservative E (R) | Positive annual blocks | IS pass |\n|---|---:|---:|---:|---:|---:|---:|---|\n')
+            for x in scores:
+              f.write(f"| {x['candidate_id']} | {x['baseline']['trades']} | {x['baseline']['profit_factor']:.3f} | {x['baseline']['expectancy_R']:.3f} | {x['conservative']['profit_factor']:.3f} | {x['conservative']['expectancy_R']:.3f} | {x['positive_annual_blocks']}/3 | {'PASS' if x['is_screen_passed'] else 'FAIL'} |\n")
+            f.write('\n**Frozen IS result:** '+('Candidate selected: '+selected['candidate_id'] if selected else 'NO CANDIDATE PASSED IS; OOS not run.')+'\n')
+          PY
+
+      - name: Run one frozen candidate on OOS under baseline costs
+        if: steps.freeze.outputs.is_passed == 'true'
+        run: |
+          read -r lookback threshold < <(python3 - <<'PY'
+          import json
+          s=json.load(open('output/selection/is_frozen_selection.json'))['selected']
+          print(s['lookback_h1'],s['momentum_threshold'])
+          PY
+          )
+          python3 scripts/backtest-gold-h1-momentum.py --data gold-xauusd-data/xauusd-m5.json.gz \
+            --start 2024-10-06T00:00:00Z --end 2026-10-05T00:00:00Z \
+            --lookback "$lookback" --threshold "$threshold" --spread 0.30 --slippage 0.05 --out output/oos/baseline.json
+
+      - name: Run the same frozen OOS candidate under conservative costs
+        if: steps.freeze.outputs.is_passed == 'true'
+        run: |
+          read -r lookback threshold < <(python3 - <<'PY'
+          import json
+          s=json.load(open('output/selection/is_frozen_selection.json'))['selected']
+          print(s['lookback_h1'],s['momentum_threshold'])
+          PY
+          )
+          python3 scripts/backtest-gold-h1-momentum.py --data gold-xauusd-data/xauusd-m5.json.gz \
+            --start 2024-10-06T00:00:00Z --end 2026-10-05T00:00:00Z \
+            --lookback "$lookback" --threshold "$threshold" --spread 0.55 --slippage 0.10 --out output/oos/conservative.json
+
+      - name: Run the same frozen OOS candidate under stress costs
+        if: steps.freeze.outputs.is_passed == 'true'
+        run: |
+          read -r lookback threshold < <(python3 - <<'PY'
+          import json
+          s=json.load(open('output/selection/is_frozen_selection.json'))['selected']
+          print(s['lookback_h1'],s['momentum_threshold'])
+          PY
+          )
+          python3 scripts/backtest-gold-h1-momentum.py --data gold-xauusd-data/xauusd-m5.json.gz \
+            --start 2024-10-06T00:00:00Z --end 2026-10-05T00:00:00Z \
+            --lookback "$lookback" --threshold "$threshold" --spread 0.75 --slippage 0.10 --out output/oos/stress.json
+
+      - name: Publish final acceptance report without OOS reselection
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path('output/selection'); p=root/'is_frozen_selection.json'
+          if not p.exists():
+            raise SystemExit('Frozen IS selection artifact missing')
+          sel=json.loads(p.read_text())
+          final={'protocol':sel['protocol'],'is_screen_passed':sel['is_screen_passed'],'selected':sel['selected'],'oos':None,'acceptance_gates':{},'all_gates_passed':False}
+          lines=['# GOLD H1 Momentum — Frozen IS / OOS result','Research-only. No production thresholds, Render services, Supabase data, or live-order gates were changed.','',
+            'Data: Dukascopy XAUUSD M5 BID; not XM GOLD# native historical BID/ASK. Costs are modeled; actual slippage and swap/financing are not observed here.','',
+            'IS: [2021-10-06, 2024-10-06) UTC. OOS: [2024-10-06, 2026-10-05) UTC.','']
+          if not sel['is_screen_passed']:
+            lines += ['## Result: NO CANDIDATE PASSED IS','OOS was deliberately not evaluated. The strategy version is rejected without tuning thresholds against OOS.']
+          else:
+            summaries={}
+            for name in ('baseline','conservative','stress'):
+              rp=Path('output/oos')/(name+'.json')
+              if rp.exists():
+                data=json.loads(rp.read_text()); summaries[name]=data['summary']
+            final['oos']={k:{x:v[k] for x in ('trades','profit_factor','expectancy_R','max_drawdown_R','net_R')} for k,v in summaries.items()}
+            base=summaries.get('baseline',{}); cons=summaries.get('conservative',{}); stress=summaries.get('stress',{})
+            gates={
+              'baseline_trades_ge_50':base.get('trades',0)>=50,
+              'baseline_PF_ge_1_10':base.get('profit_factor',0)>=1.10,
+              'baseline_expectancy_positive':base.get('expectancy_R',-1)>0,
+              'baseline_maxDD_le_20R':base.get('max_drawdown_R',999)<=20,
+              'conservative_PF_ge_1':cons.get('profit_factor',0)>=1,
+              'conservative_expectancy_positive':cons.get('expectancy_R',-1)>0,
+              'stress_PF_ge_1':stress.get('profit_factor',0)>=1,
+              'stress_expectancy_positive':stress.get('expectancy_R',-1)>0,
+              'stress_maxDD_le_25R':stress.get('max_drawdown_R',999)<=25,
+            }
+            final['acceptance_gates']=gates; final['all_gates_passed']=all(gates.values())
+            lines += ['## Frozen candidate',f"Selected on IS only: **{sel['selected']['candidate_id']}** (N={sel['selected']['lookback_h1']}, threshold={sel['selected']['momentum_threshold']}).",'',
+              '| OOS costs | Trades | PF | Expectancy (R) | Net (R) | Max DD (R) |','|---|---:|---:|---:|---:|---:|']
+            for name,label in [('baseline','spread 0.30 / slippage 0.05'),('conservative','spread 0.55 / slippage 0.10'),('stress','spread 0.75 / slippage 0.10')]:
+              x=summaries.get(name,{})
+              lines.append(f"| {label} | {x.get('trades','NA')} | {x.get('profit_factor',0):.3f} | {x.get('expectancy_R',0):.3f} | {x.get('net_R',0):.2f} | {x.get('max_drawdown_R',0):.2f} |")
+            lines += ['', '| Acceptance gate | Result |','|---|---|']
+            lines += [f"| {k} | {'PASS' if v else 'FAIL'} |" for k,v in gates.items()]
+            lines += ['', '**OVERALL: '+('PASS' if final['all_gates_passed'] else 'FAIL')+'**','Any failed gate rejects this version; do not retune using the frozen OOS period.']
+          root.mkdir(parents=True,exist_ok=True)
+          (root/'final_report.json').write_text(json.dumps(final,indent=2))
+          (root/'final_report.md').write_text('\n'.join(lines))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f: f.write('\n'.join(lines)+'\n')
+          print(json.dumps(final,indent=2))
+          PY
+
+      - name: Upload candidate scores, selected OOS ledgers and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-h1-momentum-is-oos
+          path: |
+            output/is/
+            output/selection/
+            output/oos/
+          retention-days: 90
+          if-no-files-found: warn

@@ -1,0 +1,11 @@
+[
+  {"id":"MOM_H1_N4_T0.75","lookback_h1":4,"momentum_threshold":0.75},
+  {"id":"MOM_H1_N4_T1.00","lookback_h1":4,"momentum_threshold":1.0},
+  {"id":"MOM_H1_N4_T1.25","lookback_h1":4,"momentum_threshold":1.25},
+  {"id":"MOM_H1_N8_T0.75","lookback_h1":8,"momentum_threshold":0.75},
+  {"id":"MOM_H1_N8_T1.00","lookback_h1":8,"momentum_threshold":1.0},
+  {"id":"MOM_H1_N8_T1.25","lookback_h1":8,"momentum_threshold":1.25},
+  {"id":"MOM_H1_N12_T0.75","lookback_h1":12,"momentum_threshold":0.75},
+  {"id":"MOM_H1_N12_T1.00","lookback_h1":12,"momentum_threshold":1.0},
+  {"id":"MOM_H1_N12_T1.25","lookback_h1":12,"momentum_threshold":1.25}
+]
