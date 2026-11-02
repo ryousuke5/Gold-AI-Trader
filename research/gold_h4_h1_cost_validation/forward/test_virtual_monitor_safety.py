@@ -16,5 +16,8 @@ assert "rsiCurrent>=48.0 && rsiCurrent<=70.0" in src
 assert "rsiCurrent>=30.0 && rsiCurrent<=52.0" in src
 assert "targetPrice = (side>0 ? entryPrice+2.0*riskPrice : entryPrice-2.0*riskPrice)" in src
 assert "riskAtr<0.60 || riskAtr>2.80" in src
-assert "quote_based_R_pre_fee" in src
-print("PASS: no order API references; demo/symbol guards; UTC bar reconstruction; frozen signal/risk rules present")
+assert "MaxM5HistoryBars = 60000" in src
+assert "MinH4Bars = 1000" in src
+assert "WAITING_FOR_FRESH_SERVER_UTC_OFFSET_CONFIRMATION" in src
+assert "FRESH_SERVER_UTC_OFFSET_CONFIRMED" in src
+print("PASS: no order API references; demo/symbol guards; UTC bar reconstruction; frozen rules; EMA200 warmup; stale-clock startup guard")
