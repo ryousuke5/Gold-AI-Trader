@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   GOLD_COMMUNICATION_OK_SECONDS,
   GOLD_COMMUNICATION_WARN_SECONDS,
-  getGoldDiagnosticsDisplayState
+  getGoldDiagnosticsDisplayState,
+  getGoldSafetyHeartbeatDisplayState
 } from '../public/gold-diagnostics-status.js';
 
 test('a normal M5 request interval is not shown as communication delay', () => {
@@ -67,4 +68,35 @@ test('missing request and bar data are reported as unconfirmed', () => {
   assert.equal(status.communicationLabel, '未受信');
   assert.equal(status.currentBarState, 'muted');
   assert.equal(status.receiptTimeState, 'muted');
+});
+
+
+test('signal API and V19 safety heartbeat have independent display states', () => {
+  assert.deepEqual(getGoldSafetyHeartbeatDisplayState({ status: 'ALLOWED' }), {
+    state: 'good',
+    label: '正常'
+  });
+  assert.deepEqual(getGoldSafetyHeartbeatDisplayState({ status: 'BLOCKED' }), {
+    state: 'warn',
+    label: '安全ゲート停止'
+  });
+  assert.deepEqual(getGoldSafetyHeartbeatDisplayState({ status: 'STALE' }), {
+    state: 'warn',
+    label: 'ハートビート途絶'
+  });
+  assert.deepEqual(getGoldSafetyHeartbeatDisplayState({ status: 'NO_REPORT' }), {
+    state: 'muted',
+    label: '未受信'
+  });
+  assert.deepEqual(getGoldSafetyHeartbeatDisplayState({ status: 'API_CHECK_FAILED' }), {
+    state: 'bad',
+    label: 'API再確認NG'
+  });
+});
+
+test('missing signal request is neutral rather than a communication failure', () => {
+  const status = getGoldDiagnosticsDisplayState();
+  assert.equal(status.communicationLabel, '未受信');
+  assert.equal(status.communicationState, 'muted');
+  assert.equal(status.communicationChipState, 'muted');
 });
