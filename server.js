@@ -16,6 +16,7 @@ import { buildForwardMonitorSnapshot } from './src/forward_monitor.js';
 import { buildGoldSignalDiagnosticLog } from './src/gold_signal_diagnostics.js';
 import { validateUtcBarTimestamp } from './src/market_time.js';
 import { evaluateGoldMarketSafety } from './src/gold_market_safety.js';
+import { recordGoldMarketSafetyHeartbeat } from './src/gold_market_safety_telemetry.js';
 import { recordGoldSignalEvaluated, recordGoldSignalOutcome, recordGoldSignalRequest, recordGoldSignalTimeRejection } from './src/gold_diagnostics.js';
 import { buildGoldPostTrace } from './src/gold_post_trace.js';
 
@@ -117,6 +118,25 @@ function applyDeterministicGoldSetup(decision, setup, candidate){
   return {...decision,candidate,entry,stop_loss:sl,take_profit:tp,risk_reward:rr};
 }
 function waitDecision(){return{decision:'WAIT',confidence:0,market_regime:'UNCLEAR',entry:0,stop_loss:0,take_profit:0,risk_reward:0,reason:'Rule filter found no eligible setup.',invalid_reasons:['rule_candidate_wait'],fundamental:{bias:'INSUFFICIENT',confidence:0,freshness:'INSUFFICIENT',summary:'Fundamental search skipped because the deterministic rule candidate was WAIT.',drivers:[],risks:[]}};}function preserveFundamental(safe,raw){const f=raw?.fundamental||{};const c=Number(f.confidence);return{...safe,fundamental:{bias:String(f.bias||'INSUFFICIENT').toUpperCase(),confidence:Number.isFinite(c)?c:0,freshness:String(f.freshness||'INSUFFICIENT').toUpperCase(),summary:String(f.summary||''),drivers:Array.isArray(f.drivers)?f.drivers.map(String):[],risks:Array.isArray(f.risks)?f.risks.map(String):[]}};}
+app.post('/api/gold/market-safety',auth,(req,res)=>{
+  try {
+    const body=req.body||{};
+    const symbol=String(body.symbol||'');
+    if(!/(XAU|GOLD)/i.test(symbol))return res.status(400).json({ok:false,error:'symbol_not_gold'});
+    const result=recordGoldMarketSafetyHeartbeat({
+      symbol,
+      marketSafety:body.market_safety,
+      features:body.features,
+      nowMs:Date.now()
+    });
+    console.log('[GOLD MARKET SAFETY HEARTBEAT] '+JSON.stringify({symbol,status:result.status,reported_allowed:result.reported_allowed,api_validation_allowed:result.api_validation_allowed,reasons:result.api_validation_reasons,received_at:nowIso()}));
+    res.set('Cache-Control','no-store');
+    res.json(result);
+  } catch(error) {
+    res.status(400).json({ok:false,error:error.message||'market_safety_heartbeat_invalid'});
+  }
+});
+
 app.get('/api/forward-monitor',auth,async(req,res)=>{
   try {
     const snapshot=await buildForwardMonitorSnapshot(Date.now());

@@ -34,7 +34,7 @@ button{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
   <div class="top">
     <div>
       <h1>Forward Monitor</h1>
-      <div class="sub">EURUSD + Gold を1画面で観測 / 30秒ごと更新 / 実売買ゲート監視</div>
+      <div class="sub">GOLDを主監視 + EURUSDを補助表示 / V19安全状態・シグナル・実売買ゲート / 30秒更新</div>
     </div>
     <div class="controls">
       <div class="field"><label for="key">GOLD_API_KEY</label><input id="key" type="password" autocomplete="off" placeholder="MT4 / Render と同じAPIキー"></div>
@@ -54,6 +54,7 @@ button{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
     <div class="item"><span class="dot good"></span><span>最終更新 <b id="updated">—</b></span></div>
   </div>
 
+  <div id="goldMarketSafety" class="card section diag-panel"></div>
   <div id="diagnostics" class="card section diag-panel"></div>
   <div id="cards" class="grid"></div>
 
@@ -73,7 +74,7 @@ button{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
     </div>
     <div class="card">
       <h2>Gold Trade Results</h2>
-      <div class="meta">記録済み取引結果。現在のGold V18は自動注文OFF。</div>
+      <div class="meta">記録済みの取引結果。V19自体は市場安全監視専用で、注文を出しません。</div>
       <div class="tablewrap" style="margin-top:12px"><table class="table"><thead><tr><th>時刻</th><th>Symbol</th><th>Result</th><th>R</th><th>Exit reason</th></tr></thead><tbody id="goldresults"></tbody></table></div>
     </div>
   </div>
@@ -325,7 +326,45 @@ function ageLabel(seconds){
 function diagItem(label,value,detail,state){
   return '<div class="diagitem"><div class="k">'+esc(label)+'</div><div class="v diag-'+esc(state||'muted')+'">'+esc(value)+'</div>'+(detail?'<div class="d">'+esc(detail)+'</div>':'')+'</div>';
 }
-function renderDiagnostics(d,system){
+function renderGoldMarketSafety(s){
+  const root=document.getElementById('goldMarketSafety');
+  const status=String(s?.status||'NO_REPORT');
+  const labels={
+    ALLOWED:'正常 — 安全ゲート許可',
+    BLOCKED:'ブロック中 — 新規シグナル停止',
+    API_CHECK_FAILED:'API再確認NG — Fail Closed',
+    STALE:'報告途絶 — 状態不明',
+    NO_REPORT:'未受信 — V19報告待ち'
+  };
+  const state=status==='ALLOWED'?'good':status==='BLOCKED'||status==='STALE'||status==='NO_REPORT'?'warn':'bad';
+  const received=s?.received_at?fmtTime(s.received_at):'未受信';
+  const quoteAge=s?.quote_age_seconds==null?'—':ageLabel(s.quote_age_seconds);
+  const heartbeatAge=s?.age_seconds==null?'—':ageLabel(s.age_seconds);
+  const spread=s?.spread_price==null?'—':Number(s.spread_price).toFixed(2);
+  const lockUntil=Number(s?.reopen_lock_until_utc||0);
+  const lockRemaining=lockUntil>0?Math.max(0,lockUntil-Date.now()/1000):0;
+  const lockLabel=lockUntil>0?(lockRemaining>0?'ロック中 / 残り '+ageLabel(lockRemaining):'解除済み'):'ロックなし';
+  const anomaly=s?.anomaly_active===true?'検知中':'なし';
+  const stable=s?.stable_tick_count==null?'—':String(s.stable_tick_count)+' / 3';
+  const local=s?.reported_allowed===true?'許可':'ブロック';
+  const api=s?.api_validation_allowed===true?'通過':'ブロック / 要確認';
+  const reasons=Array.isArray(s?.api_validation_reasons)&&s.api_validation_reasons.length
+    ?s.api_validation_reasons.join(', '):'なし';
+  root.innerHTML='<div class="diaghead"><div><h2>GOLD V19 市場安全ゲート</h2><div class="meta">MT4から15秒ごとに軽量報告 / 45秒以上更新がなければSTALE扱い</div></div><div>'+chip(labels[status]||status,state)+'</div></div>'+
+    '<div class="diaggrid">'+
+      diagItem('MT4ローカルゲート',local,'V19側の市場安全判定',s?.reported_allowed===true?'good':'warn')+
+      diagItem('API再確認',api,'API側で同じ価格情報を再検証',s?.api_validation_allowed===true?'good':'warn')+
+      diagItem('最終ハートビート',heartbeatAge,received,status==='STALE'||status==='NO_REPORT'?'warn':'good')+
+      diagItem('最新Spread',spread,'上限 0.50',s?.spread_price==null?'muted':Number(s.spread_price)>0.50?'bad':'good')+
+      diagItem('クオート経過時間',quoteAge,'価格時刻の鮮度。30秒超はブロック対象',s?.quote_age_seconds>30?'warn':'good')+
+      diagItem('週明けロック',lockLabel,lockUntil>0?'解除予定 '+fmtTime(new Date(lockUntil*1000).toISOString()):'市場再開時のみ作動',lockRemaining>0?'warn':'good')+
+      diagItem('異常ティック',anomaly,'価格ジャンプ検知後の回復確認',s?.anomaly_active===true?'warn':'good')+
+      diagItem('安定ティック確認',stable,'異常回復時に3回を確認',s?.anomaly_active===true?'warn':'good')+
+    '</div>'+
+    '<div class="diag-foot">最新理由: '+esc(s?.reason||'—')+' / API確認理由: '+esc(reasons)+
+    ' / サーバー再起動後は次のV19ハートビート受信まで「未受信」になります。画面表示は監視用で、安全判定そのものはV19とAPI側で実施します。</div>';
+}
+function renderDiagnostics(d,system){function renderDiagnostics(d,system){
   const root=document.getElementById('diagnostics');
   if(!d){root.innerHTML='<h2>GOLD API 診断</h2><div class="meta">診断データがありません。サーバーを更新してください。</div>';return;}
   const c=d.counters||{},r=d.latest_request||null,s=d.latest_signal||null,t=d.latest_time_rejection||null;
@@ -382,6 +421,7 @@ function renderDiagnostics(d,system){
   root.innerHTML+='</div>';
 }
 function render(data){
+  renderGoldMarketSafety(data.system?.gold_market_safety);
   renderDiagnostics(data.system?.gold_diagnostics,data.system);
   const e=data.eurusd,g=data.gold;
   const f=e.forward, gR=g.trade_results.summary;

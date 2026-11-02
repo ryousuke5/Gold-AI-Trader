@@ -19,6 +19,8 @@ input double MaxTickJumpPrice = 3.00;
 input double TickRecoveryBandPrice = 0.50;
 input int    TickRecoverySamples = 3;
 input int    MaxQuoteAgeSeconds = 30;
+input bool   EnableSafetyHeartbeat = true;
+input int    SafetyHeartbeatSeconds = 15;
 
 datetime g_lastClosedM5Bar = 0;
 datetime g_lastAttemptedM5Bar = 0;
@@ -28,6 +30,7 @@ bool g_apiConfigReady = false;
 bool g_apiConfigWarningLogged = false;
 
 datetime g_lastObservedTickUtc = 0;
+datetime g_lastSafetyHeartbeatAttemptUtc = 0;
 double g_lastAcceptedMid = 0.0;
 datetime g_reopenLockUntilUtc = 0;
 bool g_tickAnomalyActive = false;
@@ -652,8 +655,9 @@ bool PostJson(string path, string payload, string &response)
    headers += "X-Gold-API-Key: " + TrimText(ApiKey) + "\r\n";
    headers += "X-Request-Id: " + IntegerToString((int)GetTickCount()) + "\r\n";
 
-   Print("GoldAITrader V1.6: request header length=", StringLen(headers),
-         " api_key_length=", StringLen(TrimText(ApiKey)));
+   if(StringFind(path, "/api/gold/market-safety") < 0)
+      Print("GoldAITrader V1.6: request header length=", StringLen(headers),
+            " api_key_length=", StringLen(TrimText(ApiKey)));
 
    uchar postData[];
    uchar result[];
@@ -704,6 +708,44 @@ bool PostJson(string path, string payload, string &response)
 }
 
 //---------------------------------------------------------
+// Lightweight V19 market-safety heartbeat for Forward Monitor.
+// This reports the local gate even when signal requests are blocked.
+// It contains no trading instruction and does not run AI analysis.
+//---------------------------------------------------------
+bool BuildSafetyHeartbeatPayload(string sym, string &payload)
+{
+   if(g_marketSafetyQuoteTimeUtc <= 0)
+      return false;
+
+   int digits = (int)MarketInfo(sym, MODE_DIGITS);
+   double point = MarketInfo(sym, MODE_POINT);
+   if(digits < 0 || point <= 0.0)
+      return false;
+
+   payload = "{";
+   payload += "\"symbol\":\"" + JsonEscape(sym) + "\",";
+   payload += "\"market_safety\":{";
+   payload += "\"allowed\":" + (g_marketSafetyAllowed ? "true" : "false") + ",";
+   payload += "\"reason\":\"" + JsonEscape(g_marketSafetyReason) + "\",";
+   payload += "\"quote_time_utc\":" + IntegerToString((int)g_marketSafetyQuoteTimeUtc) + ",";
+   payload += "\"mid_price\":" + JsonNumber(g_marketSafetyMid, digits) + ",";
+   payload += "\"spread_price\":" + JsonNumber(g_marketSafetySpread, digits) + ",";
+   payload += "\"stable_tick_count\":" + IntegerToString(g_recoveryStableCount) + ",";
+   payload += "\"anomaly_active\":" + (g_tickAnomalyActive ? "true" : "false") + ",";
+   payload += "\"reopen_lock_until_utc\":" + IntegerToString((int)g_reopenLockUntilUtc);
+   payload += "},";
+   payload += "\"features\":{";
+   payload += "\"bid\":" + JsonNumber(g_marketSafetyBid, digits) + ",";
+   payload += "\"ask\":" + JsonNumber(g_marketSafetyAsk, digits) + ",";
+   payload += "\"point\":" + JsonNumber(point, digits) + ",";
+   payload += "\"spread\":" + JsonNumber(g_marketSafetySpread, digits);
+   payload += "}";
+   payload += "}";
+   return true;
+}
+
+//---------------------------------------------------------
+// Reject non-retryable stale-bar responses from the API.//---------------------------------------------------------
 // Reject non-retryable stale-bar responses from the API.
 // The same completed M5 candle can never become newer, so retrying it every
 // 30 seconds only adds noise. Keep transient HTTP/network failures retryable.
@@ -719,9 +761,6 @@ bool IsStaleBarTimeRejection(string response)
 //---------------------------------------------------------
 void OnTimer()
 {
-   if(!EnableSignalRequests)
-      return;
-
    if(!g_apiConfigReady)
    {
       if(!g_apiConfigWarningLogged)
@@ -742,6 +781,24 @@ void OnTimer()
 
    // Update the persistent quote-safety state on every timer tick, not only once per M5 bar.
    UpdateMarketSafety(sym);
+
+   // Keep the monitor informed even while the local safety gate blocks signal POSTs.
+   int heartbeatSeconds = MathMax(5, MathMin(60, SafetyHeartbeatSeconds));
+   datetime heartbeatNowUtc = TimeGMT();
+   if(EnableSafetyHeartbeat &&
+      heartbeatNowUtc > 0 &&
+      (g_lastSafetyHeartbeatAttemptUtc <= 0 ||
+       heartbeatNowUtc - g_lastSafetyHeartbeatAttemptUtc >= heartbeatSeconds))
+   {
+      g_lastSafetyHeartbeatAttemptUtc = heartbeatNowUtc;
+      string heartbeatPayload = "";
+      string heartbeatResponse = "";
+      if(BuildSafetyHeartbeatPayload(sym, heartbeatPayload))
+         PostJson("/api/gold/market-safety", heartbeatPayload, heartbeatResponse);
+   }
+
+   if(!EnableSignalRequests)
+      return;
 
    datetime closedBar = iTime(sym, PERIOD_M5, 1);
 

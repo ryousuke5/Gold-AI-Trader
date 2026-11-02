@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const ea = readFileSync(new URL('../mt4/GoldAITraderV19.mq4', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
+const monitor = readFileSync(new URL('../public/forward-monitor.html', import.meta.url), 'utf8');
 
 test('Gold V19 keeps the existing spread cap and adds a 30-minute reopen lock', () => {
   assert.match(ea, /MaxSpreadPrice\s*=\s*0\.50/);
@@ -47,4 +48,20 @@ test('Gold V19 remains a monitor-only bridge without MT4 order functions', () =>
   assert.doesNotMatch(ea, /\bOrderSend\s*\(/);
   assert.doesNotMatch(ea, /\bOrderClose\s*\(/);
   assert.doesNotMatch(ea, /\bOrderModify\s*\(/);
+});
+
+test('Gold V19 reports market safety independently of the M5 signal gate', () => {
+  assert.match(ea, /SafetyHeartbeatSeconds\s*=\s*15/);
+  assert.match(ea, /BuildSafetyHeartbeatPayload\(string sym, string &payload\)/);
+  assert.match(ea, /PostJson\("\/api\/gold\/market-safety"/);
+  assert.match(ea, /if\(!EnableSignalRequests\)\s*return;/);
+  assert.match(server, /app\.post\('\/api\/gold\/market-safety'/);
+  assert.match(server, /recordGoldMarketSafetyHeartbeat/);
+});
+
+test('Forward Monitor shows V19 safety heartbeat and no longer labels Gold V18', () => {
+  const monitor = readFileSync(new URL('../public/forward-monitor.html', import.meta.url), 'utf8');
+  assert.match(monitor, /GOLD V19 市場安全ゲート/);
+  assert.match(monitor, /gold_market_safety/);
+  assert.doesNotMatch(monitor, /現在のGold V18/);
 });

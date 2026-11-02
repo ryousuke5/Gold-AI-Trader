@@ -34,3 +34,12 @@ If any check fails, API returns/persists a WAIT decision for that request, skips
 - MT4 compilation and broker-side forward observation still need to be completed in MetaEditor on the user's terminal.
 - Render auto-deploy is OFF. This branch is not deployed to either Render Gold service.
 - Do not turn on auto trading or real-order execution as part of this safety update.
+
+## Forward Monitor telemetry
+
+- V19 sends a lightweight `/api/gold/market-safety` heartbeat every 15 seconds, independently of the M5 signal request gate.
+- The heartbeat reports the local gate decision, block reason, quote timestamp, mid, spread, recovery sample count, anomaly flag, and reopen-lock expiry.
+- The API revalidates the quote snapshot with the existing 0.50 hard spread ceiling and 30-second quote-age limit.
+- Forward Monitor displays ALLOWED, BLOCKED, API_CHECK_FAILED, STALE, or NO_REPORT. A heartbeat older than 45 seconds is shown as STALE.
+- Only the latest heartbeat is held in process memory; this avoids writing high-frequency telemetry rows to the database. After a Render restart, the panel shows NO_REPORT until V19 sends the next heartbeat.
+- The monitor display is observational only. The local V19 gate and server-side API validation remain responsible for blocking unsafe signal requests.
