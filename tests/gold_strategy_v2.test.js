@@ -40,6 +40,44 @@ test('GOLD V2 accepts a valid in-session compression breakout', () => {
   assert.ok(result.stop_loss < result.entry_reference);
   assert.ok(result.take_profit > result.entry_reference);
   assert.equal(result.risk_reward, 2);
+  // The range uses the 12 prior bars (not the signal candle): (2503.2 - 2501.0) / 2.0 = 1.1.
+  assert.equal(result.diagnostics.range_width, 2.2);
+  assert.equal(result.diagnostics.m5_atr, 2.0);
+  assert.equal(result.diagnostics.range_atr, 1.1);
+});
+
+test('GOLD V2 accepts a valid in-session SELL compression breakout', () => {
+  const f = baseFeatures();
+  f.m5.ema20 = 2501.0;
+  f.m5.ema50 = 2502.0;
+  f.m5.rsi14 = 40;
+  f.h1.close = 2500.0;
+  f.h1.ema20 = 2501.0;
+  f.h1.ema50 = 2502.0;
+  f.h1.ema200 = 2503.0;
+  f.h1.rsi14 = 40;
+  Object.assign(f.recentM5.at(-1), {
+    open: 2501.6, high: 2501.8, low: 2499.8, close: 2500.0, volume: 140
+  });
+  const result = buildGoldV2Setup(f);
+  assert.equal(result.candidate, 'SELL');
+  assert.equal(result.trend, 'DOWN');
+  assert.ok(result.stop_loss > result.entry_reference);
+  assert.ok(result.take_profit < result.entry_reference);
+  assert.equal(result.diagnostics.breakout_atr, 0.5);
+  assert.equal(result.diagnostics.breakout_threshold_atr, 0.10);
+});
+
+test('GOLD V2 reports directional breakout ATR when the breakout gate rejects a BUY setup', () => {
+  const f = baseFeatures();
+  Object.assign(f.recentM5.at(-1), {
+    open: 2502.0, high: 2503.5, low: 2501.5, close: 2503.3, volume: 140
+  });
+  const result = buildGoldV2Setup(f);
+  assert.equal(result.candidate, 'WAIT');
+  assert.equal(result.reason, 'breakout_trigger_filter');
+  assert.equal(result.diagnostics.breakout_atr, 0.05);
+  assert.equal(result.diagnostics.breakout_threshold_atr, 0.10);
 });
 
 test('GOLD V2 rejects a weak volume expansion', () => {
