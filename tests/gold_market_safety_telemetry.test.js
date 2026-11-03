@@ -51,6 +51,48 @@ test('records a fresh, valid V19 safety heartbeat as ALLOWED', () => {
   assert.equal(repeated.state_changed, false);
 });
 
+test('stores V19 signal request switches and current M5 flow in the safety heartbeat', () => {
+  resetGoldMarketSafetyTelemetryForTests();
+  const eaRuntime = {
+    enable_signal_requests: false,
+    run_ai_test_once: true,
+    allow_auto_orders: false,
+    timer_seconds: 1,
+    safety_heartbeat_seconds: 15,
+    flow_status: 'DISABLED',
+    flow_reason: 'EnableSignalRequests=false',
+    current_closed_m5_bar_open_utc: nowMs / 1000 - 60,
+    last_handled_m5_bar_open_utc: nowMs / 1000 - 360,
+    last_attempted_m5_bar_open_utc: null,
+    last_attempt_at_utc: null
+  };
+  const accepted = recordGoldMarketSafetyHeartbeat({
+    symbol: 'GOLD#',
+    marketSafety: marketSafety(),
+    features,
+    eaRuntime,
+    nowMs
+  });
+  const result = getGoldMarketSafetyTelemetrySnapshot({ nowMs });
+  assert.equal(accepted.ea_runtime_received, true);
+  assert.equal(result.ea_runtime.enable_signal_requests, false);
+  assert.equal(result.ea_runtime.run_ai_test_once, true);
+  assert.equal(result.ea_runtime.allow_auto_orders, false);
+  assert.equal(result.ea_runtime.flow_status, 'DISABLED');
+  assert.equal(result.ea_runtime.flow_reason, 'EnableSignalRequests=false');
+  assert.equal(result.ea_runtime.current_closed_m5_bar_open_utc, nowMs / 1000 - 60);
+  assert.equal(result.ea_runtime.last_attempt_at_utc, null);
+
+  const changed = recordGoldMarketSafetyHeartbeat({
+    symbol: 'GOLD#',
+    marketSafety: marketSafety(),
+    features,
+    eaRuntime: { ...eaRuntime, enable_signal_requests: true },
+    nowMs: nowMs + 15_000
+  });
+  assert.equal(changed.state_changed, true);
+});
+
 test('shows a valid local market lock as BLOCKED rather than a telemetry failure', () => {
   resetGoldMarketSafetyTelemetryForTests();
   const accepted = recordGoldMarketSafetyHeartbeat({
