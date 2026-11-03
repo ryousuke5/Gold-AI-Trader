@@ -16,6 +16,15 @@ test('V19 safety heartbeat reports signal request switches and the latest M5 flo
   assert.match(source, /last_attempt_at_utc/);
 });
 
+test('V19 skips the already-closed startup M5 bar before the first signal POST', () => {
+  const startupGuard = timer.split('if(g_lastClosedM5Bar <= 0)')[1]?.split('if(closedBar == g_lastClosedM5Bar)')[0] || '';
+  assert.ok(startupGuard.length > 0, 'startup freshness guard must exist before the handled-bar check');
+  assert.match(startupGuard, /g_lastClosedM5Bar = closedBar;/);
+  assert.match(startupGuard, /startup_current_completed_M5_bar_skipped/);
+  assert.match(startupGuard, /return;/);
+  assert.ok(timer.indexOf('if(g_lastClosedM5Bar <= 0)') < timer.indexOf('if(closedBar == g_lastClosedM5Bar)'));
+});
+
 test('V19 exposes disabled, AI-test-only, safety-blocked and POST outcomes without changing the order gate', () => {
   assert.match(timer, /g_signalFlowStatus = "DISABLED"/);
   assert.match(timer, /g_signalFlowStatus = "AI_TEST_ONLY"/);
