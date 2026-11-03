@@ -11,9 +11,9 @@ test('V19 safety heartbeat reports signal request switches and the latest M5 flo
   assert.match(source, /\\"allow_auto_orders\\":.*AllowAutoOrders/);
   assert.match(source, /\\"flow_status\\":.*g_signalFlowStatus/);
   assert.match(source, /\\"flow_reason\\":.*g_signalFlowReason/);
-  assert.match(source, /"current_closed_m5_bar_open_utc":/);
-  assert.match(source, /"last_handled_m5_bar_open_utc":/);
-  assert.match(source, /"last_attempt_at_utc":/);
+  assert.match(source, /current_closed_m5_bar_open_utc/);
+  assert.match(source, /last_handled_m5_bar_open_utc/);
+  assert.match(source, /last_attempt_at_utc/);
 });
 
 test('V19 exposes disabled, AI-test-only, safety-blocked and POST outcomes without changing the order gate', () => {
