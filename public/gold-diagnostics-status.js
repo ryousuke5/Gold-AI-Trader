@@ -67,7 +67,9 @@ export function getGoldDiagnosticsDisplayState({
     ? 'good'
     : communicationState === 'bad'
       ? 'bad'
-      : 'warn';
+      : communicationState === 'muted'
+        ? 'muted'
+        : 'warn';
 
   return {
     communicationState,
@@ -77,4 +79,21 @@ export function getGoldDiagnosticsDisplayState({
     receiptTimeState,
     receiptTimeLabel
   };
+}
+
+
+/**
+ * Display-only status for the independent V19 market-safety heartbeat.
+ * This is intentionally separate from /api/gold/signal request freshness.
+ */
+export function getGoldSafetyHeartbeatDisplayState({ status = 'NO_REPORT' } = {}) {
+  const normalized = String(status || 'NO_REPORT').toUpperCase();
+  const states = {
+    ALLOWED: { state: 'good', label: '正常' },
+    BLOCKED: { state: 'warn', label: '安全ゲート停止' },
+    API_CHECK_FAILED: { state: 'bad', label: 'API再確認NG' },
+    STALE: { state: 'warn', label: 'ハートビート途絶' },
+    NO_REPORT: { state: 'muted', label: '未受信' }
+  };
+  return states[normalized] || { state: 'warn', label: '状態不明' };
 }
