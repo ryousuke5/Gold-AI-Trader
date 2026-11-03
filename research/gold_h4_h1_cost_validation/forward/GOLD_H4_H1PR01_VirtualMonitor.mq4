@@ -7,7 +7,7 @@
 // This EA records hypothetical entries/exits only. It contains no order API.
 
 input string ExpectedSymbol = "GOLD#";
-input int    MaxM5HistoryBars = 60000;
+input int    MaxM5HistoryBars = 90000;
 input int    MinH4Bars = 1000;
 input int    MinH1Bars = 1000;
 input int    MaxEntryDelaySeconds = 30;
@@ -55,6 +55,11 @@ datetime g_lastSeenHourUtc = 0;
 datetime g_lastAttemptHourUtc = 0;
 string g_prefix = "";
 bool g_offsetGuardBlocked = false;
+int g_lastM5HistoryCount = 0;
+int g_lastM5UsedCount = 0;
+int g_lastH1BuiltCount = 0;
+int g_lastH4BuiltCount = 0;
+string g_lastHistoryFailure = "NOT_CHECKED";
 
 string SideName(int side)
 {
@@ -279,8 +284,16 @@ bool BuildUtcBars(int periodSeconds, int expectedM5Bars, UtcBar &outBars[])
 {
    ArrayResize(outBars, 0);
    int total = iBars(Symbol(), PERIOD_M5);
-   if(total < expectedM5Bars + 1) return false;
+   g_lastM5HistoryCount = total;
+   if(total < expectedM5Bars + 1)
+   {
+      g_lastHistoryFailure = StringFormat("M5_HISTORY_TOO_SHORT_FOR_%d_MINUTES", periodSeconds/60);
+      if(periodSeconds==H1_SECONDS) g_lastH1BuiltCount=0;
+      if(periodSeconds==H4_SECONDS) g_lastH4BuiltCount=0;
+      return false;
+   }
    int limit = (int)MathMin(total-1, MaxM5HistoryBars);
+   g_lastM5UsedCount = limit;
 
    bool active = false;
    bool sequenceValid = true;
@@ -331,7 +344,12 @@ bool BuildUtcBars(int periodSeconds, int expectedM5Bars, UtcBar &outBars[])
       }
    }
    if(active) PushCompletedBar(outBars,bucket,firstUtc,lastUtc,count,expectedM5Bars,sequenceValid,o,h,l,c);
-   return (ArraySize(outBars) > 0);
+   int builtCount = ArraySize(outBars);
+   if(periodSeconds==H1_SECONDS) g_lastH1BuiltCount=builtCount;
+   if(periodSeconds==H4_SECONDS) g_lastH4BuiltCount=builtCount;
+   if(builtCount<=0)
+      g_lastHistoryFailure = StringFormat("NO_COMPLETE_UTC_%d_MINUTE_BARS", periodSeconds/60);
+   return (builtCount > 0);
 }
 
 bool BuildEMA(UtcBar &bars[], int period, double &out[])
@@ -400,12 +418,53 @@ bool BuildRSI(UtcBar &bars[], int period, double &out[])
 
 bool RebuildHistory()
 {
-   if(!BuildUtcBars(H1_SECONDS,12,g_h1)) return false;
-   if(!BuildUtcBars(H4_SECONDS,48,g_h4)) return false;
-   if(ArraySize(g_h1) < MinH1Bars || ArraySize(g_h4) < MinH4Bars) return false;
-   if(!BuildEMA(g_h1,20,g_h1Ema20) || !BuildATR(g_h1,14,g_h1Atr14) || !BuildRSI(g_h1,14,g_h1Rsi14)) return false;
-   if(!BuildEMA(g_h4,50,g_h4Ema50) || !BuildEMA(g_h4,200,g_h4Ema200)) return false;
+   g_lastM5HistoryCount = 0;
+   g_lastM5UsedCount = 0;
+   g_lastH1BuiltCount = 0;
+   g_lastH4BuiltCount = 0;
+   g_lastHistoryFailure = "UNKNOWN_HISTORY_BUILD_FAILURE";
+
+   if(!BuildUtcBars(H1_SECONDS,12,g_h1))
+   {
+      if(g_lastHistoryFailure=="UNKNOWN_HISTORY_BUILD_FAILURE")
+         g_lastHistoryFailure="H1_UTC_AGGREGATION_FAILED";
+      return false;
+   }
+   if(!BuildUtcBars(H4_SECONDS,48,g_h4))
+   {
+      if(g_lastHistoryFailure=="UNKNOWN_HISTORY_BUILD_FAILURE")
+         g_lastHistoryFailure="H4_UTC_AGGREGATION_FAILED";
+      return false;
+   }
+   if(g_lastH1BuiltCount < MinH1Bars)
+   {
+      g_lastHistoryFailure="H1_COMPLETE_BAR_COUNT_BELOW_MINIMUM";
+      return false;
+   }
+   if(g_lastH4BuiltCount < MinH4Bars)
+   {
+      g_lastHistoryFailure="H4_COMPLETE_BAR_COUNT_BELOW_MINIMUM";
+      return false;
+   }
+   if(!BuildEMA(g_h1,20,g_h1Ema20) || !BuildATR(g_h1,14,g_h1Atr14) || !BuildRSI(g_h1,14,g_h1Rsi14))
+   {
+      g_lastHistoryFailure="H1_INDICATOR_BUILD_FAILED";
+      return false;
+   }
+   if(!BuildEMA(g_h4,50,g_h4Ema50) || !BuildEMA(g_h4,200,g_h4Ema200))
+   {
+      g_lastHistoryFailure="H4_INDICATOR_BUILD_FAILED";
+      return false;
+   }
+   g_lastHistoryFailure="OK";
    return true;
+}
+
+string HistoryDiagnosticText()
+{
+   return StringFormat("%s;M5_TOTAL=%d;M5_USED=%d;H1=%d/%d;H4=%d/%d;MAX_M5=%d",
+      g_lastHistoryFailure,g_lastM5HistoryCount,g_lastM5UsedCount,
+      g_lastH1BuiltCount,MinH1Bars,g_lastH4BuiltCount,MinH4Bars,MaxM5HistoryBars);
 }
 
 int LatestH4IndexAtOrBefore(datetime signalCloseUtc)
@@ -498,7 +557,7 @@ void ProcessLatestCompletedH1(datetime nowUtc, datetime currentHourUtc)
 {
    if(!RebuildHistory())
    {
-      LogRow("MONITOR_BLOCKED","INSUFFICIENT_OR_INCOMPLETE_M5_HISTORY",0,0,0,
+      LogRow("MONITOR_BLOCKED",HistoryDiagnosticText(),0,0,0,
              EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
              EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
              EMPTY_DBL,EMPTY_DBL,0,0);
@@ -667,10 +726,11 @@ int OnInit()
    if(g_lastSeenHourUtc<=0) g_lastSeenHourUtc=hourUtc;
    if(!RebuildHistory())
    {
-      LogRow("MONITOR_START","WAITING_FOR_COMPLETE_UTC_M5_HISTORY",0,0,0,
+      LogRow("MONITOR_START",HistoryDiagnosticText(),0,0,0,
              EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
              EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
              EMPTY_DBL,EMPTY_DBL,0,0);
+      Print("H4H1PR01 history diagnostic: ",HistoryDiagnosticText());
    }
    else if(g_lastProcessedSignalUtc<=0)
    {
