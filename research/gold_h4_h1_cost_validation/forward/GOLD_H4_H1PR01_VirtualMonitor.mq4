@@ -724,21 +724,23 @@ int OnInit()
    datetime nowUtc=TimeGMT();
    datetime hourUtc=nowUtc-(nowUtc%H1_SECONDS);
    if(g_lastSeenHourUtc<=0) g_lastSeenHourUtc=hourUtc;
-   if(!RebuildHistory())
+   bool historyReady = RebuildHistory();
+   if(!historyReady)
    {
       LogRow("MONITOR_START",HistoryDiagnosticText(),0,0,0,
              EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
              EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
              EMPTY_DBL,EMPTY_DBL,0,0);
-      Print("H4H1PR01 history diagnostic: ",HistoryDiagnosticText());
    }
    else if(g_lastProcessedSignalUtc<=0)
    {
       // Do not backfill old historical entries when the monitor is first attached.
       g_lastProcessedSignalUtc=g_h1[ArraySize(g_h1)-1].time_utc;
    }
+   // Always print the counts, whether history reconstruction succeeds or fails.
+   Print("H4H1PR01 history diagnostic: ",HistoryDiagnosticText());
    SavePersistentState();
-   LogRow("MONITOR_START","NO_ORDER_VIRTUAL_MONITOR_ONLY",0,0,0,
+   LogRow("MONITOR_START",historyReady ? "HISTORY_BUILD_OK" : "HISTORY_BUILD_BLOCKED",0,0,0,
           EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
           EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,EMPTY_DBL,
           EMPTY_DBL,EMPTY_DBL,0,0);
