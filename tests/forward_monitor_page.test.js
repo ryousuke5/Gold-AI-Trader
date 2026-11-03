@@ -6,13 +6,17 @@ test('Forward Monitor browser module script parses before deployment', async () 
   const html = await readFile(new URL('../public/forward-monitor.html', import.meta.url), 'utf8');
   const match = html.match(/<script type="module">([\s\S]*?)<\/script>/);
   assert.ok(match, 'Forward Monitor module script must exist');
+  assert.match(html, /EnableSignalRequests/);
+  assert.match(html, /RunAITestOnce/);
+  assert.match(html, /V19シグナル処理/);
+  assert.match(html, /current_closed_m5_bar_open_utc/);
   assert.match(html, /GOLDシグナルAPI/);
   assert.match(html, /GOLD安全監視/);
   assert.match(html, /\/api\/gold\/signal/);
   assert.match(html, /\/api\/gold\/market-safety/);
 
   const script = match[1].replace(
-    /^\s*import\s+\{\s*getGoldDiagnosticsDisplayState\s*,\s*getGoldSafetyHeartbeatDisplayState\s*\}\s+from\s+['"][^'"]+['"]\s*;\s*/,
+    /^\s*import\s+\{\s*getGoldDiagnosticsDisplayState\s*,\s*getGoldSafetyHeartbeatDisplayState\s*,\s*getGoldSignalFlowDisplayState\s*\}\s+from\s+['"][^'"]+['"]\s*;\s*/,
     ''
   );
 
