@@ -4,7 +4,8 @@ import {
   GOLD_COMMUNICATION_OK_SECONDS,
   GOLD_COMMUNICATION_WARN_SECONDS,
   getGoldDiagnosticsDisplayState,
-  getGoldSafetyHeartbeatDisplayState
+  getGoldSafetyHeartbeatDisplayState,
+  getGoldSignalFlowDisplayState
 } from '../public/gold-diagnostics-status.js';
 
 test('a normal M5 request interval is not shown as communication delay', () => {
@@ -99,4 +100,49 @@ test('missing signal request is neutral rather than a communication failure', ()
   assert.equal(status.communicationLabel, '未受信');
   assert.equal(status.communicationState, 'muted');
   assert.equal(status.communicationChipState, 'muted');
+});
+
+
+test('V19 runtime flags identify disabled signal and one-shot AI test modes', () => {
+  const disabled = getGoldSignalFlowDisplayState({
+    enable_signal_requests: false,
+    run_ai_test_once: false,
+    flow_status: 'DISABLED'
+  });
+  assert.equal(disabled.label, 'シグナル送信OFF');
+  assert.equal(disabled.state, 'bad');
+
+  const testOnly = getGoldSignalFlowDisplayState({
+    enable_signal_requests: true,
+    run_ai_test_once: true,
+    flow_status: 'AI_TEST_ALREADY_DONE'
+  });
+  assert.equal(testOnly.label, 'AIテスト専用');
+  assert.equal(testOnly.state, 'warn');
+});
+
+test('V19 enabled signal flow explains successful, waiting, and failed API paths', () => {
+  assert.equal(getGoldSignalFlowDisplayState({
+    enable_signal_requests: true,
+    run_ai_test_once: false,
+    flow_status: 'SIGNAL_POST_ACCEPTED'
+  }).label, 'シグナルAPI受信済み');
+
+  assert.equal(getGoldSignalFlowDisplayState({
+    enable_signal_requests: true,
+    run_ai_test_once: false,
+    flow_status: 'WAITING_FOR_NEW_M5_BAR'
+  }).label, '次のM5確定待ち');
+
+  assert.equal(getGoldSignalFlowDisplayState({
+    enable_signal_requests: true,
+    run_ai_test_once: false,
+    flow_status: 'SIGNAL_POST_FAILED'
+  }).label, 'シグナルAPI送信失敗');
+});
+
+test('legacy heartbeat without EA runtime remains clearly unreported', () => {
+  const status = getGoldSignalFlowDisplayState(null);
+  assert.equal(status.label, 'V19送信設定未報告');
+  assert.equal(status.state, 'muted');
 });

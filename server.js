@@ -127,6 +127,7 @@ app.post('/api/gold/market-safety',auth,(req,res)=>{
       symbol,
       marketSafety:body.market_safety,
       features:body.features,
+      eaRuntime:body.ea_runtime,
       nowMs:Date.now()
     });
     if(result.state_changed)console.log('[GOLD MARKET SAFETY STATE] '+JSON.stringify({symbol,status:result.status,reported_allowed:result.reported_allowed,api_validation_allowed:result.api_validation_allowed,reasons:result.api_validation_reasons,received_at:nowIso()}));

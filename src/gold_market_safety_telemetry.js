@@ -10,10 +10,32 @@ const numberOrNull = value => {
   return Number.isFinite(n) ? n : null;
 };
 
+const booleanOrNull = value => typeof value === 'boolean' ? value : null;
+
+function normalizeEaRuntime(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const safeText = (input, maxLength = 120) =>
+    typeof input === 'string' ? input.trim().slice(0, maxLength) : null;
+  return {
+    enable_signal_requests: booleanOrNull(value.enable_signal_requests),
+    run_ai_test_once: booleanOrNull(value.run_ai_test_once),
+    allow_auto_orders: booleanOrNull(value.allow_auto_orders),
+    timer_seconds: numberOrNull(value.timer_seconds),
+    safety_heartbeat_seconds: numberOrNull(value.safety_heartbeat_seconds),
+    flow_status: safeText(value.flow_status, 64),
+    flow_reason: safeText(value.flow_reason, 160),
+    current_closed_m5_bar_open_utc: numberOrNull(value.current_closed_m5_bar_open_utc),
+    last_handled_m5_bar_open_utc: numberOrNull(value.last_handled_m5_bar_open_utc),
+    last_attempted_m5_bar_open_utc: numberOrNull(value.last_attempted_m5_bar_open_utc),
+    last_attempt_at_utc: numberOrNull(value.last_attempt_at_utc)
+  };
+}
+
 export function recordGoldMarketSafetyHeartbeat({
   symbol,
   marketSafety,
   features,
+  eaRuntime,
   nowMs = Date.now()
 } = {}) {
   const safeSymbol = String(symbol || '').trim();
@@ -41,13 +63,15 @@ export function recordGoldMarketSafetyHeartbeat({
     ? (validation.allowed ? 'ALLOWED' : 'API_CHECK_FAILED')
     : 'BLOCKED';
   const reason = String(snapshot?.reason || (snapshot ? 'unknown' : 'market_safety_missing'));
+  const normalizedEaRuntime = normalizeEaRuntime(eaRuntime);
   const anomalyActive = typeof snapshot?.anomaly_active === 'boolean' ? snapshot.anomaly_active : null;
   const stableTickCount = Number.isInteger(Number(snapshot?.stable_tick_count))
     ? Number(snapshot.stable_tick_count)
     : null;
   const stateChanged = !latestSnapshot || latestSnapshot.status !== status ||
     latestSnapshot.reason !== reason || latestSnapshot.reported_allowed !== reportedAllowed ||
-    latestSnapshot.anomaly_active !== anomalyActive || latestSnapshot.stable_tick_count !== stableTickCount;
+    latestSnapshot.anomaly_active !== anomalyActive || latestSnapshot.stable_tick_count !== stableTickCount ||
+    JSON.stringify(latestSnapshot.ea_runtime || null) !== JSON.stringify(normalizedEaRuntime);
 
   latestSnapshot = {
     symbol: safeSymbol,
@@ -66,7 +90,8 @@ export function recordGoldMarketSafetyHeartbeat({
     stable_tick_count: stableTickCount,
     anomaly_active: anomalyActive,
     reopen_lock_until_utc: numberOrNull(snapshot?.reopen_lock_until_utc),
-    api_validation_reasons: validation.reasons
+    api_validation_reasons: validation.reasons,
+    ea_runtime: normalizedEaRuntime
   };
 
   return {
@@ -75,7 +100,8 @@ export function recordGoldMarketSafetyHeartbeat({
     state_changed: stateChanged,
     reported_allowed: reportedAllowed,
     api_validation_allowed: validation.allowed,
-    api_validation_reasons: validation.reasons
+    api_validation_reasons: validation.reasons,
+    ea_runtime_received: normalizedEaRuntime !== null
   };
 }
 

@@ -54,7 +54,7 @@ test('Gold V19 reports market safety independently of the M5 signal gate', () =>
   assert.match(ea, /SafetyHeartbeatSeconds\s*=\s*15/);
   assert.match(ea, /BuildSafetyHeartbeatPayload\(string sym, string &payload\)/);
   assert.match(ea, /PostJson\("\/api\/gold\/market-safety"/);
-  assert.match(ea, /if\(!EnableSignalRequests\)\s*return;/);
+  assert.match(ea, /if\(!EnableSignalRequests\)\s*\{[^}]*g_signalFlowStatus = "DISABLED";[^}]*return;/);
   assert.match(server, /app\.post\('\/api\/gold\/market-safety'/);
   assert.match(server, /recordGoldMarketSafetyHeartbeat/);
 });
