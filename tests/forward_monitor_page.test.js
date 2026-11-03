@@ -8,7 +8,7 @@ test('Forward Monitor browser module script parses before deployment', async () 
   assert.ok(match, 'Forward Monitor module script must exist');
 
   const script = match[1].replace(
-    /^\s*import\s+\{\s*getGoldDiagnosticsDisplayState\s*\}\s+from\s+['"][^'"]+['"]\s*;\s*/,
+    /^\s*import\s+\{\s*getGoldDiagnosticsDisplayState\s*,\s*getGoldSafetyHeartbeatDisplayState\s*\}\s+from\s+['"][^'"]+['"]\s*;\s*/,
     ''
   );
 
