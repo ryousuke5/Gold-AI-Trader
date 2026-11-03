@@ -849,7 +849,9 @@ void OnTimer()
    if(closedBar == g_lastClosedM5Bar)
    {
       if(g_signalFlowStatus != "SIGNAL_POST_ACCEPTED" &&
-         g_signalFlowStatus != "SIGNAL_POST_PENDING")
+         g_signalFlowStatus != "SIGNAL_POST_PENDING" &&
+         g_signalFlowStatus != "SAFETY_BLOCKED" &&
+         g_signalFlowStatus != "SIGNAL_POST_REJECTED_STALE_BAR")
       {
          g_signalFlowStatus = "WAITING_FOR_NEW_M5_BAR";
          g_signalFlowReason = "current_completed_M5_bar_already_handled";
