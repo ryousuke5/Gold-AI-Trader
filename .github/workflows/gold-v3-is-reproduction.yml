@@ -1,0 +1,178 @@
+name: GOLD V3 Frozen IS Reproduction
+
+on:
+  push:
+    branches:
+      - research/gold-v3-high-frequency-rr2-20261102
+    paths:
+      - .github/workflows/gold-v3-is-reproduction.yml
+      - src/gold_strategy_v3.js
+      - scripts/build-gold-v3-replay.mjs
+      - scripts/report-gold-v3-replay.mjs
+      - package.json
+      - tests/gold-strategy-v3.test.js
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gold-v3-frozen-is-reproduction
+  cancel-in-progress: false
+
+jobs:
+  reproduce-is:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GOLD_V3_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+      GOLD_V3_START_UTC: '2021-10-06T00:00:00Z'
+      GOLD_V3_END_UTC: '2024-10-06T00:00:00Z'
+      GOLD_V3_BASE_SPREAD_PRICE: '0.55'
+      GOLD_V3_BASE_SLIPPAGE_PRICE: '0.05'
+      GOLD_V3_STRESS_SPREAD_PRICE: '0.75'
+      GOLD_V3_STRESS_SLIPPAGE_PRICE: '0.10'
+      GOLD_V3_MAX_HOLD_BARS: '96'
+      GOLD_V3_MAX_ENTRY_GAP_ATR: '0.50'
+      GOLD_V3_REPLAY_OUTPUT_DIR: gold-v3-is-reproduction
+    steps:
+      - name: Checkout frozen V3 research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies and run full repository tests
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
+      - name: Download the prepared five-year XAUUSD M5 dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-xauusd-m5-1825d
+          path: gold-xauusd-data
+          run-id: 40735869515
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify source dataset and frozen IS boundaries
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          const manifest = JSON.parse(await fs.readFile('gold-xauusd-data/xauusd_m5_manifest.json', 'utf8'));
+          const stat = await fs.stat('gold-xauusd-data/xauusd-m5.json.gz');
+          if (manifest.instrument !== 'XAUUSD') throw new Error('Wrong instrument');
+          if (manifest.provider !== 'Dukascopy Historical Data Feed') throw new Error('Unexpected data provider');
+          if (manifest.requested_start_date_utc !== '2021-10-06' ||
+              manifest.requested_end_date_exclusive_utc !== '2026-10-05') {
+            throw new Error('Unexpected source dataset window: ' + JSON.stringify({
+              start: manifest.requested_start_date_utc,
+              end: manifest.requested_end_date_exclusive_utc
+            }));
+          }
+          if (stat.size < 1000000) throw new Error('Prepared XAUUSD M5 data file is missing or too small');
+          console.log(JSON.stringify({
+            instrument: manifest.instrument,
+            provider: manifest.provider,
+            source_start_utc: manifest.requested_start_date_utc,
+            source_end_exclusive_utc: manifest.requested_end_date_exclusive_utc,
+            compressed_bytes: stat.size,
+            is_start_utc: process.env.GOLD_V3_START_UTC,
+            is_end_exclusive_utc: process.env.GOLD_V3_END_UTC
+          }, null, 2));
+          NODE
+
+      - name: Check V3 replay syntax
+        run: |
+          node --check src/gold_strategy_v3.js
+          node --check scripts/build-gold-v3-replay.mjs
+          node --check scripts/report-gold-v3-replay.mjs
+
+      - name: Run the frozen V3 IS replay
+        run: npm run research:gold:v3:build
+
+      - name: Build baseline and stress report
+        run: npm run research:gold:v3:report
+
+      - name: Record the pre-registered IS decision
+        run: |
+          python3 - <<'PY'
+          import json
+          import math
+          from pathlib import Path
+
+          root = Path("gold-v3-is-reproduction")
+          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+          report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+          if report.get("strategy_version") != "gold-h1-m5-expanded-pullback-reaccel-v3":
+              raise SystemExit("Unexpected strategy version")
+          if manifest["period"].get("requested_start_utc") != "2021-10-06T00:00:00.000Z":
+              raise SystemExit("IS start mismatch")
+          if manifest["period"].get("requested_end_utc_exclusive") != "2024-10-06T00:00:00.000Z":
+              raise SystemExit("IS end mismatch")
+          if manifest["cost_scenarios"]["baseline"] != {"spreadPrice": 0.55, "slippagePrice": 0.05}:
+              raise SystemExit("Baseline cost assumptions changed")
+          if manifest["cost_scenarios"]["stress"] != {"spreadPrice": 0.75, "slippagePrice": 0.10}:
+              raise SystemExit("Stress cost assumptions changed")
+
+          baseline = report["baseline"]
+          stress = report["stress"]
+          def finite_positive(value):
+              return isinstance(value, (int, float)) and math.isfinite(value) and value > 0
+          monthly = list(baseline.get("monthly_net_r", {}).values())
+          sides = baseline.get("by_side", {})
+          gate = {
+              "minimum_baseline_trades_50": baseline["trades"] >= 50,
+              "baseline_profit_factor_gt_1": finite_positive(baseline["profit_factor"]) and baseline["profit_factor"] > 1,
+              "baseline_expectancy_positive": baseline["expectancy_r"] > 0,
+              "stress_profit_factor_gt_1": finite_positive(stress["profit_factor"]) and stress["profit_factor"] > 1,
+              "stress_expectancy_positive": stress["expectancy_r"] > 0,
+              "at_least_55pct_profitable_months": bool(monthly) and
+                  sum(1 for item in monthly if item["net_r"] > 0) / len(monthly) >= 0.55,
+              "buy_expectancy_positive": finite_positive(sides.get("BUY", {}).get("net_r")) and
+                  sides["BUY"]["net_r"] / max(1, sides["BUY"]["trades"]) > 0,
+              "sell_expectancy_positive": finite_positive(sides.get("SELL", {}).get("net_r")) and
+                  sides["SELL"]["net_r"] / max(1, sides["SELL"]["trades"]) > 0
+          }
+          # This is an IS screen only. A PASS does not authorize OOS or live trading.
+          passed = all(gate.values())
+          decision = {
+              "strategy_version": report["strategy_version"],
+              "evaluation": "FROZEN_IS_ONLY",
+              "period": report["period"],
+              "source_fingerprint": report["source_fingerprint"],
+              "candidates": report["candidates"],
+              "baseline": baseline,
+              "stress": stress,
+              "gates": gate,
+              "passed_all_pre_registered_screening_gates": passed,
+              "decision": "IS_SCREEN_PASS_REQUIRES_SEPARATE_OOS_REVIEW" if passed else "REJECT_FROZEN_V3_NO_OOS_NO_PARAMETER_TUNING",
+              "safety": {
+                  "research_only": True,
+                  "production_v2_changed": False,
+                  "render_changed": False,
+                  "supabase_changed": False,
+                  "mt4_ea_changed": False,
+                  "live_orders_enabled": False
+              }
+          }
+          (root / "is_decision.json").write_text(json.dumps(decision, indent=2, allow_nan=False), encoding="utf-8")
+          print(json.dumps({
+              "decision": decision["decision"],
+              "candidates": decision["candidates"],
+              "baseline": {k: baseline[k] for k in ["trades", "win_rate_pct", "profit_factor", "expectancy_r", "net_r", "max_drawdown_r", "profitable_months", "losing_months"]},
+              "stress": {k: stress[k] for k in ["trades", "win_rate_pct", "profit_factor", "expectancy_r", "net_r", "max_drawdown_r", "profitable_months", "losing_months"]},
+              "gates": gate
+          }, indent=2))
+          PY
+
+      - name: Upload frozen V3 IS reproduction
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v3-frozen-is-reproduction
+          path: gold-v3-is-reproduction/
+          if-no-files-found: warn
+          retention-days: 90
