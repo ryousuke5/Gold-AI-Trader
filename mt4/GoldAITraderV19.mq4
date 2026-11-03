@@ -846,6 +846,19 @@ void OnTimer()
       return;
    }
 
+   // A freshly attached EA must not submit the candle that was already closed
+   // before initialization. It may be older than the server's 90-second freshness
+   // window, so mark it handled and wait for the next completed M5 candle.
+   if(g_lastClosedM5Bar <= 0)
+   {
+      g_lastClosedM5Bar = closedBar;
+      g_signalFlowStatus = "WAITING_FOR_NEW_M5_BAR";
+      g_signalFlowReason = "startup_current_completed_M5_bar_skipped";
+      Print("GoldAITrader: startup completed M5 bar skipped; waiting for next completed bar. bar_open=",
+            TimeToString(closedBar, TIME_DATE|TIME_MINUTES));
+      return;
+   }
+
    if(closedBar == g_lastClosedM5Bar)
    {
       if(g_signalFlowStatus != "SIGNAL_POST_ACCEPTED" &&
