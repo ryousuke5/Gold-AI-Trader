@@ -22,6 +22,9 @@ test('V19 exposes disabled, AI-test-only, safety-blocked and POST outcomes witho
   assert.match(timer, /g_signalFlowStatus = "SAFETY_BLOCKED"/);
   assert.match(timer, /g_signalFlowStatus = "SIGNAL_POST_ACCEPTED"/);
   assert.match(timer, /g_signalFlowStatus = "SIGNAL_POST_FAILED"/);
+  const handledBarGuard = timer.split('if(closedBar == g_lastClosedM5Bar)')[1] || '';
+  assert.match(handledBarGuard, /g_signalFlowStatus != "SAFETY_BLOCKED"/);
+  assert.match(handledBarGuard, /g_signalFlowStatus != "SIGNAL_POST_REJECTED_STALE_BAR"/);
   assert.match(source, /input bool\s+AllowAutoOrders = false;/);
   assert.doesNotMatch(source, /OrderSend\s*\(/);
 });
