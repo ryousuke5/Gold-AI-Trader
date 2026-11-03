@@ -82,13 +82,14 @@ button{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
 </div>
 
 <script type="module">
-import { getGoldDiagnosticsDisplayState, getGoldSafetyHeartbeatDisplayState } from '/gold-diagnostics-status.js';
+import { getGoldDiagnosticsDisplayState, getGoldSafetyHeartbeatDisplayState, getGoldSignalFlowDisplayState } from '/gold-diagnostics-status.js';
 const keyInput=document.getElementById('key'), errorBox=document.getElementById('error');
 keyInput.value=sessionStorage.getItem('gold_api_key')||'';
 document.getElementById('connect').onclick=()=>{sessionStorage.setItem('gold_api_key',keyInput.value.trim());load();};
 document.getElementById('refresh').onclick=load;
 const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const fmtTime=v=>v?new Date(v).toLocaleString('ja-JP',{hour12:false}):'—';
+const utcEpochLabel=v=>v==null?'—':new Date(Number(v)*1000).toISOString().replace('T',' ').replace('.000Z',' UTC');
 const fmt=v=>new Intl.NumberFormat('ja-JP',{maximumFractionDigits:2}).format(Number(v)||0);
 const pct=v=>Number.isFinite(Number(v))?Number(v).toFixed(1)+'%':'—';
 const cls=v=>String(v).toUpperCase()==='BUY'?'buy':String(v).toUpperCase()==='SELL'?'sell':'wait';
@@ -350,6 +351,18 @@ function renderGoldMarketSafety(s){
   const api=s?.api_validation_allowed===true?'通過':'ブロック / 要確認';
   const reasons=Array.isArray(s?.api_validation_reasons)&&s.api_validation_reasons.length
     ?s.api_validation_reasons.join(', '):'なし';
+  const runtime=s?.ea_runtime||null;
+  const flow=getGoldSignalFlowDisplayState(runtime);
+  const signalEnabled=runtime?.enable_signal_requests===true?'ON':runtime?.enable_signal_requests===false?'OFF':'未報告';
+  const aiTest=runtime?.run_ai_test_once===true?'ON':runtime?.run_ai_test_once===false?'OFF':'未報告';
+  const autoOrders=runtime?.allow_auto_orders===true?'ON（実注文コードは無効）':runtime?.allow_auto_orders===false?'OFF':'未報告';
+  const runtimeSettings=runtime
+    ?'RunAITestOnce='+aiTest+' / AllowAutoOrders='+autoOrders+' / TimerSeconds='+String(runtime.timer_seconds??'—')
+    :'診断対応V19ビルドからの設定報告待ち';
+  const lastHandledBar=utcEpochLabel(runtime?.last_handled_m5_bar_open_utc);
+  const currentClosedBar=utcEpochLabel(runtime?.current_closed_m5_bar_open_utc);
+  const lastAttempt=utcEpochLabel(runtime?.last_attempt_at_utc);
+  const lastAttemptBar=utcEpochLabel(runtime?.last_attempted_m5_bar_open_utc);
   root.innerHTML='<div class="diaghead"><div><h2>GOLD V19 市場安全ゲート</h2><div class="meta">MT4から15秒ごとに軽量報告 / 45秒以上更新がなければSTALE扱い</div></div><div>'+chip(labels[status]||status,state)+'</div></div>'+
     '<div class="diaggrid">'+
       diagItem('MT4ローカルゲート',local,'V19側の市場安全判定',s?.reported_allowed===true?'good':'warn')+
@@ -360,9 +373,18 @@ function renderGoldMarketSafety(s){
       diagItem('週明けロック',lockLabel,lockUntil>0?'解除予定 '+fmtTime(new Date(lockUntil*1000).toISOString()):'市場再開時のみ作動',lockRemaining>0?'warn':'good')+
       diagItem('異常ティック',anomaly,'価格ジャンプ検知後の回復確認',s?.anomaly_active===true?'warn':'good')+
       diagItem('安定ティック確認',stable,'異常回復時に3回を確認',s?.anomaly_active===true?'warn':'good')+
+      diagItem('EnableSignalRequests',signalEnabled,'V19の通常シグナル送信スイッチ',runtime?.enable_signal_requests===true?'good':runtime?.enable_signal_requests===false?'bad':'muted')+
+      diagItem('RunAITestOnce',aiTest,'ONの場合はAIテストAPIのみ。通常シグナルは送信しない',runtime?.run_ai_test_once===true?'warn':runtime?.run_ai_test_once===false?'good':'muted')+
+      diagItem('AllowAutoOrders',autoOrders,'V19監視EAは注文送信コードを持たない',runtime?.allow_auto_orders===false?'good':runtime?.allow_auto_orders===true?'warn':'muted')+
+      diagItem('V19シグナル処理',flow.label,(runtime?.flow_status||'—')+' / '+(runtime?.flow_reason||flow.detail),flow.state)+
+      diagItem('現在の確定M5足',currentClosedBar,'UTC / M5 closeの元になる確定足',runtime?.current_closed_m5_bar_open_utc==null?'muted':'good')+
+      diagItem('最終処理M5足',lastHandledBar,'UTC / ローカル安全停止・拒否・成功で処理済みにした足',runtime?.last_handled_m5_bar_open_utc==null?'muted':'good')+
+      diagItem('最終送信試行',lastAttempt,'UTC / 対象足 '+lastAttemptBar,runtime?.last_attempt_at_utc==null?'muted':'good')+
     '</div>'+
+    '<div class="diag-foot">V19実設定: EnableSignalRequests='+esc(signalEnabled)+' / '+esc(runtimeSettings)+'</div>'+
     '<div class="diag-foot">最新理由: '+esc(s?.reason||'—')+' / API確認理由: '+esc(reasons)+
-    ' / サーバー再起動後は次のV19ハートビート受信まで「未受信」になります。画面表示は監視用で、安全判定そのものはV19とAPI側で実施します。</div>';
+    ' / サーバー再起動後は次のV19ハートビート受信まで「未受信」になります。画面表示は監視用で、安全判定そのものはV19とAPI側で実施します。'+
+    (runtime?' / V19送信状態: '+esc(flow.label)+' / 理由: '+esc(runtime.flow_reason||'—'):' / V19実設定は診断対応ビルドからの報告待ち')+'</div>';
 }
 function renderDiagnostics(d,system){
   const root=document.getElementById('diagnostics');
