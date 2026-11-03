@@ -1,6 +1,6 @@
 #property strict
-#property version   "1.00"
-#property description "GOLD H4_H1PR_01 UTC-aligned virtual forward monitor. No order execution APIs."
+#property version   "1.01"
+#property description "GOLD H4_H1PR_01 UTC virtual monitor with history diagnostics. No order execution APIs."
 
 // Research-only forward monitor for the frozen H4_H1PR_01 hypothesis.
 // It reconstructs UTC H1/H4 bars from completed XM M5 BID bars.
@@ -13,7 +13,7 @@ input int    MinH1Bars = 1000;
 input int    MaxEntryDelaySeconds = 30;
 input bool   RequireDemoAccount = true;
 input bool   EnableEventCsv = true;
-input string EventCsvName = "GOLD_H4_H1PR01_ForwardEvents.csv";
+input string EventCsvName = "GOLD_H4_H1PR01_ForwardEvents_DIAG.csv";
 
 #define M5_SECONDS 300
 #define H1_SECONDS 3600
