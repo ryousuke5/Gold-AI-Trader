@@ -1,6 +1,12 @@
 name: GOLD H4H1 Demo Cost Logger Tests
 
 on:
+  push:
+    branches:
+      - research/gold-h4-h1-cost-validation-20261026
+    paths:
+      - "research/gold_h4_h1_cost_validation/**"
+      - ".github/workflows/gold-h4-h1-demo-cost-tests.yml"
   pull_request:
     paths:
       - "research/gold_h4_h1_cost_validation/**"
