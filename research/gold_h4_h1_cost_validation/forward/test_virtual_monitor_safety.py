@@ -16,7 +16,12 @@ assert "rsiCurrent>=48.0 && rsiCurrent<=70.0" in src
 assert "rsiCurrent>=30.0 && rsiCurrent<=52.0" in src
 assert "targetPrice = (side>0 ? entryPrice+2.0*riskPrice : entryPrice-2.0*riskPrice)" in src
 assert "riskAtr<0.60 || riskAtr>2.80" in src
-assert "MaxM5HistoryBars = 60000" in src
+assert "MaxM5HistoryBars = 90000" in src
+assert "HISTORY_DIAGNOSTIC" not in src  # diagnostics are emitted as structured reason fields
+assert "HistoryDiagnosticText()" in src
+assert "H1_COMPLETE_BAR_COUNT_BELOW_MINIMUM" in src
+assert "H4_COMPLETE_BAR_COUNT_BELOW_MINIMUM" in src
+assert "M5_TOTAL=%d;M5_USED=%d;H1=%d/%d;H4=%d/%d" in src
 assert "MinH4Bars = 1000" in src
 assert "WAITING_FOR_FRESH_SERVER_UTC_OFFSET_CONFIRMATION" in src
 assert "FRESH_SERVER_UTC_OFFSET_CONFIRMED" in src
