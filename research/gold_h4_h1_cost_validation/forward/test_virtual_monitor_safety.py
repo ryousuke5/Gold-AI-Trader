@@ -18,6 +18,8 @@ assert "targetPrice = (side>0 ? entryPrice+2.0*riskPrice : entryPrice-2.0*riskPr
 assert "riskAtr<0.60 || riskAtr>2.80" in src
 assert "MaxM5HistoryBars = 90000" in src
 assert "HistoryDiagnosticText()" in src
+assert "H4H1PR01 history diagnostic:" in src
+assert "HISTORY_BUILD_OK" in src and "HISTORY_BUILD_BLOCKED" in src
 assert "H1_COMPLETE_BAR_COUNT_BELOW_MINIMUM" in src
 assert "H4_COMPLETE_BAR_COUNT_BELOW_MINIMUM" in src
 assert "M5_TOTAL=%d;M5_USED=%d;H1=%d/%d;H4=%d/%d" in src
