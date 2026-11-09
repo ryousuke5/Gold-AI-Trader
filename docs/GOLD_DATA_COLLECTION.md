@@ -38,7 +38,7 @@ The new research payload is informational only. It does not call the signal endp
 
 V19 is a market-safety/monitor EA and does not create Paper positions. `GOLD_Paper_Trades.csv` intentionally includes only rows explicitly tagged with `PAPER`, `FORWARD_PAPER`, or `ANALYSIS_PAPER` in trade-result metadata. It can therefore be empty until a separate Paper simulator sends its trade lifecycle and execution details. Live/real trade rows are not relabeled as Paper.
 
-For complete Paper metrics, the reporting EA/simulator must send mode, strategy version, entry/exit, SL/TP, spread, slippage, commission, swap, MFE-R, MAE-R, and holding duration to `/api/gold/trade-result`.
+For complete Paper metrics, the reporting EA/simulator must send `idempotency_key`, an explicit `mode` (`PAPER`, `FORWARD_PAPER`, or `ANALYSIS_PAPER`), symbol, result, strategy version, entry/exit, SL/TP, spread, slippage, commission, swap, MFE-R, MAE-R, and holding duration to `/api/gold/trade-result`. Paper results may omit `mt4_ticket`; non-Paper results still require it. Store the detailed measurements in the request body or `metadata.capture`.
 
 ## Safety invariants
 
