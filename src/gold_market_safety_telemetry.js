@@ -22,6 +22,8 @@ function normalizeEaRuntime(value) {
     allow_auto_orders: booleanOrNull(value.allow_auto_orders),
     timer_seconds: numberOrNull(value.timer_seconds),
     safety_heartbeat_seconds: numberOrNull(value.safety_heartbeat_seconds),
+    enable_research_data_collection: booleanOrNull(value.enable_research_data_collection),
+    research_bars_to_capture: numberOrNull(value.research_bars_to_capture),
     flow_status: safeText(value.flow_status, 64),
     flow_reason: safeText(value.flow_reason, 160),
     current_closed_m5_bar_open_utc: numberOrNull(value.current_closed_m5_bar_open_utc),
