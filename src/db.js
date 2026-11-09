@@ -97,7 +97,7 @@ export async function listGoldSystemEvents({ eventTypes = [], from = null, to = 
   if (!supabase) return [];
   const types = [...new Set((Array.isArray(eventTypes) ? eventTypes : []).map(String).filter(Boolean))];
   if (!types.length) return [];
-  const maxRows = Math.max(1, Math.min(50000, Math.floor(Number(limit) || 10000)));
+  const maxRows = Math.max(1, Math.min(50000, Math.floor(Number(limit) || 50000)));
   const pageSize = 500;
   const rows = [];
   for (let offset = 0; offset < maxRows; offset += pageSize) {
@@ -139,9 +139,9 @@ export async function listGoldSignalsForExport({ from = null, to = null, limit =
   return rows;
 }
 
-export async function listGoldTradeResultsForExport({ from = null, to = null, limit = 10000 } = {}) {
+export async function listGoldTradeResultsForExport({ from = null, to = null, limit = 50000 } = {}) {
   if (!supabase) return [];
-  const maxRows = Math.max(1, Math.min(50000, Math.floor(Number(limit) || 10000)));
+  const maxRows = Math.max(1, Math.min(50000, Math.floor(Number(limit) || 50000)));
   const pageSize = 500;
   const rows = [];
   for (let offset = 0; offset < maxRows; offset += pageSize) {
