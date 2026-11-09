@@ -17,5 +17,6 @@ test('V19 captures research bars separately from the signal safety gate', () => 
 test('V19 research snapshots do not enable order submission', () => {
   assert.match(source, /input bool\s+AllowAutoOrders\s*=\s*false/);
   assert.match(source, /AllowAutoOrders/);
-  assert.doesNotMatch(source, /AllowAutoOrders\s*=\s*true/);
+  const mutableAssignments = source.split('\n').filter((line) => /^\s*(?:input\s+bool\s+)?AllowAutoOrders\s*=(?!=)/.test(line));
+  assert.deepEqual(mutableAssignments.map((line) => line.trim()), ['input bool   AllowAutoOrders = false;']);
 });
