@@ -252,6 +252,48 @@ function paperTradeRows(trades) {
   });
 }
 
+
+function sanitizeBars(bars, maxBars = 64) {
+  if (!Array.isArray(bars)) return [];
+  return bars.slice(-maxBars).map((bar) => {
+    if (!isObject(bar)) return null;
+    const time = finiteOrBlank(bar.time);
+    const open = finiteOrBlank(bar.open);
+    const high = finiteOrBlank(bar.high);
+    const low = finiteOrBlank(bar.low);
+    const close = finiteOrBlank(bar.close);
+    const volume = finiteOrBlank(bar.volume);
+    if ([time, open, high, low, close].some((value) => value === "")) return null;
+    if (!(high >= low && high >= open && high >= close && low <= open && low <= close)) return null;
+    return { time, open, high, low, close, volume };
+  }).filter(Boolean);
+}
+
+export function normalizeGoldResearchSnapshot(value, fallbackSymbol = "") {
+  if (!isObject(value)) return null;
+  const symbol = String(value.symbol || fallbackSymbol || "").trim().slice(0, 24);
+  if (!/(XAU|GOLD)/i.test(symbol)) return null;
+  const normalizeIndicators = (input, keys) => {
+    const source = isObject(input) ? input : {};
+    return Object.fromEntries(keys.map((key) => [key, finiteOrBlank(source[key])]));
+  };
+  const result = {
+    symbol,
+    captured_at_utc: typeof value.captured_at_utc === "string" ? value.captured_at_utc.slice(0, 40) : "",
+    bar_time_utc: finiteOrBlank(value.bar_time_utc),
+    bid: finiteOrBlank(value.bid),
+    ask: finiteOrBlank(value.ask),
+    spread: finiteOrBlank(value.spread),
+    point: finiteOrBlank(value.point),
+    m5: normalizeIndicators(value.m5, ["ema20", "ema50", "rsi14", "atr14"]),
+    h1: normalizeIndicators(value.h1, ["close", "ema20", "ema50", "ema200", "rsi14", "atr14"]),
+    recent_m5: sanitizeBars(value.recent_m5),
+    recent_h1: sanitizeBars(value.recent_h1)
+  };
+  if (result.recent_m5.length === 0 || result.recent_h1.length === 0) return null;
+  return result;
+}
+
 export function buildGoldExportCsv(dataset, records = {}) {
   const definition = DATASETS[dataset];
   if (!definition) throw new Error("unsupported_export_dataset");
