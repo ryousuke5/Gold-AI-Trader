@@ -143,6 +143,7 @@ app.post('/api/gold/market-safety',auth,async(req,res)=>{
         message:'V19 market-safety heartbeat',
         metadata:{
           ...snapshot,
+          strategy_version:strategyVersion,
           research_snapshot:researchSnapshot,
           ea_runtime:snapshot.ea_runtime||null
         },
