@@ -295,7 +295,7 @@ app.get('/api/gold/export/:dataset',auth,async(req,res)=>{
     const effectiveFrom=from||(to?new Date(now-7*24*60*60*1000).toISOString():new Date(now-7*24*60*60*1000).toISOString());
     const effectiveTo=to||new Date(now).toISOString();
     if(Date.parse(effectiveFrom)>Date.parse(effectiveTo))return res.status(400).json({ok:false,error:'from_must_not_be_after_to'});
-    const requestedLimit=Number(req.query.limit||10000);
+    const requestedLimit=Number(req.query.limit||50000);
     if(!Number.isInteger(requestedLimit)||requestedLimit<1)return res.status(400).json({ok:false,error:'limit_must_be_positive_integer'});
     const limit=Math.min(50000,requestedLimit);
     let records={};
