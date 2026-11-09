@@ -98,6 +98,10 @@ create index if not exists gold_risk_checks_signal_id_created_at_idx
   on public.gold_risk_checks(signal_id, created_at desc);
 create index if not exists gold_orders_created_at_idx
   on public.gold_orders(created_at desc);
+create index if not exists gold_orders_signal_id_idx
+  on public.gold_orders(signal_id);
+create index if not exists gold_trade_results_order_id_idx
+  on public.gold_trade_results(order_id);
 create index if not exists gold_trade_results_created_at_idx
   on public.gold_trade_results(created_at desc);
 create index if not exists gold_system_events_created_at_idx

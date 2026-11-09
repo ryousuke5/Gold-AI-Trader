@@ -9,16 +9,17 @@ import { buildGoldH1M5HalfbackV1Setup } from './src/gold_h1_m5_halfback_v1.js';
 import { buildGoldV2H1TrendDiagnostics } from './src/gold_h1_trend_diagnostics.js';
 import { analyzeWithOpenAI } from './src/ai.js';
 import { evaluateRisk, getRiskLimits, safeDecision } from './src/risk.js';
-import { dbEnabled, getRiskBySignal, getSignalByKey, getState, insertEvent, insertOrder, insertRisk, insertSignal, insertTradeResult, probeGoldDatabase, updateState } from './src/db.js';
+import { dbEnabled, getRiskBySignal, getSignalByKey, getState, insertEvent, insertOrder, insertRisk, insertSignal, insertTradeResult, listGoldSignalsForExport, listGoldSystemEvents, listGoldTradeResultsForExport, probeGoldDatabase, updateState } from './src/db.js';
 import { registerEurUsdRoutes } from './src/eurusd.js';
 import { startEurUsdNewsFeedMonitor } from './src/eurusd_news_feed.js';
 import { buildForwardMonitorSnapshot } from './src/forward_monitor.js';
 import { buildGoldSignalDiagnosticLog } from './src/gold_signal_diagnostics.js';
 import { validateUtcBarTimestamp } from './src/market_time.js';
 import { evaluateGoldMarketSafety } from './src/gold_market_safety.js';
-import { recordGoldMarketSafetyHeartbeat } from './src/gold_market_safety_telemetry.js';
+import { getGoldMarketSafetyTelemetrySnapshot, recordGoldMarketSafetyHeartbeat } from './src/gold_market_safety_telemetry.js';
 import { recordGoldSignalEvaluated, recordGoldSignalOutcome, recordGoldSignalRequest, recordGoldSignalTimeRejection } from './src/gold_diagnostics.js';
 import { buildGoldPostTrace } from './src/gold_post_trace.js';
+import { buildGoldExportCsv, normalizeGoldResearchSnapshot } from './src/gold_data_exports.js';
 
 const app=express();
 const __filename=fileURLToPath(import.meta.url);
@@ -63,6 +64,7 @@ function keyFingerprint(value){
   return crypto.createHash('sha256').update(String(value||''),'utf8').digest('hex').slice(0,12);
 }
 function envNumber(name, fallback){const value=Number(process.env[name]);return Number.isFinite(value)?value:fallback;}
+function optionalNumber(value){if(value===null||value===undefined||value==='')return null;const number=Number(value);return Number.isFinite(number)?number:null;}
 function getGoldV2Config(){
   return {
     rangeLookback: envNumber('GOLD_RANGE_LOOKBACK', 12),
@@ -118,21 +120,49 @@ function applyDeterministicGoldSetup(decision, setup, candidate){
   return {...decision,candidate,entry,stop_loss:sl,take_profit:tp,risk_reward:rr};
 }
 function waitDecision(){return{decision:'WAIT',confidence:0,market_regime:'UNCLEAR',entry:0,stop_loss:0,take_profit:0,risk_reward:0,reason:'Rule filter found no eligible setup.',invalid_reasons:['rule_candidate_wait'],fundamental:{bias:'INSUFFICIENT',confidence:0,freshness:'INSUFFICIENT',summary:'Fundamental search skipped because the deterministic rule candidate was WAIT.',drivers:[],risks:[]}};}function preserveFundamental(safe,raw){const f=raw?.fundamental||{};const c=Number(f.confidence);return{...safe,fundamental:{bias:String(f.bias||'INSUFFICIENT').toUpperCase(),confidence:Number.isFinite(c)?c:0,freshness:String(f.freshness||'INSUFFICIENT').toUpperCase(),summary:String(f.summary||''),drivers:Array.isArray(f.drivers)?f.drivers.map(String):[],risks:Array.isArray(f.risks)?f.risks.map(String):[]}};}
-app.post('/api/gold/market-safety',auth,(req,res)=>{
+app.post('/api/gold/market-safety',auth,async(req,res)=>{
   try {
     const body=req.body||{};
     const symbol=String(body.symbol||'');
     if(!/(XAU|GOLD)/i.test(symbol))return res.status(400).json({ok:false,error:'symbol_not_gold'});
+    const nowMs=Date.now();
     const result=recordGoldMarketSafetyHeartbeat({
       symbol,
       marketSafety:body.market_safety,
       features:body.features,
       eaRuntime:body.ea_runtime,
-      nowMs:Date.now()
+      nowMs
     });
+    const snapshot=getGoldMarketSafetyTelemetrySnapshot({nowMs});
+    const researchSnapshot=normalizeGoldResearchSnapshot(body.research_snapshot,symbol);
+    let heartbeatSaved=false;
+    try {
+      const saved=await insertEvent({
+        level:snapshot.status==='ALLOWED'?'INFO':'WARN',
+        event_type:'gold_market_safety_heartbeat',
+        message:'V19 market-safety heartbeat',
+        metadata:{
+          ...snapshot,
+          strategy_version:strategyVersion,
+          research_snapshot:researchSnapshot,
+          ea_runtime:snapshot.ea_runtime||null
+        },
+        created_at:snapshot.received_at||nowIso()
+      });
+      heartbeatSaved=Boolean(saved?.persisted);
+    } catch(persistError) {
+      console.error('[GOLD MARKET SAFETY PERSIST]',persistError?.message||persistError);
+    }
+    if(!heartbeatSaved)console.warn('[GOLD MARKET SAFETY PERSIST] heartbeat_not_saved symbol=%s db_enabled=%s',symbol,dbEnabled());
     if(result.state_changed)console.log('[GOLD MARKET SAFETY STATE] '+JSON.stringify({symbol,status:result.status,reported_allowed:result.reported_allowed,api_validation_allowed:result.api_validation_allowed,reasons:result.api_validation_reasons,received_at:nowIso()}));
     res.set('Cache-Control','no-store');
-    res.json(result);
+    res.json({
+      ...result,
+      persistence:{
+        heartbeat_saved:heartbeatSaved,
+        research_snapshot_saved:researchSnapshot?heartbeatSaved:null
+      }
+    });
   } catch(error) {
     res.status(400).json({ok:false,error:error.message||'market_safety_heartbeat_invalid'});
   }
@@ -206,10 +236,89 @@ const setupDiagnosticReasons=(setup&&typeof setup==='object'&&setup.diagnostics&
   : [];
 const baseInvalidReasons=Array.isArray(decision.invalid_reasons)?decision.invalid_reasons:[];
 const marketSafetyDiagnosticReasons=marketSafety.reasons.map((reason)=>'GOLD_MARKET_SAFETY:'+reason);const signalInvalidReasons=[...baseInvalidReasons,...(setupReason&&!baseInvalidReasons.includes(setupReason)?[setupReason]:[]),...setupDiagnosticReasons,...marketSafetyDiagnosticReasons];
-const signalRow={id:signalId,symbol,timeframe,bar_time:new Date(features.barTime*1000).toISOString(),strategy_version:strategyVersion,request_id:requestId,candidate,decision:decision.decision,confidence:decision.confidence,market_regime:decision.market_regime,entry:decision.entry||null,stop_loss:decision.stop_loss||null,take_profit:decision.take_profit||null,risk_reward:decision.risk_reward||null,reason:setupReason,invalid_reasons:signalInvalidReasons,openai_response_id:ai.responseId,model:ai.model,created_at:nowIso()};let signalSave;try{signalSave=await insertSignal(signalRow);}catch(error){if(error?.code==='23505'){const raced=await getSignalByKey({symbol,timeframe,barTimeIso:signalRow.bar_time,strategyVersion});recordGoldSignalOutcome({requestId,outcome:'DUPLICATE_BAR',reason:'database_unique_constraint_race'});logGoldSignalPostTrace({req,requestId,symbol,timeframe,features,event:'DUPLICATE_BAR',reason:'database_unique_constraint_race'});return res.status(409).json({ok:false,error:'duplicate_bar',request_id:requestId,signal_id:raced?.id||null,existing:true});}throw error;}if(!signalSave?.persisted)return res.status(503).json({ok:false,error:'signal_not_persisted',request_id:requestId,signal_id:signalId});markSeen(barKey);const riskSave=await insertRisk({signal_id:signalId,approved:risk.approved,reasons:risk.reasons,age_seconds:risk.ageSeconds,account_snapshot:{...(body.account||{}),risk_limits:getRiskLimits(),calculated_lots:risk.lots},created_at:nowIso()});if(!riskSave?.persisted)return res.status(500).json({ok:false,error:'risk_not_persisted',request_id:requestId,signal_id:signalId});const orderAllowed=Boolean(risk.approved&&state?.auto_trading_enabled===true&&!state?.emergency_stopped_at&&['DEMO','LIVE'].includes(String(state?.mode||'')));recordGoldSignalEvaluated({requestId,signal:signalRow,risk,state});logGoldSignalPostTrace({req,requestId,symbol,timeframe,features,event:'SIGNAL_EVALUATED'});console.log('[GOLD SIGNAL DIAG] '+JSON.stringify(buildGoldSignalDiagnosticLog({requestId,signal:signalRow,setup,risk,state,serverUtcOffsetSeconds:body.features?.server_utc_offset_seconds??body.server_utc_offset_seconds})));const expiresAt=new Date(Date.now()+getRiskLimits().maxSignalAgeSeconds*1000);res.json({ok:true,request_id:requestId,signal_id:signalId,symbol,timeframe,strategy_version:strategyVersion,candidate,decision,risk,state,fundamental_sources:ai.sources,persistence:{signal:true,risk:true},openai:{called:Boolean(ai.responseId),response_id:ai.responseId,model:ai.model,web_search_used:ai.webSearchUsed===true},fundamental_source_selection_method:ai.sourceSelectionMethod||null,searched_sources_count:Array.isArray(ai.searchedSources)?ai.searchedSources.length:0,order_allowed:orderAllowed,market_safety:marketSafety,expires_at:expiresAt.toISOString(),expires_at_epoch:Math.floor(expiresAt.getTime()/1000)});}catch(error){recordGoldSignalOutcome({requestId,outcome:'SERVER_ERROR'});console.error('[gold/signal]',requestId,error);try{await insertEvent({level:'ERROR',event_type:'signal_error',message:error.message||String(error),metadata:{request_id:requestId},created_at:nowIso()});}catch{}res.status(500).json({ok:false,error:error.message||'signal generation failed',request_id:requestId});}});
-app.post('/api/gold/trade-result',auth,async(req,res)=>{try{const body=req.body||{};if(!body.idempotency_key||!body.mt4_ticket||!body.symbol||!body.result)return res.status(400).json({ok:false,error:'idempotency_key, mt4_ticket, symbol and result are required'});const result=String(body.result||'').toUpperCase();if(!['WIN','LOSS','BREAKEVEN'].includes(result))return res.status(400).json({ok:false,error:'result must be WIN|LOSS|BREAKEVEN'});const saved=await insertTradeResult({id:crypto.randomUUID(),idempotency_key:String(body.idempotency_key),mt4_ticket:Number(body.mt4_ticket),symbol:String(body.symbol),result,profit:Number(body.profit||0),r_multiple:Number(body.r_multiple||0),holding_seconds:Math.max(0,Math.floor(Number(body.holding_seconds||0))),exit_reason:body.exit_reason?String(body.exit_reason):null,metadata:body.metadata||{},created_at:nowIso()});res.json({ok:true,persisted:saved.persisted,trade_result:saved.row});}catch(error){res.status(500).json({ok:false,error:error.message||'trade result persistence failed'});}});
+const signalRow={id:signalId,symbol,timeframe,bar_time:new Date(features.barTime*1000).toISOString(),strategy_version:strategyVersion,request_id:requestId,candidate,decision:decision.decision,confidence:decision.confidence,market_regime:decision.market_regime,entry:decision.entry||null,stop_loss:decision.stop_loss||null,take_profit:decision.take_profit||null,risk_reward:decision.risk_reward||null,reason:setupReason,invalid_reasons:signalInvalidReasons,openai_response_id:ai.responseId,model:ai.model,created_at:nowIso()};let signalSave;try{signalSave=await insertSignal(signalRow);}catch(error){if(error?.code==='23505'){const raced=await getSignalByKey({symbol,timeframe,barTimeIso:signalRow.bar_time,strategyVersion});recordGoldSignalOutcome({requestId,outcome:'DUPLICATE_BAR',reason:'database_unique_constraint_race'});logGoldSignalPostTrace({req,requestId,symbol,timeframe,features,event:'DUPLICATE_BAR',reason:'database_unique_constraint_race'});return res.status(409).json({ok:false,error:'duplicate_bar',request_id:requestId,signal_id:raced?.id||null,existing:true});}throw error;}if(!signalSave?.persisted)return res.status(503).json({ok:false,error:'signal_not_persisted',request_id:requestId,signal_id:signalId});markSeen(barKey);const riskSave=await insertRisk({signal_id:signalId,approved:risk.approved,reasons:risk.reasons,age_seconds:risk.ageSeconds,account_snapshot:{...(body.account||{}),risk_limits:getRiskLimits(),calculated_lots:risk.lots},created_at:nowIso()});if(!riskSave?.persisted)return res.status(500).json({ok:false,error:'risk_not_persisted',request_id:requestId,signal_id:signalId});
+try {
+  const featureSnapshot=await insertEvent({
+    level:'INFO',
+    event_type:'gold_signal_feature_snapshot',
+    message:'GOLD signal input and deterministic setup snapshot',
+    metadata:{
+      request_id:requestId,signal_id:signalId,symbol,timeframe,
+      bar_time_utc:signalRow.bar_time,strategy_version:strategyVersion,
+      features,setup,
+      gold_v2_config:strategyVersion==='gold-m5-h1-v2'?getGoldV2Config():null,
+      market_safety:body.market_safety||null,
+      received_at:nowIso()
+    },
+    created_at:nowIso()
+  });
+  if(!featureSnapshot?.persisted)console.warn('[GOLD FEATURE SNAPSHOT] not_saved request_id=%s',requestId);
+} catch(snapshotError) {
+  console.warn('[GOLD FEATURE SNAPSHOT] persist_failed request_id=%s error=%s',requestId,snapshotError?.message||snapshotError);
+}
+const orderAllowed=Boolean(risk.approved&&state?.auto_trading_enabled===true&&!state?.emergency_stopped_at&&['DEMO','LIVE'].includes(String(state?.mode||'')));recordGoldSignalEvaluated({requestId,signal:signalRow,risk,state});logGoldSignalPostTrace({req,requestId,symbol,timeframe,features,event:'SIGNAL_EVALUATED'});console.log('[GOLD SIGNAL DIAG] '+JSON.stringify(buildGoldSignalDiagnosticLog({requestId,signal:signalRow,setup,risk,state,serverUtcOffsetSeconds:body.features?.server_utc_offset_seconds??body.server_utc_offset_seconds})));const expiresAt=new Date(Date.now()+getRiskLimits().maxSignalAgeSeconds*1000);res.json({ok:true,request_id:requestId,signal_id:signalId,symbol,timeframe,strategy_version:strategyVersion,candidate,decision,risk,state,fundamental_sources:ai.sources,persistence:{signal:true,risk:true},openai:{called:Boolean(ai.responseId),response_id:ai.responseId,model:ai.model,web_search_used:ai.webSearchUsed===true},fundamental_source_selection_method:ai.sourceSelectionMethod||null,searched_sources_count:Array.isArray(ai.searchedSources)?ai.searchedSources.length:0,order_allowed:orderAllowed,market_safety:marketSafety,expires_at:expiresAt.toISOString(),expires_at_epoch:Math.floor(expiresAt.getTime()/1000)});}catch(error){recordGoldSignalOutcome({requestId,outcome:'SERVER_ERROR'});console.error('[gold/signal]',requestId,error);try{await insertEvent({level:'ERROR',event_type:'signal_error',message:error.message||String(error),metadata:{request_id:requestId},created_at:nowIso()});}catch{}res.status(500).json({ok:false,error:error.message||'signal generation failed',request_id:requestId});}});
+app.post('/api/gold/trade-result',auth,async(req,res)=>{try{const body=req.body||{};const sourceMetadata=body.metadata&&typeof body.metadata==='object'&&!Array.isArray(body.metadata)?body.metadata:{};const tradeMode=String(body.mode||sourceMetadata.mode||(body.paper===true?'PAPER':'UNKNOWN')).toUpperCase();const paperMode=['PAPER','FORWARD_PAPER','ANALYSIS_PAPER'].includes(tradeMode);if(!body.idempotency_key||(!body.mt4_ticket&&!paperMode)||!body.symbol||!body.result)return res.status(400).json({ok:false,error:'idempotency_key, symbol, result and either mt4_ticket or an explicit Paper mode are required'});const result=String(body.result||'').toUpperCase();if(!['WIN','LOSS','BREAKEVEN'].includes(result))return res.status(400).json({ok:false,error:'result must be WIN|LOSS|BREAKEVEN'});
+const tradeCapture={
+  mode:tradeMode,
+  strategy_version:body.strategy_version||sourceMetadata.strategy_version||null,
+  entry_price:optionalNumber(body.entry_price),
+  exit_price:optionalNumber(body.exit_price),
+  stop_loss:optionalNumber(body.stop_loss),
+  take_profit:optionalNumber(body.take_profit),
+  spread_price:optionalNumber(body.spread_price),
+  slippage_price:optionalNumber(body.slippage_price),
+  commission:optionalNumber(body.commission),
+  swap:optionalNumber(body.swap),
+  mfe_r:optionalNumber(body.mfe_r),
+  mae_r:optionalNumber(body.mae_r)
+};
+const saved=await insertTradeResult({id:crypto.randomUUID(),idempotency_key:String(body.idempotency_key),mt4_ticket:Number(body.mt4_ticket||0)||null,symbol:String(body.symbol),result,profit:Number(body.profit||0),r_multiple:Number(body.r_multiple||0),holding_seconds:Math.max(0,Math.floor(Number(body.holding_seconds||0))),exit_reason:body.exit_reason?String(body.exit_reason):null,metadata:{...sourceMetadata,capture:tradeCapture},created_at:nowIso()});res.json({ok:true,persisted:saved.persisted,trade_result:saved.row});}catch(error){res.status(500).json({ok:false,error:error.message||'trade result persistence failed'});}});
 app.post('/api/gold/execution-result',auth,async(req,res)=>{try{const body=req.body||{};if(!body.signal_id||!body.idempotency_key)return res.status(400).json({ok:false,error:'signal_id and idempotency_key are required'});const signal=await getSignalByKey({signalId:String(body.signal_id)});if(!signal)return res.status(404).json({ok:false,error:'signal_not_found'});const riskCheck=await getRiskBySignal(String(body.signal_id));if(!riskCheck?.approved)return res.status(409).json({ok:false,error:'signal_was_not_risk_approved'});const side=String(body.side||'').toUpperCase();if(!['BUY','SELL'].includes(side)||side!==String(signal.decision).toUpperCase())return res.status(400).json({ok:false,error:'side_mismatch'});const status=String(body.status||'UNKNOWN').toUpperCase();const ticket=Number(body.mt4_ticket||0)||null;if(status==='FILLED'&&!ticket)return res.status(400).json({ok:false,error:'filled_order_requires_ticket'});const saved=await insertOrder({id:body.order_id||crypto.randomUUID(),signal_id:body.signal_id,idempotency_key:String(body.idempotency_key),symbol:String(body.symbol||defaultSymbol),mt4_ticket:ticket,side,requested_price:Number(body.requested_price||0)||null,filled_price:Number(body.filled_price||0)||null,volume:Number(body.volume||0)||null,stop_loss:Number(body.stop_loss||0)||null,take_profit:Number(body.take_profit||0)||null,status,broker_error:body.broker_error?String(body.broker_error):null,metadata:body.metadata||{},created_at:nowIso()});res.json({ok:true,persisted:saved.persisted,order:saved.row});}catch(error){res.status(500).json({ok:false,error:error.message});}});
 registerEurUsdRoutes(app);
+
+app.get('/api/gold/export/:dataset',auth,async(req,res)=>{
+  try {
+    if(!dbEnabled())return res.status(503).json({ok:false,error:'database_not_configured'});
+    const dataset=String(req.params.dataset||'');
+    const supported=new Set(['market-safety','m5-h1','signals','paper-trades']);
+    if(!supported.has(dataset))return res.status(404).json({ok:false,error:'unsupported_export_dataset'});
+    const now=Date.now();
+    const parseDate=(value)=>{
+      if(value===undefined||value===null||value==='')return null;
+      const parsed=new Date(String(value));
+      return Number.isNaN(parsed.getTime())?null:parsed.toISOString();
+    };
+    const hasFrom=req.query.from!==undefined;
+    const hasTo=req.query.to!==undefined;
+    const from=parseDate(req.query.from);
+    const to=parseDate(req.query.to);
+    if((hasFrom&&!from)||(hasTo&&!to))return res.status(400).json({ok:false,error:'from_and_to_must_be_valid_ISO_dates'});
+    const effectiveFrom=from||(to?new Date(now-7*24*60*60*1000).toISOString():new Date(now-7*24*60*60*1000).toISOString());
+    const effectiveTo=to||new Date(now).toISOString();
+    if(Date.parse(effectiveFrom)>Date.parse(effectiveTo))return res.status(400).json({ok:false,error:'from_must_not_be_after_to'});
+    const requestedLimit=Number(req.query.limit||50000);
+    if(!Number.isInteger(requestedLimit)||requestedLimit<1)return res.status(400).json({ok:false,error:'limit_must_be_positive_integer'});
+    const limit=Math.min(50000,requestedLimit);
+    let records={};
+    if(dataset==='market-safety'){
+      records.events=await listGoldSystemEvents({eventTypes:['gold_market_safety_heartbeat'],from:effectiveFrom,to:effectiveTo,limit});
+    } else if(dataset==='m5-h1'){
+      records.events=await listGoldSystemEvents({eventTypes:['gold_market_safety_heartbeat','gold_signal_feature_snapshot'],from:effectiveFrom,to:effectiveTo,limit});
+    } else if(dataset==='signals'){
+      records.signals=await listGoldSignalsForExport({from:effectiveFrom,to:effectiveTo,limit});
+    } else if(dataset==='paper-trades'){
+      records.trades=await listGoldTradeResultsForExport({from:effectiveFrom,to:effectiveTo,limit});
+    }
+    const exportFile=buildGoldExportCsv(dataset,records);
+    res.set('Cache-Control','no-store');
+    res.set('Content-Disposition','attachment; filename="'+exportFile.filename+'"');
+    res.type('text/csv').send(exportFile.content);
+  } catch(error) {
+    console.error('[gold/export]',error);
+    res.status(500).json({ok:false,error:error.message||'gold export failed'});
+  }
+});
+
 app.listen(port,async()=>{
   startEurUsdNewsFeedMonitor();
   console.log(`Gold AI Trader V1 listening on ${port}`);

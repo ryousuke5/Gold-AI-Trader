@@ -21,6 +21,8 @@ input int    TickRecoverySamples = 3;
 input int    MaxQuoteAgeSeconds = 30;
 input bool   EnableSafetyHeartbeat = true;
 input int    SafetyHeartbeatSeconds = 15;
+input bool   EnableResearchDataCollection = true;
+input int    ResearchBarsToCapture = 24;
 
 datetime g_lastClosedM5Bar = 0;
 datetime g_lastAttemptedM5Bar = 0;
@@ -33,6 +35,7 @@ string g_signalFlowReason = "not_started";
 
 datetime g_lastObservedTickUtc = 0;
 datetime g_lastSafetyHeartbeatAttemptUtc = 0;
+datetime g_lastResearchSnapshotBar = 0;
 double g_lastAcceptedMid = 0.0;
 datetime g_reopenLockUntilUtc = 0;
 bool g_tickAnomalyActive = false;
@@ -293,6 +296,8 @@ void LoadMarketSafetyState()
    if(GlobalVariableCheck(key)) g_recoveryMid = GlobalVariableGet(key);
    key = MarketSafetyKey("RECOVERY_COUNT");
    if(GlobalVariableCheck(key)) g_recoveryStableCount = (int)GlobalVariableGet(key);
+   key = MarketSafetyKey("LAST_RESEARCH_BAR_UTC");
+   if(GlobalVariableCheck(key)) g_lastResearchSnapshotBar = (datetime)GlobalVariableGet(key);
 }
 
 void SaveMarketSafetyState()
@@ -303,6 +308,7 @@ void SaveMarketSafetyState()
    GlobalVariableSet(MarketSafetyKey("ANOMALY_ACTIVE"), g_tickAnomalyActive ? 1.0 : 0.0);
    GlobalVariableSet(MarketSafetyKey("RECOVERY_MID"), g_recoveryMid);
    GlobalVariableSet(MarketSafetyKey("RECOVERY_COUNT"), (double)g_recoveryStableCount);
+   GlobalVariableSet(MarketSafetyKey("LAST_RESEARCH_BAR_UTC"), (double)g_lastResearchSnapshotBar);
 }
 
 void UpdateMarketSafety(string sym)
@@ -718,11 +724,96 @@ bool PostJson(string path, string payload, string &response)
 }
 
 //---------------------------------------------------------
+// Research-only M5/H1 snapshot. It is attached to the safety heartbeat
+// once per newly closed M5 bar, including while the local safety gate blocks
+// signal requests. It never changes any trading or safety decision.
+//---------------------------------------------------------
+bool BuildResearchSnapshotJson(string sym, string &json, datetime &barOpenServer)
+{
+   int offsetSeconds = 0;
+   if(!GetServerUtcOffsetSeconds(offsetSeconds))
+      return false;
+
+   barOpenServer = iTime(sym, PERIOD_M5, 1);
+   datetime h1BarOpenServer = iTime(sym, PERIOD_H1, 1);
+   if(barOpenServer <= 0 || h1BarOpenServer <= 0)
+      return false;
+
+   int digits = (int)MarketInfo(sym, MODE_DIGITS);
+   double point = MarketInfo(sym, MODE_POINT);
+   double bid = MarketInfo(sym, MODE_BID);
+   double ask = MarketInfo(sym, MODE_ASK);
+   if(digits < 0 || point <= 0.0 || bid <= 0.0 || ask < bid)
+      return false;
+
+   int barsToCapture = MathMax(4, MathMin(64, ResearchBarsToCapture));
+   json = "{";
+   json += "\"symbol\":\"" + JsonEscape(sym) + "\",";
+   json += "\"captured_at_utc\":" + IntegerToString((int)TimeGMT()) + ",";
+   json += "\"bar_time_utc\":" + IntegerToString((int)(barOpenServer + 300 - offsetSeconds)) + ",";
+   json += "\"bid\":" + JsonNumber(bid, digits) + ",";
+   json += "\"ask\":" + JsonNumber(ask, digits) + ",";
+   json += "\"spread\":" + JsonNumber(ask - bid, digits) + ",";
+   json += "\"point\":" + JsonNumber(point, digits) + ",";
+   json += "\"m5\":{";
+   json += "\"ema20\":" + JsonNumber(iMA(sym, PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, 1), digits) + ",";
+   json += "\"ema50\":" + JsonNumber(iMA(sym, PERIOD_M5, 50, 0, MODE_EMA, PRICE_CLOSE, 1), digits) + ",";
+   json += "\"rsi14\":" + JsonNumber(iRSI(sym, PERIOD_M5, 14, PRICE_CLOSE, 1), 2) + ",";
+   json += "\"atr14\":" + JsonNumber(iATR(sym, PERIOD_M5, 14, 1), digits);
+   json += "},";
+   json += "\"h1\":{";
+   json += "\"close\":" + JsonNumber(iClose(sym, PERIOD_H1, 1), digits) + ",";
+   json += "\"ema20\":" + JsonNumber(iMA(sym, PERIOD_H1, 20, 0, MODE_EMA, PRICE_CLOSE, 1), digits) + ",";
+   json += "\"ema50\":" + JsonNumber(iMA(sym, PERIOD_H1, 50, 0, MODE_EMA, PRICE_CLOSE, 1), digits) + ",";
+   json += "\"ema200\":" + JsonNumber(iMA(sym, PERIOD_H1, 200, 0, MODE_EMA, PRICE_CLOSE, 1), digits) + ",";
+   json += "\"rsi14\":" + JsonNumber(iRSI(sym, PERIOD_H1, 14, PRICE_CLOSE, 1), 2) + ",";
+   json += "\"atr14\":" + JsonNumber(iATR(sym, PERIOD_H1, 14, 1), digits);
+   json += "},";
+   json += "\"recent_m5\":[";
+   bool firstM5 = true;
+   for(int shiftM5 = barsToCapture; shiftM5 >= 1; shiftM5--)
+   {
+      datetime barTime = iTime(sym, PERIOD_M5, shiftM5);
+      if(barTime <= 0)
+         continue;
+      if(!firstM5)
+         json += ",";
+      json += "{\"time\":" + IntegerToString((int)(barTime + 300 - offsetSeconds));
+      json += ",\"open\":" + JsonNumber(iOpen(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"high\":" + JsonNumber(iHigh(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"low\":" + JsonNumber(iLow(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"close\":" + JsonNumber(iClose(sym, PERIOD_M5, shiftM5), digits);
+      json += ",\"volume\":" + JsonNumber(iVolume(sym, PERIOD_M5, shiftM5), 0) + "}";
+      firstM5 = false;
+   }
+   json += "],";
+   json += "\"recent_h1\":[";
+   bool firstH1 = true;
+   for(int shiftH1 = barsToCapture; shiftH1 >= 1; shiftH1--)
+   {
+      datetime barTime = iTime(sym, PERIOD_H1, shiftH1);
+      if(barTime <= 0)
+         continue;
+      if(!firstH1)
+         json += ",";
+      json += "{\"time\":" + IntegerToString((int)(barTime + 3600 - offsetSeconds));
+      json += ",\"open\":" + JsonNumber(iOpen(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"high\":" + JsonNumber(iHigh(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"low\":" + JsonNumber(iLow(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"close\":" + JsonNumber(iClose(sym, PERIOD_H1, shiftH1), digits);
+      json += ",\"volume\":" + JsonNumber(iVolume(sym, PERIOD_H1, shiftH1), 0) + "}";
+      firstH1 = false;
+   }
+   json += "]}";
+   return true;
+}
+
+//---------------------------------------------------------
 // Lightweight V19 market-safety heartbeat for Forward Monitor.
 // This reports the local gate even when signal requests are blocked.
 // It contains no trading instruction and does not run AI analysis.
 //---------------------------------------------------------
-bool BuildSafetyHeartbeatPayload(string sym, string &payload)
+bool BuildSafetyHeartbeatPayload(string sym, string &payload, datetime &researchBarOpen)
 {
    if(g_marketSafetyQuoteTimeUtc <= 0)
       return false;
@@ -750,12 +841,26 @@ bool BuildSafetyHeartbeatPayload(string sym, string &payload)
    payload += "\"point\":" + JsonNumber(point, digits) + ",";
    payload += "\"spread\":" + JsonNumber(g_marketSafetySpread, digits);
    payload += "},";
+   researchBarOpen = 0;
+   if(EnableResearchDataCollection)
+   {
+      datetime candidateResearchBar = 0;
+      string researchJson = "";
+      if(BuildResearchSnapshotJson(sym, researchJson, candidateResearchBar) &&
+         candidateResearchBar > g_lastResearchSnapshotBar)
+      {
+         payload += "\"research_snapshot\":" + researchJson + ",";
+         researchBarOpen = candidateResearchBar;
+      }
+   }
    payload += "\"ea_runtime\":{";
    payload += "\"enable_signal_requests\":" + (EnableSignalRequests ? "true" : "false") + ",";
    payload += "\"run_ai_test_once\":" + (RunAITestOnce ? "true" : "false") + ",";
    payload += "\"allow_auto_orders\":" + (AllowAutoOrders ? "true" : "false") + ",";
    payload += "\"timer_seconds\":" + IntegerToString(TimerSeconds) + ",";
    payload += "\"safety_heartbeat_seconds\":" + IntegerToString(SafetyHeartbeatSeconds) + ",";
+   payload += "\"enable_research_data_collection\":" + (EnableResearchDataCollection ? "true" : "false") + ",";
+   payload += "\"research_bars_to_capture\":" + IntegerToString(ResearchBarsToCapture) + ",";
    payload += "\"flow_status\":\"" + JsonEscape(g_signalFlowStatus) + "\",";
    payload += "\"flow_reason\":\"" + JsonEscape(g_signalFlowReason) + "\",";
    payload += "\"current_closed_m5_bar_open_utc\":" + ServerTimeUtcEpochJson(iTime(sym, PERIOD_M5, 1)) + ",";
@@ -826,8 +931,19 @@ void OnTimer()
       g_lastSafetyHeartbeatAttemptUtc = heartbeatNowUtc;
       string heartbeatPayload = "";
       string heartbeatResponse = "";
-      if(BuildSafetyHeartbeatPayload(sym, heartbeatPayload))
-         PostJson("/api/gold/market-safety", heartbeatPayload, heartbeatResponse);
+      datetime researchBarOpen = 0;
+      if(BuildSafetyHeartbeatPayload(sym, heartbeatPayload, researchBarOpen))
+      {
+         bool heartbeatPosted = PostJson("/api/gold/market-safety", heartbeatPayload, heartbeatResponse);
+         if(heartbeatPosted && researchBarOpen > 0 &&
+            StringFind(heartbeatResponse, "\"research_snapshot_saved\":true") >= 0)
+         {
+            g_lastResearchSnapshotBar = researchBarOpen;
+            SaveMarketSafetyState();
+            Print("[GOLD RESEARCH DATA] snapshot_persisted bar_open=",
+                  TimeToString(researchBarOpen, TIME_DATE|TIME_MINUTES));
+         }
+      }
    }
 
    if(!EnableSignalRequests)

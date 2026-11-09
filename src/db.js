@@ -92,6 +92,75 @@ export async function listTradeResults({
   return data || [];
 }
 
+
+export async function listGoldSystemEvents({ eventTypes = [], from = null, to = null, limit = 50000 } = {}) {
+  if (!supabase) return [];
+  const types = [...new Set((Array.isArray(eventTypes) ? eventTypes : []).map(String).filter(Boolean))];
+  if (!types.length) return [];
+  const maxRows = Math.max(1, Math.min(50000, Math.floor(Number(limit) || 50000)));
+  const pageSize = 500;
+  const rows = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const take = Math.min(pageSize, maxRows - offset);
+    let query = supabase.from('gold_system_events')
+      .select('id,level,event_type,message,metadata,created_at')
+      .in('event_type', types)
+      .order('created_at', { ascending: true })
+      .range(offset, offset + take - 1);
+    if (from) query = query.gte('created_at', from);
+    if (to) query = query.lte('created_at', to);
+    const { data, error } = await query;
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < take) break;
+  }
+  return rows;
+}
+
+export async function listGoldSignalsForExport({ from = null, to = null, limit = 50000 } = {}) {
+  if (!supabase) return [];
+  const maxRows = Math.max(1, Math.min(50000, Math.floor(Number(limit) || 10000)));
+  const pageSize = 500;
+  const rows = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const take = Math.min(pageSize, maxRows - offset);
+    let query = supabase.from('gold_ai_signals')
+      .select('id,symbol,timeframe,bar_time,strategy_version,request_id,candidate,decision,confidence,market_regime,entry,stop_loss,take_profit,risk_reward,reason,invalid_reasons,created_at')
+      .or('symbol.ilike.%GOLD%,symbol.ilike.%XAU%')
+      .order('created_at', { ascending: true })
+      .range(offset, offset + take - 1);
+    if (from) query = query.gte('created_at', from);
+    if (to) query = query.lte('created_at', to);
+    const { data, error } = await query;
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < take) break;
+  }
+  return rows;
+}
+
+export async function listGoldTradeResultsForExport({ from = null, to = null, limit = 50000 } = {}) {
+  if (!supabase) return [];
+  const maxRows = Math.max(1, Math.min(50000, Math.floor(Number(limit) || 50000)));
+  const pageSize = 500;
+  const rows = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const take = Math.min(pageSize, maxRows - offset);
+    let query = supabase.from('gold_trade_results')
+      .select('id,order_id,symbol,result,profit,r_multiple,holding_seconds,exit_reason,metadata,created_at')
+      .or('symbol.ilike.%GOLD%,symbol.ilike.%XAU%')
+      .order('created_at', { ascending: true })
+      .range(offset, offset + take - 1);
+    if (from) query = query.gte('created_at', from);
+    if (to) query = query.lte('created_at', to);
+    const { data, error } = await query;
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < take) break;
+  }
+  return rows;
+}
+
 export async function insertEurUsdForwardTrade(row){
   if(!supabase)return{row,persisted:false};
   const order = {

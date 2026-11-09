@@ -59,6 +59,18 @@ button{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
   <div id="cards" class="grid"></div>
 
   <div class="card section">
+    <h2>GOLD検証データ CSV出力</h2>
+    <div class="meta">既定期間は直近7日。APIキー接続後にCSVを保存できます。</div>
+    <div class="controls" style="margin-top:12px;flex-wrap:wrap">
+      <button type="button" data-export="market-safety">市場安全ゲート</button>
+      <button type="button" data-export="m5-h1">M5 / H1 データ</button>
+      <button type="button" data-export="signals">シグナル履歴</button>
+      <button type="button" data-export="paper-trades">Paper取引</button>
+    </div>
+    <div id="exportStatus" class="hint">V2条件・実注文設定は変更しません。</div>
+  </div>
+
+  <div class="card section">
     <h2>最近のシグナル</h2>
     <div class="meta">直近40件ずつ。永続DBの実データを読み取り専用で表示。</div>
     <div class="tablewrap" style="margin-top:12px">
@@ -469,6 +481,43 @@ function render(data){
   setDot('aidot',e.ai_enabled); document.getElementById('aistatus').textContent=e.ai_enabled?'ON':'OFF';
   document.getElementById('updated').textContent=fmtTime(data.generated_at);
 }
+const exportFileNames={
+  'market-safety':'GOLD_MarketSafety.csv',
+  'm5-h1':'GOLD_M5_H1_Data.csv',
+  'signals':'GOLD_SignalHistory.csv',
+  'paper-trades':'GOLD_Paper_Trades.csv'
+};
+async function downloadGoldExport(dataset){
+  const key=keyInput.value.trim();
+  const status=document.getElementById('exportStatus');
+  if(!key){status.textContent='先にGOLD_API_KEYを入力して接続してください。';return;}
+  status.textContent='CSVを取得しています…';
+  try{
+    const response=await fetch('/api/gold/export/'+encodeURIComponent(dataset),{
+      cache:'no-store',
+      headers:{'X-Gold-API-Key':key}
+    });
+    if(!response.ok){
+      const message=await response.text();
+      throw new Error(message||('HTTP '+response.status));
+    }
+    const blob=await response.blob();
+    const url=URL.createObjectURL(blob);
+    const anchor=document.createElement('a');
+    anchor.href=url;
+    anchor.download=exportFileNames[dataset]||'GOLD_export.csv';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    status.textContent=anchor.download+' を保存しました。';
+  }catch(error){
+    status.textContent='CSV出力失敗: '+error.message;
+  }
+}
+document.querySelectorAll('[data-export]').forEach(button=>{
+  button.addEventListener('click',()=>downloadGoldExport(button.dataset.export));
+});
 async function load(){
   const key=keyInput.value.trim();
   if(!key){errorBox.style.display='block';errorBox.textContent='GOLD_API_KEYを入力してください。';return;}

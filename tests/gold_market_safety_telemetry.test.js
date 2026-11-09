@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { normalizeGoldResearchSnapshot } from '../src/gold_data_exports.js';
 import {
   getGoldMarketSafetyTelemetrySnapshot,
   recordGoldMarketSafetyHeartbeat,
@@ -148,4 +149,30 @@ test('rejects non-GOLD telemetry symbols', () => {
     features,
     nowMs
   }), /symbol_not_gold/);
+});
+
+test('normalizes completed M5/H1 research snapshots and rejects invalid symbols or candles', () => {
+  const snapshot = normalizeGoldResearchSnapshot({
+    symbol: 'GOLD#',
+    captured_at_utc: '2026-11-10T00:00:00.000Z',
+    bar_time_utc: nowMs / 1000,
+    bid: 4097.08,
+    ask: 4097.36,
+    spread: 0.28,
+    point: 0.01,
+    m5: { ema20: 4095, ema50: 4090, rsi14: 55, atr14: 2.1 },
+    h1: { close: 4097, ema20: 4094, ema50: 4089, ema200: 4070, rsi14: 58, atr14: 7.5 },
+    recent_m5: [{ time: nowMs / 1000, open: 4096, high: 4098, low: 4095, close: 4097, volume: 120 }],
+    recent_h1: [{ time: nowMs / 1000, open: 4090, high: 4100, low: 4088, close: 4097, volume: 900 }]
+  });
+  assert.equal(snapshot.symbol, 'GOLD#');
+  assert.equal(snapshot.recent_m5.length, 1);
+  assert.equal(snapshot.recent_h1.length, 1);
+  assert.equal(snapshot.m5.ema20, 4095);
+  assert.equal(normalizeGoldResearchSnapshot({ symbol: 'EURUSD#' }), null);
+  assert.equal(normalizeGoldResearchSnapshot({
+    symbol: 'GOLD#',
+    recent_m5: [{ time: nowMs / 1000, open: 10, high: 9, low: 8, close: 9, volume: 1 }],
+    recent_h1: [{ time: nowMs / 1000, open: 10, high: 11, low: 9, close: 10, volume: 1 }]
+  }), null);
 });
