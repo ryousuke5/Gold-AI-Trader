@@ -9,7 +9,7 @@ const DATASETS = {
       "enable_signal_requests", "run_ai_test_once", "allow_auto_orders",
       "timer_seconds", "flow_status", "flow_reason", "current_closed_m5_bar_open_utc",
       "last_handled_m5_bar_open_utc", "last_attempted_m5_bar_open_utc",
-      "last_attempt_at_utc", "research_snapshot_available"
+      "last_attempt_at_utc", "enable_research_data_collection", "research_bars_to_capture", "research_snapshot_available"
     ]
   },
   "m5-h1": {
