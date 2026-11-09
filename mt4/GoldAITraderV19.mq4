@@ -859,6 +859,8 @@ bool BuildSafetyHeartbeatPayload(string sym, string &payload, datetime &research
    payload += "\"allow_auto_orders\":" + (AllowAutoOrders ? "true" : "false") + ",";
    payload += "\"timer_seconds\":" + IntegerToString(TimerSeconds) + ",";
    payload += "\"safety_heartbeat_seconds\":" + IntegerToString(SafetyHeartbeatSeconds) + ",";
+   payload += "\"enable_research_data_collection\":" + (EnableResearchDataCollection ? "true" : "false") + ",";
+   payload += "\"research_bars_to_capture\":" + IntegerToString(ResearchBarsToCapture) + ",";
    payload += "\"flow_status\":\"" + JsonEscape(g_signalFlowStatus) + "\",";
    payload += "\"flow_reason\":\"" + JsonEscape(g_signalFlowReason) + "\",";
    payload += "\"current_closed_m5_bar_open_utc\":" + ServerTimeUtcEpochJson(iTime(sym, PERIOD_M5, 1)) + ",";
