@@ -93,7 +93,7 @@ export async function listTradeResults({
 }
 
 
-export async function listGoldSystemEvents({ eventTypes = [], from = null, to = null, limit = 10000 } = {}) {
+export async function listGoldSystemEvents({ eventTypes = [], from = null, to = null, limit = 50000 } = {}) {
   if (!supabase) return [];
   const types = [...new Set((Array.isArray(eventTypes) ? eventTypes : []).map(String).filter(Boolean))];
   if (!types.length) return [];
