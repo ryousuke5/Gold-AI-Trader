@@ -117,7 +117,7 @@ export async function listGoldSystemEvents({ eventTypes = [], from = null, to = 
   return rows;
 }
 
-export async function listGoldSignalsForExport({ from = null, to = null, limit = 10000 } = {}) {
+export async function listGoldSignalsForExport({ from = null, to = null, limit = 50000 } = {}) {
   if (!supabase) return [];
   const maxRows = Math.max(1, Math.min(50000, Math.floor(Number(limit) || 10000)));
   const pageSize = 500;
