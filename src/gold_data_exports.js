@@ -119,6 +119,8 @@ function marketSafetyRows(events) {
       last_handled_m5_bar_open_utc: epochToIso(ea.last_handled_m5_bar_open_utc),
       last_attempted_m5_bar_open_utc: epochToIso(ea.last_attempted_m5_bar_open_utc),
       last_attempt_at_utc: epochToIso(ea.last_attempt_at_utc),
+      enable_research_data_collection: ea.enable_research_data_collection,
+      research_bars_to_capture: finiteOrBlank(ea.research_bars_to_capture),
       research_snapshot_available: isObject(metadata.research_snapshot)
     };
   });
