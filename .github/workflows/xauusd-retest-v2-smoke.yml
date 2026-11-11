@@ -1,0 +1,78 @@
+name: XAUUSD Break-Retest V2 Smoke
+
+on:
+  push:
+    branches: [feature/xauusd-retest-v2]
+    paths:
+      - 'src/xauusd_retest_v2.js'
+      - 'scripts/backtest-xauusd-retest-v2.mjs'
+      - 'scripts/backtest-xauusd-retest-v2-smoke.mjs'
+      - 'mt4/XAUUSDTrendRetestEA_V2.mq4'
+      - 'tests/xauusd_retest_v2.test.js'
+      - 'scripts/validate-xauusd-retest-v2.mjs'
+      - '.github/workflows/xauusd-retest-v2-smoke.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: xauusd-retest-v2-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Validate V2 EA safety contract
+        run: node scripts/validate-xauusd-retest-v2.mjs
+      - name: Syntax check
+        run: node --check src/xauusd_retest_v2.js && node --check scripts/backtest-xauusd-retest-v2-smoke.mjs
+      - name: Run XAUUSD strategy tests
+        run: node --test tests/xauusd_retest_v2.test.js
+      - name: Run 365-day smoke backtest
+        env:
+          XAU_RETEST_DAYS: '365'
+          XAU_RETEST_TIMEZONE: 'Europe/Nicosia'
+          XAU_RETEST_SPREAD_PRICE: '0.55'
+          XAU_RETEST_SLIPPAGE_PRICE: '0.10'
+          XAU_RETEST_MAX_HOLD_BARS: '96'
+          XAU_RETEST_COOLDOWN_BARS: '2'
+          XAU_RETEST_BREAKOUT_LOOKBACK: '12'
+          XAU_RETEST_MIN_RANGE_ATR: '0.60'
+          XAU_RETEST_MAX_RANGE_ATR: '3.20'
+          XAU_RETEST_BREAKOUT_ATR: '0.08'
+          XAU_RETEST_BREAKOUT_BODY_ATR: '0.30'
+          XAU_RETEST_BREAKOUT_CLOSE_LOCATION: '0.60'
+          XAU_RETEST_MAX_BREAKOUT_BODY_ATR: '1.80'
+          XAU_RETEST_MAX_RETEST_BARS: '6'
+          XAU_RETEST_RETEST_TOLERANCE_ATR: '0.20'
+          XAU_RETEST_MAX_PENETRATION_ATR: '0.20'
+          XAU_RETEST_RETEST_CLOSE_BUFFER_ATR: '0.05'
+          XAU_RETEST_CONFIRM_BUFFER_ATR: '0.02'
+          XAU_RETEST_CONFIRM_BODY_ATR: '0.25'
+          XAU_RETEST_CONFIRM_CLOSE_LOCATION: '0.60'
+          XAU_RETEST_MAX_CONFIRM_BODY_ATR: '1.50'
+          XAU_RETEST_MIN_STOP_ATR: '0.60'
+          XAU_RETEST_MAX_STOP_ATR: '2.20'
+          XAU_RETEST_STOP_BUFFER_ATR: '0.12'
+          XAU_RETEST_TAKE_PROFIT_R: '1.80'
+          XAU_RETEST_MAX_ENTRY_DISTANCE_ATR: '0.25'
+          XAU_RETEST_MAX_EXTENSION_ATR: '1.80'
+          XAU_RETEST_MIN_H1_AGREEMENT: '0.60'
+          XAU_RETEST_H1_BUY_RSI_MIN: '45'
+          XAU_RETEST_H1_BUY_RSI_MAX: '75'
+          XAU_RETEST_H1_SELL_RSI_MIN: '25'
+          XAU_RETEST_H1_SELL_RSI_MAX: '55'
+          XAU_RETEST_USE_VOLUME_FILTER: 'false'
+          XAU_RETEST_OUTPUT_DIR: 'xauusd-retest-v2-smoke-output'
+        run: node scripts/backtest-xauusd-retest-v2-smoke.mjs
+      - name: Upload smoke result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-retest-v2-smoke
+          path: xauusd-retest-v2-smoke-output/
+          retention-days: 14
