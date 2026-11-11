@@ -1,0 +1,33 @@
+name: GOLD M5 Feed Timestamp Probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/probe-dukascopy-m5-timestamps.mjs'
+      - '.github/workflows/gold-m5-feed-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Probe recent historical M5 row shape and timestamp alignment
+        run: node scripts/probe-dukascopy-m5-timestamps.mjs
+      - name: Upload diagnostic-only report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-m5-feed-probe
+          path: gold-m5-feed-probe.json
+          retention-days: 7
+          if-no-files-found: warn
