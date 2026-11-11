@@ -309,7 +309,9 @@ bool BuildSignalPayload(string &payload)
    if(peakEquity > 0.0)
       drawdownPct = ((peakEquity - equity) / peakEquity) * 100.0;
 
-   double tickSize = MarketInfo(sym, MODE_TICKSIZE);
+   // MQL4 MODE_TICKSIZE is reported in points; convert it to quote-price units before sending it to the API.
+   double tickSizePoints = MarketInfo(sym, MODE_TICKSIZE);
+   double tickSize = tickSizePoints * point;
    double tickValue = MarketInfo(sym, MODE_TICKVALUE);
    double minLot = MarketInfo(sym, MODE_MINLOT);
    double maxLot = MarketInfo(sym, MODE_MAXLOT);
@@ -411,6 +413,7 @@ bool BuildSignalPayload(string &payload)
    json += "\"daily_pnl_pct\":" + JsonNumber(dailyPnlPct, 4) + ",";
    json += "\"drawdown_pct\":" + JsonNumber(drawdownPct, 4) + ",";
    json += "\"tick_size\":" + JsonNumber(tickSize, digits) + ",";
+   json += "\"tick_size_points\":" + JsonNumber(tickSizePoints, 8) + ",";
    json += "\"tick_value\":" + JsonNumber(tickValue, 8) + ",";
    json += "\"min_lot\":" + JsonNumber(minLot, 8) + ",";
    json += "\"max_lot\":" + JsonNumber(maxLot, 8) + ",";
@@ -659,7 +662,8 @@ int OnInit()
 
    int digits = (int)MarketInfo(sym, MODE_DIGITS);
    double point = MarketInfo(sym, MODE_POINT);
-   double tickSize = MarketInfo(sym, MODE_TICKSIZE);
+   double tickSizePoints = MarketInfo(sym, MODE_TICKSIZE);
+   double tickSize = tickSizePoints * point;
    double tickValue = MarketInfo(sym, MODE_TICKVALUE);
    double minLot = MarketInfo(sym, MODE_MINLOT);
    double lotStep = MarketInfo(sym, MODE_LOTSTEP);
@@ -669,7 +673,8 @@ int OnInit()
       " symbol=", sym,
       " digits=", digits,
       " point=", DoubleToString(point, 10),
-      " tickSize=", DoubleToString(tickSize, 10),
+      " tickSizePrice=", DoubleToString(tickSize, 10),
+      " tickSizePoints=", DoubleToString(tickSizePoints, 8),
       " tickValue=", DoubleToString(tickValue, 8),
       " minLot=", DoubleToString(minLot, 8),
       " lotStep=", DoubleToString(lotStep, 8),
