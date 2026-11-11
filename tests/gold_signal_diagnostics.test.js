@@ -40,7 +40,9 @@ test('Gold signal diagnostic log preserves H1 gate components without raw prices
         h1_down_failure_components: ['ema20_not_below_ema50'],
         range_atr: 1.4,
         min_range_atr: 0.8,
-        max_range_atr: 2.8
+        max_range_atr: 2.8,
+        breakout_atr: 0.05,
+        breakout_threshold_atr: 0.10
       }
     },
     risk: { approved: false },
@@ -63,6 +65,8 @@ test('Gold signal diagnostic log preserves H1 gate components without raw prices
     'rsi_outside_buy_band'
   ]);
   assert.equal(payload.range_atr, 1.4);
+  assert.equal(payload.breakout_atr, 0.05);
+  assert.equal(payload.breakout_threshold_atr, 0.10);
   assert.equal(payload.runtime_mode, 'ANALYSIS');
   assert.equal(payload.auto_trading_enabled, false);
   assert.equal(JSON.stringify(payload).includes('2504'), false);
