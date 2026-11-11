@@ -15,7 +15,8 @@
     "replay:validate": "node scripts/validate-gold-v2-ai-replay.mjs",
     "replay:walkforward": "node scripts/analyze-gold-v2-ai-walkforward.mjs",
     "test:mt4:live": "node scripts/validate-eurusd-live-trader.mjs",
-    "test:eurusd:spread": "node scripts/validate-eurusd-spread-sensitivity.mjs"
+    "test:eurusd:spread": "node scripts/validate-eurusd-spread-sensitivity.mjs",
+    "review:broker": "node scripts/review-gold-broker-execution.mjs"
   },
   "engines": {
     "node": ">=20"
