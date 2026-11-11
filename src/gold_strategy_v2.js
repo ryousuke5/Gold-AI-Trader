@@ -118,6 +118,20 @@ export function buildGoldV2Setup(features = {}, config = {}) {
   const breakoutDistanceUp = signal.close - range.high;
   const breakoutDistanceDown = range.low - signal.close;
 
+  // Diagnostic-only measurements. These mirror the existing directional
+  // trigger comparisons below; they do not alter thresholds or decisions.
+  const breakoutDirection = trendUp ? 'BUY' : 'SELL';
+  const breakoutDistance = trendUp ? breakoutDistanceUp : breakoutDistanceDown;
+  const requiredBreakoutDistance = cfg.breakoutAtr * m5.atr14;
+  const breakoutAtrValue = breakoutDistance / m5.atr14;
+  rangeDiagnostics.breakout_direction = breakoutDirection;
+  rangeDiagnostics.breakout_distance = breakoutDistance;
+  rangeDiagnostics.breakout_atr = breakoutAtrValue;
+  rangeDiagnostics.required_breakout_atr = cfg.breakoutAtr;
+  rangeDiagnostics.required_breakout_distance = requiredBreakoutDistance;
+  rangeDiagnostics.breakout_shortfall = Math.max(0, requiredBreakoutDistance - breakoutDistance);
+  rangeDiagnostics.breakout_threshold_met = breakoutDistance >= requiredBreakoutDistance;
+
   if (trendUp) {
     if (breakoutDistanceUp < cfg.breakoutAtr * m5.atr14) {
       return { candidate: 'WAIT', trend: 'UP', reason: 'breakout_trigger_filter', diagnostics: rangeDiagnostics };
