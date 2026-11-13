@@ -1,0 +1,74 @@
+name: GOLD Execution Price Model and EA Parity (Research Only)
+
+on:
+  push:
+    branches:
+      - research/ea-execution-parity-20261113
+    paths:
+      - 'src/gold_execution_price_model.js'
+      - 'src/gold_strategy_v2.js'
+      - 'src/gold_pullback_retest_research.js'
+      - 'src/gold_h1_m5_halfback_v1.js'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/run-gold-alternative-setups-research.mjs'
+      - 'tests/gold_execution_price_model.test.js'
+      - 'tests/gold_pullback_retest_research.test.js'
+      - 'tests/gold_h1_m5_halfback_v1.test.js'
+      - 'docs/GOLD_V2_STRICT_EA_IMPLEMENTATION_CONTRACT.md'
+      - '.github/workflows/gold-execution-price-parity.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  parity-tests-and-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout isolated research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Test execution price model and strategy modules
+        run: |
+          node --test tests/gold_execution_price_model.test.js
+          node --test tests/gold_pullback_retest_research.test.js
+          node --test tests/gold_h1_m5_halfback_v1.test.js
+
+      - name: Download fixed Walk-Forward datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-v2-walkforward
+          path: gold-v2-walkforward
+          repository: ${{ github.repository }}
+          run-id: 43349812731
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate fixed source data
+        run: |
+          test -s gold-v2-walkforward/is_data.json.gz
+          test -s gold-v2-walkforward/oos_data.json.gz
+
+      - name: Re-run unchanged strategies with corrected execution accounting
+        env:
+          GOLD_ALT_SETUP_SOURCE_DIR: gold-v2-walkforward
+          GOLD_ALT_SETUP_OUTPUT_DIR: gold-execution-parity-output
+          GOLD_ALT_SETUP_SOURCE_RUN_ID: '43349812731'
+        run: node scripts/run-gold-alternative-setups-research.mjs
+
+      - name: Upload corrected IS/OOS reports and trade ledgers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-execution-parity-research
+          path: gold-execution-parity-output/
+          retention-days: 30
+          if-no-files-found: warn
