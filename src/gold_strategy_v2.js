@@ -44,8 +44,11 @@ export function buildGoldV2Setup(features = {}, config = {}) {
     maxH1RsiSell: Math.min(99, n(config.maxH1RsiSell, 50)),
     // Research-only alternative; default remains the production-strict EMA stack.
     h1TrendMode: config.h1TrendMode === 'close_ema20_rsi' ? 'close_ema20_rsi' : 'strict',
-    // Diagnostic-only switch. It is never enabled in production config.
+    // Diagnostic-only switches. They are never enabled in production config.
     diagnosticIgnoreRangeAtr: config.diagnosticIgnoreRangeAtr === true,
+    diagnosticIgnoreBodyAtr: config.diagnosticIgnoreBodyAtr === true,
+    diagnosticIgnoreVolume: config.diagnosticIgnoreVolume === true,
+    diagnosticIgnoreBreakoutDistance: config.diagnosticIgnoreBreakoutDistance === true,
     sessionStartUtc: Math.min(23, Math.max(0, Math.floor(n(config.sessionStartUtc, 7)))),
     sessionEndUtc: Math.min(23, Math.max(0, Math.floor(n(config.sessionEndUtc, 20))))
   };
@@ -108,13 +111,13 @@ export function buildGoldV2Setup(features = {}, config = {}) {
   const body = Math.abs(signal.close - signal.open);
   rangeDiagnostics.candle_range = candleRange;
   rangeDiagnostics.body_atr = body / m5.atr14;
-  if (!(candleRange > 0) || body / m5.atr14 < cfg.minBodyAtr) {
+  if (!(candleRange > 0) || (!cfg.diagnosticIgnoreBodyAtr && body / m5.atr14 < cfg.minBodyAtr)) {
     return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'impulse_body_filter', diagnostics: rangeDiagnostics };
   }
 
   const closeLocation = (signal.close - signal.low) / candleRange;
   rangeDiagnostics.close_location = closeLocation;
-  if (range.averageVolume > 0 && volumeRatio < cfg.minVolumeRatio) {
+  if (!cfg.diagnosticIgnoreVolume && range.averageVolume > 0 && volumeRatio < cfg.minVolumeRatio) {
     return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'volume_expansion_filter', diagnostics: rangeDiagnostics };
   }
 
@@ -124,7 +127,7 @@ export function buildGoldV2Setup(features = {}, config = {}) {
   rangeDiagnostics.breakout_distance_down_atr = breakoutDistanceDown / m5.atr14;
 
   if (trendUp) {
-    if (breakoutDistanceUp < cfg.breakoutAtr * m5.atr14) {
+    if (!cfg.diagnosticIgnoreBreakoutDistance && breakoutDistanceUp < cfg.breakoutAtr * m5.atr14) {
       return { candidate: 'WAIT', trend: 'UP', reason: 'breakout_trigger_filter', diagnostics: rangeDiagnostics };
     }
     if (closeLocation < cfg.minCloseLocation) {
@@ -140,7 +143,7 @@ export function buildGoldV2Setup(features = {}, config = {}) {
       return { candidate: 'WAIT', trend: 'UP', reason: 'extension_filter', diagnostics: rangeDiagnostics };
     }
   } else if (trendDown) {
-    if (breakoutDistanceDown < cfg.breakoutAtr * m5.atr14) {
+    if (!cfg.diagnosticIgnoreBreakoutDistance && breakoutDistanceDown < cfg.breakoutAtr * m5.atr14) {
       return { candidate: 'WAIT', trend: 'DOWN', reason: 'breakout_trigger_filter', diagnostics: rangeDiagnostics };
     }
     if (closeLocation > 1 - cfg.minCloseLocation) {
