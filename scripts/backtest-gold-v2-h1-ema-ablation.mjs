@@ -121,6 +121,10 @@ async function runVariant(period, variant) {
 
   const reportPath = path.join(outDir, 'gold_v2_backtest_report.json');
   const report = JSON.parse(await fs.readFile(reportPath, 'utf8'));
+  const appliedMode = report.strategy_parameters?.h1TrendMode || 'strict';
+  if (appliedMode !== variant.mode) {
+    throw new Error(`H1 mode mismatch for ${variant.name}: requested ${variant.mode}, backtester applied ${appliedMode}`);
+  }
   const baseline = summarizeCost(report.results?.baseline);
   const conservative = summarizeCost(report.results?.conservative);
   const positiveYears = Number(report.results?.conservative?.positiveYears || 0);
