@@ -541,6 +541,15 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const state={day:null,dayStartEquity:equity,peak:equity};
   const blocks={};
   const setupWaitReasons={};
+  const rangeShadowDiagnostics = {
+    enabled: config.rangeShadowDiagnostics === true && STRATEGY_VARIANT === 'breakout_v2',
+    compression_rejects: 0,
+    downstream_rejections: {},
+    potential_candidates: 0,
+    potential_candidate_sides: { BUY: 0, SELL: 0 },
+    range_atr_values: [],
+    rows: []
+  };
   let nextAvailable=0;
   let drawdownLockReached=false;
   let firstBlockedCandidateTime=null;
@@ -565,14 +574,58 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const h1i=latestCompletedH1Index(h1Ind,signalTime);
     const h=h1Ind[h1i];
     if(!h || ![h.close,h.ema20,h.ema50,h.ema200,h.rsi14,h.atr14].every(Number.isFinite)) continue;
-    const setup=buildSelectedSetup({
+    const setupFeatures = {
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
       recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
-    },strategy);
+    };
+    const setup=buildSelectedSetup(setupFeatures,strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
       setupWaitReasons[reason]=(setupWaitReasons[reason]||0)+1;
+
+      // Diagnostic-only shadow pass: re-evaluate only compression-filter rejects
+      // while bypassing the Range ATR gate. It never changes the real setup,
+      // candidate, risk ledger, trade list, or order path.
+      if (rangeShadowDiagnostics.enabled && reason === 'compression_filter') {
+        const shadowSetup = buildGoldV2Setup(setupFeatures, {
+          ...strategy,
+          diagnosticIgnoreRangeAtr: true
+        });
+        const shadowReason = shadowSetup.candidate === 'WAIT'
+          ? (shadowSetup.reason || 'unknown')
+          : 'candidate_after_range_bypass';
+        rangeShadowDiagnostics.compression_rejects++;
+        rangeShadowDiagnostics.downstream_rejections[shadowReason] =
+          (rangeShadowDiagnostics.downstream_rejections[shadowReason] || 0) + 1;
+        if (shadowSetup.candidate === 'BUY' || shadowSetup.candidate === 'SELL') {
+          rangeShadowDiagnostics.potential_candidates++;
+          rangeShadowDiagnostics.potential_candidate_sides[shadowSetup.candidate]++;
+        }
+
+        const d = setup.diagnostics || {};
+        rangeShadowDiagnostics.range_atr_values.push(Number(d.range_atr));
+        rangeShadowDiagnostics.rows.push({
+          signal_time_utc: new Date(signalTime * 1000).toISOString(),
+          trend: setup.trend || '',
+          range_gate_side: Number(d.range_atr) < Number(d.min_range_atr) ? 'below_min' : 'above_max',
+          range_width: d.range_width ?? '',
+          m5_atr: d.m5_atr ?? '',
+          range_atr: d.range_atr ?? '',
+          min_range_atr: d.min_range_atr ?? '',
+          max_range_atr: d.max_range_atr ?? '',
+          body_atr: shadowSetup.diagnostics?.body_atr ?? '',
+          volume_ratio: shadowSetup.diagnostics?.volume_ratio ?? d.volume_ratio ?? '',
+          close_location: shadowSetup.diagnostics?.close_location ?? '',
+          breakout_distance_up_atr: shadowSetup.diagnostics?.breakout_distance_up_atr ?? '',
+          breakout_distance_down_atr: shadowSetup.diagnostics?.breakout_distance_down_atr ?? '',
+          shadow_next_reason: shadowReason,
+          shadow_candidate: shadowSetup.candidate,
+          shadow_entry_reference: shadowSetup.entry_reference ?? '',
+          shadow_stop_loss: shadowSetup.stop_loss ?? '',
+          shadow_take_profit: shadowSetup.take_profit ?? ''
+        });
+      }
       continue;
     }
     candidates++;
@@ -628,6 +681,26 @@ async function runOne(rawM5, rawH1, config, strategy) {
     nextAvailable=exitIndex<0?m5Ind.length:exitIndex;
   }
   const summary = summarize(trades, config.initialEquity);
+  const rangeAtrSorted = [...rangeShadowDiagnostics.range_atr_values].filter(Number.isFinite).sort((a,b)=>a-b);
+  const quantile = (values, q) => values.length
+    ? values[Math.min(values.length - 1, Math.max(0, Math.ceil(q * values.length) - 1))]
+    : null;
+  rangeShadowDiagnostics.range_atr_summary = {
+    count: rangeAtrSorted.length,
+    mean: rangeAtrSorted.length ? rangeAtrSorted.reduce((a,b)=>a+b,0) / rangeAtrSorted.length : null,
+    median: quantile(rangeAtrSorted, 0.5),
+    p90: quantile(rangeAtrSorted, 0.9),
+    min: rangeAtrSorted.length ? rangeAtrSorted[0] : null,
+    max: rangeAtrSorted.length ? rangeAtrSorted.at(-1) : null
+  };
+  rangeShadowDiagnostics.range_atr_bins = [
+    { band: '2.8-3.2', count: rangeAtrSorted.filter(x=>x>2.8 && x<=3.2).length },
+    { band: '3.2-3.5', count: rangeAtrSorted.filter(x=>x>3.2 && x<=3.5).length },
+    { band: '3.5-4.0', count: rangeAtrSorted.filter(x=>x>3.5 && x<=4.0).length },
+    { band: '4.0-4.5', count: rangeAtrSorted.filter(x=>x>4.0 && x<=4.5).length },
+    { band: '4.5-5.0', count: rangeAtrSorted.filter(x=>x>4.5 && x<=5.0).length },
+    { band: '>5.0', count: rangeAtrSorted.filter(x=>x>5.0).length }
+  ];
   const yearly = annualSummary(trades, config.initialEquity);
   const positiveYears = yearly.filter((y)=>y.net_r > 0).length;
   const positiveYearsWithSample = yearly.filter((y)=>y.trades >= 15 && y.net_r > 0).length;
@@ -688,6 +761,16 @@ async function runOne(rawM5, rawH1, config, strategy) {
     signals_evaluated:signalsEvaluated,
     candidates,candidates_buy:candidatesBuy,candidates_sell:candidatesSell,
     setup_wait_reasons:setupWaitReasons,
+    range_shadow_diagnostics: {
+      enabled: rangeShadowDiagnostics.enabled,
+      compression_rejects: rangeShadowDiagnostics.compression_rejects,
+      downstream_rejections: rangeShadowDiagnostics.downstream_rejections,
+      potential_candidates: rangeShadowDiagnostics.potential_candidates,
+      potential_candidate_sides: rangeShadowDiagnostics.potential_candidate_sides,
+      range_atr_summary: rangeShadowDiagnostics.range_atr_summary,
+      range_atr_bins: rangeShadowDiagnostics.range_atr_bins,
+      rows: rangeShadowDiagnostics.rows
+    },
     risk_gate_blocks:blocks,
     rejected_next_bar_gap:rejectedNextBarGap,
     rejected_entry_gap:rejectedEntryGap,
@@ -750,7 +833,11 @@ async function main() {
   const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
   for(const cost of costScenarios(config)) {
-    const runConfig={...config,...cost};
+    const runConfig={
+      ...config,
+      ...cost,
+      rangeShadowDiagnostics: cost.name === 'baseline' && process.env.GOLD_RANGE_SHADOW_DIAGNOSTICS === 'true'
+    };
     const out=await runOne(rawM5,rawH1,runConfig,strategy);
     results[cost.name]=out;
     console.log(cost.name, out.summary);
@@ -784,7 +871,17 @@ async function main() {
     results:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{
       evaluation_mode:r.evaluation_mode,summary:r.summary,recent365:r.recent365,is1095:r.is1095,oos730:r.oos730,annual:r.annual,positiveYears:r.positiveYears,positiveYearsWithSample:r.positiveYearsWithSample,qualityGate:r.qualityGate,
       signals_evaluated:r.signals_evaluated,candidates:r.candidates,candidates_buy:r.candidates_buy,candidates_sell:r.candidates_sell,
-      setup_wait_reasons:r.setup_wait_reasons,risk_gate_blocks:r.risk_gate_blocks,
+      setup_wait_reasons:r.setup_wait_reasons,
+      range_shadow_diagnostics: {
+        enabled: r.range_shadow_diagnostics.enabled,
+        compression_rejects: r.range_shadow_diagnostics.compression_rejects,
+        downstream_rejections: r.range_shadow_diagnostics.downstream_rejections,
+        potential_candidates: r.range_shadow_diagnostics.potential_candidates,
+        potential_candidate_sides: r.range_shadow_diagnostics.potential_candidate_sides,
+        range_atr_summary: r.range_shadow_diagnostics.range_atr_summary,
+        range_atr_bins: r.range_shadow_diagnostics.range_atr_bins
+      },
+      risk_gate_blocks:r.risk_gate_blocks,
       rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap,
       rejected_direction_filter:r.rejected_direction_filter,
       post_drawdown_shadow:{
@@ -810,6 +907,21 @@ async function main() {
   await fs.mkdir(outDir,{recursive:true});
   const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':'gold_v2';
   await fs.writeFile(path.join(outDir,outputPrefix+'_backtest_report.json'),JSON.stringify(report,null,2));
+  if (process.env.GOLD_RANGE_SHADOW_DIAGNOSTICS === 'true' && results.baseline?.range_shadow_diagnostics?.enabled) {
+    const rows = results.baseline.range_shadow_diagnostics.rows;
+    const headers = [
+      'signal_time_utc','trend','range_gate_side','range_width','m5_atr','range_atr',
+      'min_range_atr','max_range_atr','body_atr','volume_ratio','close_location',
+      'breakout_distance_up_atr','breakout_distance_down_atr','shadow_next_reason',
+      'shadow_candidate','shadow_entry_reference','shadow_stop_loss','shadow_take_profit'
+    ];
+    const escapeCsv = value => {
+      const text = String(value ?? '');
+      return /[,"\\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+    };
+    const csv = [headers.join(','), ...rows.map(row => headers.map(h => escapeCsv(row[h])).join(','))].join('\\n') + '\\n';
+    await fs.writeFile(path.join(outDir,outputPrefix+'_range_shadow_baseline.csv'),csv);
+  }
   for(const [name,r] of Object.entries(results)) {
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_after_drawdown_lock_'+name+'.csv'),toCsv(r.post_drawdown_shadow.trades));
