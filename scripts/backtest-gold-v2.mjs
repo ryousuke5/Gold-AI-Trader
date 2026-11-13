@@ -1004,7 +1004,11 @@ async function main() {
     })),
     cost_model_limitations:{
       xm_empirical_spread_profile:config.spreadProfile ? config.spreadProfile.profile_id : null,
+      xm_empirical_source:config.spreadProfile ? config.spreadProfile.source : null,
+      xm_empirical_server_timezone:config.spreadProfile ? config.spreadProfile.server_timezone : null,
       spread_sample_is_historical_proxy_not_full_history:true,
+      entry_spread_used_for_planned_initial_risk:true,
+      realized_exit_spread_applied_at_exit_timestamp:true,
       slippage_is_assumed_not_measured:true,
       commission_modelled:false,
       swap_and_financing_modelled:false
@@ -1015,6 +1019,9 @@ async function main() {
       setup_wait_reasons:r.setup_wait_reasons,risk_gate_blocks:r.risk_gate_blocks,
       rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap,
       rejected_direction_filter:r.rejected_direction_filter,
+      rejected_spread_gate:r.rejected_spread_gate,
+      spread_model:r.spread_model,spread_profile_account:r.spread_profile_account,
+      spread_quantile:r.spread_quantile,spread_gate_price:r.spread_gate_price,
       post_drawdown_shadow:{
         lock_reached:r.post_drawdown_shadow.lock_reached,
         first_blocked_candidate_time_utc:r.post_drawdown_shadow.first_blocked_candidate_time_utc,
