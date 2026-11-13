@@ -1,0 +1,491 @@
+{
+  "schema_version": 1,
+  "profile_id": "xm-gold-kiwami-spread-20261113",
+  "instrument": "GOLD#",
+  "server_timezone": "Europe/Nicosia",
+  "time_bucket_basis": "MT4 server_time local hour; backtest UTC epoch mapped with IANA timezone Europe/Nicosia",
+  "deduplication": "Exact duplicates by gmt_time, account_server, symbol, bid, ask, spread_price; first row retained.",
+  "source": {
+    "file": "GOLD_KIWAMI_SpreadLog.zip",
+    "archive_member": "GOLD_KIWAMI_SpreadLog.csv",
+    "sha256": "3c976a35f9397310bb1158b4898254c63110f3f83e32e12dde79854901cb444e",
+    "raw_rows": 4221339,
+    "duplicate_rows_removed": 254926,
+    "unique_rows": 3966413,
+    "invalid_quote_rows": 0,
+    "ask_bid_spread_mismatch_rows_gt_0_011": 0,
+    "symbols": {
+      "GOLD#": 4221339
+    },
+    "account_server_raw_rows": {
+      "XMTrading-Real 11": 1999939,
+      "XMTrading-Demo 6": 2221400
+    }
+  },
+  "notes": [
+    "Spread is ask minus bid in GOLD# price units; point=0.01 and digits=2.",
+    "log_label is manually set and was KIWAMI_REAL across both server names; account_server is authoritative.",
+    "The Real and Demo account samples cover different date ranges and are not a controlled account comparison.",
+    "This short 2026 quote sample is not five-year historical XM spread data. Applying server-hour percentiles to older BID bars is a proxy scenario.",
+    "Quote data does not contain actual slippage, commission, swap or financing."
+  ],
+  "profiles": {
+    "XMTrading-Real 11": {
+      "account_server": "XMTrading-Real 11",
+      "raw_observations": 1999939,
+      "unique_observations": 1877550,
+      "sample_start_utc": "2026-10-22T06:15:12Z",
+      "sample_end_utc": "2026-10-30T20:09:16Z",
+      "global": {
+        "p50": 0.26,
+        "p75": 0.27,
+        "p90": 0.29,
+        "p95": 0.29,
+        "p99": 0.29,
+        "max": 3.05
+      },
+      "hours": {
+        "0": {
+          "observations": 28233,
+          "p50": 0.29,
+          "p75": 0.29,
+          "p90": 0.64,
+          "p95": 0.86,
+          "p99": 1.8968,
+          "max": 3.05
+        },
+        "1": {
+          "observations": 39101,
+          "p50": 0.28,
+          "p75": 0.28,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.41,
+          "max": 0.41
+        },
+        "2": {
+          "observations": 64711,
+          "p50": 0.27,
+          "p75": 0.27,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "3": {
+          "observations": 102233,
+          "p50": 0.27,
+          "p75": 0.27,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "4": {
+          "observations": 81471,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "5": {
+          "observations": 65248,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "6": {
+          "observations": 45233,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "7": {
+          "observations": 62994,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "8": {
+          "observations": 69838,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.29
+        },
+        "9": {
+          "observations": 67869,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.29
+        },
+        "10": {
+          "observations": 89581,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "11": {
+          "observations": 80070,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.29
+        },
+        "12": {
+          "observations": 73455,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.27,
+          "p95": 0.28,
+          "p99": 0.28,
+          "max": 0.29
+        },
+        "13": {
+          "observations": 71873,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.29
+        },
+        "14": {
+          "observations": 101621,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "15": {
+          "observations": 133616,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "16": {
+          "observations": 145738,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "17": {
+          "observations": 127854,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "18": {
+          "observations": 106340,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.29
+        },
+        "19": {
+          "observations": 87755,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "20": {
+          "observations": 82117,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.41,
+          "max": 3
+        },
+        "21": {
+          "observations": 87267,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "22": {
+          "observations": 56486,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.41,
+          "max": 0.41
+        },
+        "23": {
+          "observations": 6846,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        }
+      }
+    },
+    "XMTrading-Demo 6": {
+      "account_server": "XMTrading-Demo 6",
+      "raw_observations": 2221400,
+      "unique_observations": 2088863,
+      "sample_start_utc": "2026-11-01T23:00:02Z",
+      "sample_end_utc": "2026-11-11T00:38:59Z",
+      "global": {
+        "p50": 0.27,
+        "p75": 0.28,
+        "p90": 0.29,
+        "p95": 0.31,
+        "p99": 0.33,
+        "max": 3.05
+      },
+      "hours": {
+        "1": {
+          "observations": 56371,
+          "p50": 0.29,
+          "p75": 0.29,
+          "p90": 0.45,
+          "p95": 0.67,
+          "p99": 1.063,
+          "max": 3.05
+        },
+        "2": {
+          "observations": 75478,
+          "p50": 0.28,
+          "p75": 0.28,
+          "p90": 0.29,
+          "p95": 0.31,
+          "p99": 0.33,
+          "max": 0.6
+        },
+        "3": {
+          "observations": 143952,
+          "p50": 0.29,
+          "p75": 0.29,
+          "p90": 0.31,
+          "p95": 0.33,
+          "p99": 0.41,
+          "max": 0.95
+        },
+        "4": {
+          "observations": 97175,
+          "p50": 0.29,
+          "p75": 0.29,
+          "p90": 0.31,
+          "p95": 0.32,
+          "p99": 0.33,
+          "max": 0.41
+        },
+        "5": {
+          "observations": 84234,
+          "p50": 0.29,
+          "p75": 0.29,
+          "p90": 0.3,
+          "p95": 0.31,
+          "p99": 0.33,
+          "max": 0.41
+        },
+        "6": {
+          "observations": 67576,
+          "p50": 0.28,
+          "p75": 0.28,
+          "p90": 0.3,
+          "p95": 0.31,
+          "p99": 0.33,
+          "max": 0.41
+        },
+        "7": {
+          "observations": 89974,
+          "p50": 0.28,
+          "p75": 0.28,
+          "p90": 0.31,
+          "p95": 0.32,
+          "p99": 0.33,
+          "max": 0.45
+        },
+        "8": {
+          "observations": 89508,
+          "p50": 0.28,
+          "p75": 0.28,
+          "p90": 0.31,
+          "p95": 0.32,
+          "p99": 0.33,
+          "max": 0.41
+        },
+        "9": {
+          "observations": 74401,
+          "p50": 0.27,
+          "p75": 0.27,
+          "p90": 0.3,
+          "p95": 0.31,
+          "p99": 0.32,
+          "max": 0.45
+        },
+        "10": {
+          "observations": 86069,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.3,
+          "p99": 0.31,
+          "max": 0.33
+        },
+        "11": {
+          "observations": 83836,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.41
+        },
+        "12": {
+          "observations": 71313,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.29
+        },
+        "13": {
+          "observations": 69069,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.29
+        },
+        "14": {
+          "observations": 82671,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.28,
+          "p99": 0.29,
+          "max": 0.29
+        },
+        "15": {
+          "observations": 133541,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.29,
+          "p99": 0.41,
+          "max": 3
+        },
+        "16": {
+          "observations": 140546,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.3,
+          "p99": 0.31,
+          "max": 0.6
+        },
+        "17": {
+          "observations": 135323,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.3,
+          "p95": 0.31,
+          "p99": 0.33,
+          "max": 0.95
+        },
+        "18": {
+          "observations": 120211,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.3,
+          "p99": 0.31,
+          "max": 0.33
+        },
+        "19": {
+          "observations": 94416,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.3,
+          "p99": 0.31,
+          "max": 0.32
+        },
+        "20": {
+          "observations": 81316,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.3,
+          "p99": 0.31,
+          "max": 0.32
+        },
+        "21": {
+          "observations": 81695,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.29,
+          "p95": 0.3,
+          "p99": 0.3,
+          "max": 0.41
+        },
+        "22": {
+          "observations": 86489,
+          "p50": 0.26,
+          "p75": 0.26,
+          "p90": 0.28,
+          "p95": 0.29,
+          "p99": 0.3,
+          "max": 0.32
+        },
+        "23": {
+          "observations": 43699,
+          "p50": 0.27,
+          "p75": 0.27,
+          "p90": 0.29,
+          "p95": 0.3,
+          "p99": 0.41,
+          "max": 0.45
+        }
+      }
+    }
+  }
+}
