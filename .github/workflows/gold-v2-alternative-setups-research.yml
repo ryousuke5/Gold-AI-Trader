@@ -1,0 +1,72 @@
+name: GOLD V2 Alternative M5 Entry Structures (Research Only)
+
+on:
+  push:
+    branches:
+      - research/gold-alternative-setups-20261113
+    paths:
+      - 'src/gold_strategy_v2.js'
+      - 'src/gold_pullback_retest_research.js'
+      - 'src/gold_h1_m5_halfback_v1.js'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/run-gold-alternative-setups-research.mjs'
+      - 'tests/gold_pullback_retest_research.test.js'
+      - 'tests/gold_h1_m5_halfback_v1.test.js'
+      - 'docs/GOLD_ALTERNATIVE_M5_SETUPS_RUNBOOK.md'
+      - '.github/workflows/gold-v2-alternative-setups-research.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  alternative-setups:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout isolated research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Test pullback and halfback research strategies
+        run: |
+          node --test tests/gold_pullback_retest_research.test.js
+          node --test tests/gold_h1_m5_halfback_v1.test.js
+
+      - name: Download fixed Walk-Forward split datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-v2-walkforward
+          path: gold-v2-walkforward
+          repository: ${{ github.repository }}
+          run-id: 43349812731
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate source datasets
+        run: |
+          test -s gold-v2-walkforward/is_data.json.gz
+          test -s gold-v2-walkforward/oos_data.json.gz
+          ls -lh gold-v2-walkforward/is_data.json.gz gold-v2-walkforward/oos_data.json.gz
+
+      - name: Run fixed IS/OOS alternative setup comparison
+        env:
+          GOLD_ALT_SETUP_SOURCE_DIR: gold-v2-walkforward
+          GOLD_ALT_SETUP_OUTPUT_DIR: gold-alternative-setups-output
+          GOLD_ALT_SETUP_SOURCE_RUN_ID: '43349812731'
+        run: node scripts/run-gold-alternative-setups-research.mjs
+
+      - name: Upload research-only strategy comparison reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-alternative-setups
+          path: gold-alternative-setups-output/
+          retention-days: 30
+          if-no-files-found: warn
