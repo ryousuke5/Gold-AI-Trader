@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
+import { buildGoldMomentumPullbackV1Setup } from '../src/gold_momentum_pullback_v1.js';
 import {
   calculateEntryFill,
   isStopTriggered,
@@ -16,8 +17,8 @@ import { isolateIsWindow } from '../src/gold_backtest_split.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
-  if (!['breakout_v2', 'pullback_retest', 'halfback_v1'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest or halfback_v1.`);
+  if (!['breakout_v2', 'pullback_retest', 'halfback_v1', 'momentum_pullback_v1'].includes(variant)) {
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2, pullback_retest, halfback_v1, or momentum_pullback_v1.`);
   }
   return variant;
 }
@@ -50,9 +51,36 @@ const HALFBACK_STRATEGY = {
   sessionStartUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SESSION_START_UTC', 7)))),
   sessionEndUtc: Math.min(23, Math.max(0, Math.floor(backtestEnvNumber('GOLD_HALFBACK_SESSION_END_UTC', 20))))
 };
+const MOMENTUM_PULLBACK_STRATEGY = {
+  minH1MomentumAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MIN_H1_MOMENTUM_ATR', 0.35),
+  minH1EmaGapAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MIN_H1_EMA_GAP_ATR', 0.15),
+  minH1RsiBuy: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MIN_H1_RSI_BUY', 52),
+  maxH1RsiBuy: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MAX_H1_RSI_BUY', 70),
+  minH1RsiSell: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MIN_H1_RSI_SELL', 30),
+  maxH1RsiSell: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MAX_H1_RSI_SELL', 48),
+  pullbackTouchAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_TOUCH_ATR', 0.20),
+  maxEma50PenetrationAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MAX_EMA50_PENETRATION_ATR', 0.15),
+  minM5RsiBuy: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MIN_M5_RSI_BUY', 52),
+  maxM5RsiBuy: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MAX_M5_RSI_BUY', 70),
+  minM5RsiSell: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MIN_M5_RSI_SELL', 30),
+  maxM5RsiSell: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MAX_M5_RSI_SELL', 48),
+  minConfirmationBodyAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MIN_BODY_ATR', 0.30),
+  minCloseLocationBuy: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MIN_CLOSE_LOCATION_BUY', 0.70),
+  maxCloseLocationSell: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MAX_CLOSE_LOCATION_SELL', 0.30),
+  confirmationBreakoutAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_CONFIRM_BREAKOUT_ATR', 0.05),
+  maxExtensionAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MAX_EXTENSION_ATR', 1.00),
+  stopBufferAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_STOP_BUFFER_ATR', 0.10),
+  minStopAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MIN_STOP_ATR', 0.60),
+  maxStopAtr: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_MAX_STOP_ATR', 1.50),
+  takeProfitR: backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_TAKE_PROFIT_R', 2.50),
+  sessionStartUtc: Math.floor(backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_SESSION_START_UTC', 7)),
+  sessionEndUtc: Math.floor(backtestEnvNumber('GOLD_MOMENTUM_PULLBACK_SESSION_END_UTC', 20))
+};
 const buildSelectedSetup = STRATEGY_VARIANT === 'halfback_v1'
   ? (features) => buildGoldH1M5HalfbackV1Setup(features, HALFBACK_STRATEGY)
-  : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
+  : STRATEGY_VARIANT === 'momentum_pullback_v1'
+    ? (features) => buildGoldMomentumPullbackV1Setup(features, MOMENTUM_PULLBACK_STRATEGY)
+    : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -318,9 +346,9 @@ function dataQuality(bars) {
   };
 }
 
-function recentBars(bars, index, count=80) {
+function recentBars(bars, index, count=80, barSeconds=300) {
   return bars.slice(Math.max(0,index-count+1),index+1).map((b)=>({
-    time:b.time+300, open:b.open, high:b.high, low:b.low, close:b.close, volume:b.volume,
+    time:b.time+barSeconds, open:b.open, high:b.high, low:b.low, close:b.close, volume:b.volume,
     ema20:b.ema20, ema50:b.ema50, ema200:b.ema200, rsi14:b.rsi14, atr14:b.atr14
   }));
 }
@@ -635,7 +663,9 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const setup=buildSelectedSetup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
-      recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
+      recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1)),
+      recentH1:recentBars(h1Ind,h1i,24,3600),
+      barTime:signalTime
     },strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
@@ -829,7 +859,9 @@ async function main() {
   const effectiveRequestedStart = config.isOnly ? new Date(rawM5[0].time * 1000) : requestedStart;
   const effectiveRequestedEnd = config.isOnly ? new Date((rawM5.at(-1).time + 300) * 1000) : requestedEnd;
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
-  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
+  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY
+    : STRATEGY_VARIANT==='momentum_pullback_v1' ? MOMENTUM_PULLBACK_STRATEGY
+      : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
   for(const cost of costScenarios(config)) {
     const runConfig={...config,...cost};
@@ -840,7 +872,9 @@ async function main() {
   const report={
     strategy: STRATEGY_VARIANT === 'halfback_v1'
       ? 'XAUUSD research-only H1 trend + confirmed M5 impulse + 45-55% halfback + continuation reconfirmation'
-      : STRATEGY_VARIANT === 'pullback_retest'
+      : STRATEGY_VARIANT === 'momentum_pullback_v1'
+        ? 'XAUUSD research-only H1 trend momentum + M5 EMA20 pullback + re-acceleration confirmation'
+        : STRATEGY_VARIANT === 'pullback_retest'
         ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
         : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
     strategy_variant: STRATEGY_VARIANT,
@@ -890,7 +924,8 @@ async function main() {
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
-  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':'gold_v2';
+  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1'
+    : STRATEGY_VARIANT==='momentum_pullback_v1'?'gold_momentum_pullback_v1':'gold_v2';
   await fs.writeFile(path.join(outDir,outputPrefix+'_backtest_report.json'),JSON.stringify(report,null,2));
   for(const [name,r] of Object.entries(results)) {
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));
