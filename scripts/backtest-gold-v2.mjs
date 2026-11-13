@@ -550,6 +550,14 @@ async function runOne(rawM5, rawH1, config, strategy) {
     range_atr_values: [],
     rows: []
   };
+  const m5GateShadowDiagnostics = {
+    enabled: config.m5GateShadowDiagnostics === true && STRATEGY_VARIANT === 'breakout_v2',
+    gates: {
+      impulse_body_filter: { count: 0, downstream_rejections: {}, potential_candidates: 0, candidate_sides: { BUY: 0, SELL: 0 }, rows: [] },
+      volume_expansion_filter: { count: 0, downstream_rejections: {}, potential_candidates: 0, candidate_sides: { BUY: 0, SELL: 0 }, rows: [] },
+      breakout_trigger_filter: { count: 0, downstream_rejections: {}, potential_candidates: 0, candidate_sides: { BUY: 0, SELL: 0 }, rows: [] }
+    }
+  };
   let nextAvailable=0;
   let drawdownLockReached=false;
   let firstBlockedCandidateTime=null;
@@ -624,6 +632,47 @@ async function runOne(rawM5, rawH1, config, strategy) {
           shadow_entry_reference: shadowSetup.entry_reference ?? '',
           shadow_stop_loss: shadowSetup.stop_loss ?? '',
           shadow_take_profit: shadowSetup.take_profit ?? ''
+        });
+      }
+
+      // One-gate-at-a-time shadow diagnostics for the first failing M5 gate.
+      // These passes do not change the actual WAIT result or any trade ledger.
+      if (m5GateShadowDiagnostics.enabled && m5GateShadowDiagnostics.gates[reason]) {
+        const gateConfig = {
+          impulse_body_filter: { diagnosticIgnoreBodyAtr: true },
+          volume_expansion_filter: { diagnosticIgnoreVolume: true },
+          breakout_trigger_filter: { diagnosticIgnoreBreakoutDistance: true }
+        }[reason];
+        const gateShadow = buildGoldV2Setup(setupFeatures, { ...strategy, ...gateConfig });
+        const nextReason = gateShadow.candidate === 'WAIT'
+          ? (gateShadow.reason || 'unknown')
+          : 'candidate_after_single_gate_bypass';
+        const gate = m5GateShadowDiagnostics.gates[reason];
+        gate.count++;
+        gate.downstream_rejections[nextReason] = (gate.downstream_rejections[nextReason] || 0) + 1;
+        if (gateShadow.candidate === 'BUY' || gateShadow.candidate === 'SELL') {
+          gate.potential_candidates++;
+          gate.candidate_sides[gateShadow.candidate]++;
+        }
+        const originalDiag = setup.diagnostics || {};
+        const nextDiag = gateShadow.diagnostics || {};
+        gate.rows.push({
+          signal_time_utc: new Date(signalTime * 1000).toISOString(),
+          original_gate: reason,
+          trend: setup.trend || '',
+          range_atr: originalDiag.range_atr ?? '',
+          body_atr: originalDiag.body_atr ?? '',
+          volume_ratio: originalDiag.volume_ratio ?? '',
+          close_location: originalDiag.close_location ?? '',
+          breakout_distance_up_atr: originalDiag.breakout_distance_up_atr ?? '',
+          breakout_distance_down_atr: originalDiag.breakout_distance_down_atr ?? '',
+          next_reason: nextReason,
+          shadow_candidate: gateShadow.candidate,
+          next_body_atr: nextDiag.body_atr ?? '',
+          next_volume_ratio: nextDiag.volume_ratio ?? '',
+          next_close_location: nextDiag.close_location ?? '',
+          next_breakout_distance_up_atr: nextDiag.breakout_distance_up_atr ?? '',
+          next_breakout_distance_down_atr: nextDiag.breakout_distance_down_atr ?? ''
         });
       }
       continue;
@@ -771,6 +820,16 @@ async function runOne(rawM5, rawH1, config, strategy) {
       range_atr_bins: rangeShadowDiagnostics.range_atr_bins,
       rows: rangeShadowDiagnostics.rows
     },
+    m5_gate_shadow_diagnostics: {
+      enabled: m5GateShadowDiagnostics.enabled,
+      gates: Object.fromEntries(Object.entries(m5GateShadowDiagnostics.gates).map(([name, gate]) => [name, {
+        count: gate.count,
+        downstream_rejections: gate.downstream_rejections,
+        potential_candidates: gate.potential_candidates,
+        candidate_sides: gate.candidate_sides,
+        rows: gate.rows
+      }]))
+    },
     risk_gate_blocks:blocks,
     rejected_next_bar_gap:rejectedNextBarGap,
     rejected_entry_gap:rejectedEntryGap,
@@ -836,7 +895,8 @@ async function main() {
     const runConfig={
       ...config,
       ...cost,
-      rangeShadowDiagnostics: cost.name === 'baseline' && process.env.GOLD_RANGE_SHADOW_DIAGNOSTICS === 'true'
+      rangeShadowDiagnostics: cost.name === 'baseline' && process.env.GOLD_RANGE_SHADOW_DIAGNOSTICS === 'true',
+      m5GateShadowDiagnostics: cost.name === 'baseline' && process.env.GOLD_M5_GATE_SHADOW_DIAGNOSTICS === 'true'
     };
     const out=await runOne(rawM5,rawH1,runConfig,strategy);
     results[cost.name]=out;
@@ -881,6 +941,15 @@ async function main() {
         range_atr_summary: r.range_shadow_diagnostics.range_atr_summary,
         range_atr_bins: r.range_shadow_diagnostics.range_atr_bins
       },
+      m5_gate_shadow_diagnostics: {
+        enabled: r.m5_gate_shadow_diagnostics.enabled,
+        gates: Object.fromEntries(Object.entries(r.m5_gate_shadow_diagnostics.gates).map(([name, gate]) => [name, {
+          count: gate.count,
+          downstream_rejections: gate.downstream_rejections,
+          potential_candidates: gate.potential_candidates,
+          candidate_sides: gate.candidate_sides
+        }]))
+      },
       risk_gate_blocks:r.risk_gate_blocks,
       rejected_next_bar_gap:r.rejected_next_bar_gap,rejected_entry_gap:r.rejected_entry_gap,
       rejected_direction_filter:r.rejected_direction_filter,
@@ -921,6 +990,22 @@ async function main() {
     };
     const csv = [headers.join(','), ...rows.map(row => headers.map(h => escapeCsv(row[h])).join(','))].join('\n') + '\n';
     await fs.writeFile(path.join(outDir,outputPrefix+'_range_shadow_baseline.csv'),csv);
+  }
+  if (process.env.GOLD_M5_GATE_SHADOW_DIAGNOSTICS === 'true' && results.baseline?.m5_gate_shadow_diagnostics?.enabled) {
+    const gates = results.baseline.m5_gate_shadow_diagnostics.gates;
+    const rows = Object.values(gates).flatMap(gate => gate.rows);
+    const headers = [
+      'signal_time_utc','original_gate','trend','range_atr','body_atr','volume_ratio',
+      'close_location','breakout_distance_up_atr','breakout_distance_down_atr',
+      'next_reason','shadow_candidate','next_body_atr','next_volume_ratio',
+      'next_close_location','next_breakout_distance_up_atr','next_breakout_distance_down_atr'
+    ];
+    const escapeCsv = value => {
+      const text = String(value ?? '');
+      return /[,"\\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+    };
+    const csv = [headers.join(','), ...rows.map(row => headers.map(h => escapeCsv(row[h])).join(','))].join('\\n') + '\\n';
+    await fs.writeFile(path.join(outDir,outputPrefix+'_m5_gate_shadow_baseline.csv'),csv);
   }
   for(const [name,r] of Object.entries(results)) {
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));
