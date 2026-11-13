@@ -15,7 +15,8 @@ const PERIODS = [
 const VARIANTS = [
   { name: 'strict_breakout_v2', selector: 'breakout_v2', description: 'Production reference: H1 Strict + M5 compression/volume breakout', params: 'Existing GOLD V2 Strict parameters; unchanged' },
   { name: 'pullback_retest', selector: 'pullback_retest', description: 'H1 Strict + previous M5 candle EMA20 touch + current candle directional reconfirmation', params: 'EMA20 touch 0.15 ATR; pullback close tolerance 0.35 ATR; reconfirmation beyond prior candle extreme; extension <=1.5 ATR; SL 0.8-2.0 ATR; TP 2R' },
-  { name: 'halfback_v1', selector: 'halfback_v1', description: 'H1 Strict + confirmed M5 impulse + 45-55% retracement + continuation reconfirmation', params: 'Confirmed swing 2 left/2 right; impulse 5-40 bars and >=1.5 ATR; retracement 45-55%; body >=0.25 ATR; SL 0.5-2.5 ATR; TP 2R' }
+  { name: 'halfback_v1', selector: 'halfback_v1', description: 'H1 Strict + confirmed M5 impulse + 45-55% retracement + continuation reconfirmation', params: 'Confirmed swing 2 left/2 right; impulse 5-40 bars and >=1.5 ATR; retracement 45-55%; body >=0.25 ATR; SL 0.5-2.5 ATR; TP 2R' ,
+  { name: 'momentum_pullback_v1', selector: 'momentum_pullback_v1', description: 'H1 strict trend + measurable 3-bar H1 momentum + M5 EMA20 pullback + re-acceleration confirmation', params: 'H1 close momentum >=0.35 ATR over 3 bars; EMA20/EMA50 gap >=0.15 H1 ATR; M5 EMA20 touch 0.20 ATR; EMA50 penetration <=0.15 ATR; confirmation body >=0.30 ATR; close location BUY >=0.70 / SELL <=0.30; stop 0.60-1.50 ATR; target 2.50R' }
 ];
 
 function round(value, digits = 4) {
@@ -106,7 +107,30 @@ async function runOne(period, variant) {
     GOLD_HALFBACK_MAX_STOP_ATR: '2.50',
     GOLD_HALFBACK_TAKE_PROFIT_R: '2.00',
     GOLD_HALFBACK_SESSION_START_UTC: '7',
-    GOLD_HALFBACK_SESSION_END_UTC: '20'
+    GOLD_HALFBACK_SESSION_END_UTC: '20',
+    GOLD_MOMENTUM_PULLBACK_MIN_H1_MOMENTUM_ATR: '0.35',
+    GOLD_MOMENTUM_PULLBACK_MIN_H1_EMA_GAP_ATR: '0.15',
+    GOLD_MOMENTUM_PULLBACK_MIN_H1_RSI_BUY: '52',
+    GOLD_MOMENTUM_PULLBACK_MAX_H1_RSI_BUY: '70',
+    GOLD_MOMENTUM_PULLBACK_MIN_H1_RSI_SELL: '30',
+    GOLD_MOMENTUM_PULLBACK_MAX_H1_RSI_SELL: '48',
+    GOLD_MOMENTUM_PULLBACK_TOUCH_ATR: '0.20',
+    GOLD_MOMENTUM_PULLBACK_MAX_EMA50_PENETRATION_ATR: '0.15',
+    GOLD_MOMENTUM_PULLBACK_MIN_M5_RSI_BUY: '52',
+    GOLD_MOMENTUM_PULLBACK_MAX_M5_RSI_BUY: '70',
+    GOLD_MOMENTUM_PULLBACK_MIN_M5_RSI_SELL: '30',
+    GOLD_MOMENTUM_PULLBACK_MAX_M5_RSI_SELL: '48',
+    GOLD_MOMENTUM_PULLBACK_MIN_BODY_ATR: '0.30',
+    GOLD_MOMENTUM_PULLBACK_MIN_CLOSE_LOCATION_BUY: '0.70',
+    GOLD_MOMENTUM_PULLBACK_MAX_CLOSE_LOCATION_SELL: '0.30',
+    GOLD_MOMENTUM_PULLBACK_CONFIRM_BREAKOUT_ATR: '0.05',
+    GOLD_MOMENTUM_PULLBACK_MAX_EXTENSION_ATR: '1.00',
+    GOLD_MOMENTUM_PULLBACK_STOP_BUFFER_ATR: '0.10',
+    GOLD_MOMENTUM_PULLBACK_MIN_STOP_ATR: '0.60',
+    GOLD_MOMENTUM_PULLBACK_MAX_STOP_ATR: '1.50',
+    GOLD_MOMENTUM_PULLBACK_TAKE_PROFIT_R: '2.50',
+    GOLD_MOMENTUM_PULLBACK_SESSION_START_UTC: '7',
+    GOLD_MOMENTUM_PULLBACK_SESSION_END_UTC: '20'
   };
   delete env.GOLD_STRATEGY_JSON;
 
@@ -114,7 +138,8 @@ async function runOne(period, variant) {
     cwd: ROOT, env, stdio: 'pipe', maxBuffer: 30 * 1024 * 1024
   });
 
-  const prefix = variant.selector === 'halfback_v1' ? 'gold_halfback_v1' : 'gold_v2';
+  const prefix = variant.selector === 'halfback_v1' ? 'gold_halfback_v1'
+    : variant.selector === 'momentum_pullback_v1' ? 'gold_momentum_pullback_v1' : 'gold_v2';
   const reportPath = path.join(outDir, prefix + '_backtest_report.json');
   const report = JSON.parse(await fs.readFile(reportPath, 'utf8'));
   if (report.strategy_variant !== variant.selector) throw new Error(`Strategy selector mismatch: expected ${variant.selector}, got ${report.strategy_variant}`);
@@ -138,7 +163,7 @@ async function runOne(period, variant) {
 
 function buildMarkdown(rows) {
   const lines = [
-    '# GOLD V2 vs Alternative M5 Entry Structures',
+    '# GOLD V2 vs Trend Momentum Pullback Entry Structures',
     '',
     '**Research-only exploratory comparison. No production configuration is changed. No strategy is automatically selected or promoted.**',
     '',
@@ -148,7 +173,8 @@ function buildMarkdown(rows) {
     '- IS 3 years and OOS 2 years evaluated separately.',
     '- H1 trend remains Strict for every strategy.',
     '- Same initial equity, risk per trade, max daily loss, drawdown cap, max hold, entry-gap rule, session, baseline and conservative costs.',
-    '- All alternate strategy parameters are fixed to their existing documented defaults before the run; no parameter search or OOS tuning.',
+    '- All alternate strategy parameters are fixed to their documented defaults before the run; no parameter search or OOS tuning.',
+    '- Momentum Pullback V1 explicitly requires H1 directional momentum and EMA separation, then waits for an M5 EMA20 pullback and directional re-acceleration; it targets 2.5R with a structure-based stop.'
     '- The OOS period has already been consulted in earlier research. This is a repeated robustness check, not a fresh blind holdout.',
     '',
     '## Conservative-cost results',
@@ -195,8 +221,8 @@ async function main() {
     }
   }
   const output = {
-    title: 'GOLD V2 vs Alternative M5 Entry Structures',
-    methodology: 'Fixed IS/OOS exploratory comparison of production Strict breakout reference versus two pre-existing research-only entry structures',
+    title: 'GOLD V2 vs Trend Momentum Pullback Entry Structures',
+    methodology: 'Fixed IS/OOS exploratory comparison of production Strict breakout reference and three research-only entry structures, including a pre-registered H1 momentum + M5 pullback/re-acceleration hypothesis',
     source_walkforward_run_id: process.env.GOLD_ALT_SETUP_SOURCE_RUN_ID || '43349812731',
     fresh_blind_oos: false, oos_previously_consulted: true, automatic_strategy_selection: false, production_changed: false,
     production_settings: {
