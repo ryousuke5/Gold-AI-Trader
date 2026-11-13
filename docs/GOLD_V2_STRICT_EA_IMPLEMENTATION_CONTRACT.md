@@ -45,6 +45,8 @@ The prepared historical bars and the strategy's OHLC-derived levels are BID-base
 
 For open-through gaps, stop fills are adverse at the bar open plus the applicable side/cost; target fills may receive favorable open-price improvement before the configured adverse slippage. Same-bar stop/target conflict remains STOP-first until tick-level replay can resolve sequence.
 
+**MT4 implementation warning:** the API's strategy SL/TP are BID-chart levels. Do not submit the SELL levels unchanged as broker-hosted MT4 SL/TP: SELL positions close on ASK, so the broker's stop trigger is on the other quote side. A spread-offset server-side order is only an approximation when spread changes. To match the research trigger exactly, the EA must monitor the BID logical level and close the SELL at the current ASK, while separately considering a broker-side disaster-protection stop. This behavior must be tested against XM demo ticks before any order code is enabled.
+
 Effective planned risk distance is entry fill to expected stop fill:
 - BUY: entry Ask fill minus (BID stop minus exit slippage).
 - SELL: (BID stop plus spread plus exit slippage) minus entry Bid fill.
