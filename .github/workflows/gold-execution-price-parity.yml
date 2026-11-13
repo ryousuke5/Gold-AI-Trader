@@ -18,6 +18,7 @@ on:
       - 'tests/gold_h1_m5_halfback_v1.test.js'
       - 'tests/gold_momentum_pullback_v1.test.js'
       - 'docs/GOLD_V2_STRICT_EA_IMPLEMENTATION_CONTRACT.md'
+      - 'docs/GOLD_TREND_MOMENTUM_PULLBACK_V1.md'
       - '.github/workflows/gold-execution-price-parity.yml'
 
 permissions:
