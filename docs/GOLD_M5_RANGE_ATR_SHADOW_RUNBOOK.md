@@ -19,6 +19,7 @@ Identify the first M5 condition that rejects each setup already rejected by the 
    - Risk 0.25%, spread 0.50, slippage 0.05
 4. For each setup whose ordinary result is `WAIT / compression_filter`, run a second shadow-only evaluation with only the Range ATR min/max comparison bypassed. A non-positive range width is still rejected.
 5. Record the first downstream rejection reason and technical measurements. A setup that passes every remaining filter is recorded as a potential candidate, but it is not simulated as a portfolio trade and is not sent to an order path.
+6. For ordinary setups that pass Range ATR but first fail body ATR, volume ratio, or breakout distance, run a separate one-gate-only bypass for that first failed filter. All other strategy conditions remain unchanged. Record only the next rejection reason or a potential setup; do not simulate portfolio trades.
 
 ## Safeguards
 
@@ -39,6 +40,6 @@ Walk-Forward validation run `43349812731`, artifact `gold-v2-walkforward`, with 
 - `gold_m5_range_shadow_report.md`
 - `gold_m5_range_shadow_report.json`
 - `gold_v2_range_shadow_IS_3Y.csv`
-- `gold_v2_range_shadow_OOS_2Y.csv`
+- `gold_v2_range_shadow_OOS_2Y.csv`\n- `gold_v2_m5_gate_shadow_IS_3Y.csv`\n- `gold_v2_m5_gate_shadow_OOS_2Y.csv`
 
 Production remains GOLD V2 Strict, Mode ANALYSIS, `auto_trading_enabled=false`, and real-order gate OFF.
