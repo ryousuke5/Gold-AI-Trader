@@ -86,7 +86,12 @@ async function runPeriod(period) {
   const summary = {
     period: period.name,
     days: period.days,
-    data_period: report.test_period,
+    evaluation_window_utc: {
+      start: new Date((Date.parse(report.source_period.m5_last) - period.days * 86400 * 1000)).toISOString(),
+      end_bar_open: report.source_period.m5_last,
+      end_exclusive: new Date(Date.parse(report.source_period.m5_last) + 300 * 1000).toISOString()
+    },
+    prepared_file_first_bar_utc: report.source_period.m5_first,
     total_signals_evaluated: report.results.baseline.signals_evaluated,
     baseline_candidates: report.results.baseline.candidates,
     original_compression_rejects: originalCompressionRejects,
