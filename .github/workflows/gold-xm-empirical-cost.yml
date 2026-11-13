@@ -1,0 +1,76 @@
+name: GOLD XM Empirical Spread Cost Model (Research Only)
+
+on:
+  push:
+    branches:
+      - research/xm-empirical-cost-model-20261113
+    paths:
+      - 'src/gold_execution_price_model.js'
+      - 'src/gold_xm_empirical_cost_model.js'
+      - 'data/gold_xm_empirical_spread_profile_20261113.json'
+      - 'scripts/backtest-gold-v2.mjs'
+      - 'scripts/run-gold-xm-empirical-cost-research.mjs'
+      - 'tests/gold_execution_price_model.test.js'
+      - 'tests/gold_xm_empirical_cost_model.test.js'
+      - 'tests/gold_trade_context_diagnostics.test.js'
+      - 'tests/gold_strategy_v2.test.js'
+      - 'tests/gold_momentum_pullback_v1.test.js'
+      - 'docs/GOLD_XM_EMPIRICAL_COST_MODEL_20261113.md'
+      - '.github/workflows/gold-xm-empirical-cost.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  empirical-spread-cost-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout isolated XM cost research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate quote-side execution and empirical spread model
+        run: |
+          node --test tests/gold_execution_price_model.test.js
+          node --test tests/gold_xm_empirical_cost_model.test.js
+          node --test tests/gold_trade_context_diagnostics.test.js
+          node --test tests/gold_momentum_pullback_v1.test.js
+
+      - name: Download fixed Walk-Forward datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-v2-walkforward
+          path: gold-v2-walkforward
+          repository: ${{ github.repository }}
+          run-id: 43349812731
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate fixed source data and empirical profile
+        run: |
+          test -s gold-v2-walkforward/is_data.json.gz
+          test -s gold-v2-walkforward/oos_data.json.gz
+          test -s data/gold_xm_empirical_spread_profile_20261113.json
+
+      - name: Run empirical XM spread replay
+        env:
+          GOLD_XM_COST_SOURCE_DIR: gold-v2-walkforward
+          GOLD_XM_COST_OUTPUT_DIR: gold-xm-empirical-cost-output
+        run: node scripts/run-gold-xm-empirical-cost-research.mjs
+
+      - name: Upload empirical XM cost reports and trade ledgers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-xm-empirical-cost-research
+          path: gold-xm-empirical-cost-output/
+          retention-days: 30
+          if-no-files-found: warn
