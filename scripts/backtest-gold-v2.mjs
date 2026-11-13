@@ -14,6 +14,10 @@ import {
   calculateExitFill
 } from '../src/gold_execution_price_model.js';
 import { isolateIsWindow } from '../src/gold_backtest_split.js';
+import {
+  resolveEmpiricalSpread,
+  validateEmpiricalSpreadProfile
+} from '../src/gold_xm_empirical_cost_model.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
@@ -104,6 +108,10 @@ const BASE_CONFIG = {
   riskPct: Math.max(0.01, Number(process.env.GOLD_BACKTEST_RISK_PCT || 0.25)),
   spreadPrice: Math.max(0, Number(process.env.GOLD_BACKTEST_SPREAD_PRICE || 0.50)),
   slippagePrice: Math.max(0, Number(process.env.GOLD_BACKTEST_SLIPPAGE_PRICE || 0.05)),
+  spreadGatePrice: Math.max(0, Number(process.env.GOLD_BACKTEST_SPREAD_GATE_PRICE || 0.50)),
+  spreadProfileFile: process.env.GOLD_BACKTEST_SPREAD_PROFILE_FILE || null,
+  includeXMEmpiricalScenarios: process.env.GOLD_BACKTEST_INCLUDE_XM_EMPIRICAL_SCENARIOS === 'true',
+  spreadProfile: null,
   maxDailyLossPct: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_DAILY_LOSS_PCT || 2)),
   maxDrawdownPct: Math.max(0.1, Number(process.env.GOLD_BACKTEST_MAX_DRAWDOWN_PCT || 5)),
   maxHoldBars: Math.max(1, Math.floor(Number(process.env.GOLD_BACKTEST_MAX_HOLD_BARS || 96))),
@@ -385,17 +393,57 @@ function applyRiskGate(state, equity, timestamp, config) {
   return {allowed:!reasons.length,reasons,daily,dd};
 }
 
+function executionCostsAt(config, timestampSeconds) {
+  if (config.spreadModel === 'xm_empirical_hourly') {
+    if (!config.spreadProfile) throw new Error('XM empirical spread model selected without a loaded profile');
+    const empirical = resolveEmpiricalSpread({
+      profile: config.spreadProfile,
+      accountServer: config.spreadProfileAccountServer,
+      timestampSeconds,
+      quantile: config.spreadQuantile,
+      minObservations: 100
+    });
+    return {
+      ...empirical,
+      slippagePrice: config.slippagePrice,
+      spreadModel: 'xm_empirical_hourly'
+    };
+  }
+  return {
+    spreadPrice: config.spreadPrice,
+    slippagePrice: config.slippagePrice,
+    accountServer: null,
+    serverHour: null,
+    quantile: null,
+    observations: null,
+    source: 'fixed',
+    profileId: null,
+    spreadModel: 'fixed'
+  };
+}
+
+function calculateExitAtTime({side,reason,bidBar,levelBid,config}) {
+  const costs = executionCostsAt(config, bidBar.time);
+  const price = calculateExitFill({
+    side, reason, bidBar, levelBid,
+    spread: costs.spreadPrice,
+    slippage: costs.slippagePrice
+  });
+  return { price, costs };
+}
+
 function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,equity,config,contextDiagnostics={}}) {
-  const spread=config.spreadPrice, slip=config.slippagePrice;
   const side=setup.candidate;
-  // Source OHLC and strategy levels are BID-based. Entry/exit fills use the
-  // executable quote side through the shared execution model.
-  const entry=calculateEntryFill({side,bidOpen:nextBar.open,spread,slippage:slip});
+  // Entry and exit each use the empirical spread percentile for their own
+  // timestamp. Slippage remains an explicit assumption until fills are measured.
+  const entryCosts=executionCostsAt(config,nextBar.time);
+  const entrySpread=entryCosts.spreadPrice, slip=entryCosts.slippagePrice;
+  const entry=calculateEntryFill({side,bidOpen:nextBar.open,spread:entrySpread,slippage:slip});
   const stop=setup.stop_loss, target=setup.take_profit;
   if(!(entry>0 && stop>0 && target>0)) return null;
   const rawStopDistanceBid=Math.abs(Number(setup.entry_reference)-Number(stop));
   const effectiveRiskDistance=calculateEffectiveRiskDistance({
-    side,entryFill:entry,stopLossBid:stop,spread,slippage:slip
+    side,entryFill:entry,stopLossBid:stop,spread:entrySpread,slippage:slip
   });
   if(!(effectiveRiskDistance>0)) return null;
   if(Math.abs(entry-setup.entry_reference)/Math.max(0.000001, Number(signalBar.atr14))>config.maxEntryGapAtr) return null;
@@ -406,7 +454,9 @@ function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,eq
   let exitBar=futureBars[finalScanIndex]||nextBar;
   let exitTime=exitBar.time;
   let exitReason='TIME';
-  let exitPrice=calculateExitFill({side,reason:'TIME',bidBar:exitBar,spread,slippage:slip});
+  let initialExit=calculateExitAtTime({side,reason:'TIME',bidBar:exitBar,config});
+  let exitPrice=initialExit.price;
+  let exitCosts=initialExit.costs;
   let previousBar=null;
   for(let scanIndex=scanStart;scanIndex<scanEnd;scanIndex++) {
     const bar=futureBars[scanIndex];
@@ -414,7 +464,9 @@ function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,eq
       exitBar=previousBar;
       exitTime=previousBar.time;
       exitReason='DATA_GAP';
-      exitPrice=calculateExitFill({side,reason:'DATA_GAP',bidBar:previousBar,spread,slippage:slip});
+      const fill=calculateExitAtTime({side,reason:'DATA_GAP',bidBar:previousBar,config});
+      exitPrice=fill.price;
+      exitCosts=fill.costs;
       break;
     }
     // Strategy SL/TP are BID chart-price levels. Check BID OHLC directly for
@@ -425,14 +477,18 @@ function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,eq
       exitBar=bar;
       exitTime=bar.time;
       exitReason='STOP';
-      exitPrice=calculateExitFill({side,reason:'STOP',bidBar:bar,levelBid:stop,spread,slippage:slip});
+      const fill=calculateExitAtTime({side,reason:'STOP',bidBar:bar,levelBid:stop,config});
+      exitPrice=fill.price;
+      exitCosts=fill.costs;
       break;
     }
     if(targetHit) {
       exitBar=bar;
       exitTime=bar.time;
       exitReason='TARGET';
-      exitPrice=calculateExitFill({side,reason:'TARGET',bidBar:bar,levelBid:target,spread,slippage:slip});
+      const fill=calculateExitAtTime({side,reason:'TARGET',bidBar:bar,levelBid:target,config});
+      exitPrice=fill.price;
+      exitCosts=fill.costs;
       break;
     }
     previousBar=bar;
@@ -446,7 +502,13 @@ function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,eq
     signal_time:signalBar.time,entry_time:nextBar.time,exit_time:exitTime,side,
     signal_hour_utc:new Date(signalBar.time*1000).getUTCHours(),
     setup_type:setup.setup_type,entry,entry_bid:nextBar.open,stop_loss:stop,take_profit:target,
-    exit_price:exitPrice,spread_assumption:spread,slippage_assumption:slip,
+    exit_price:exitPrice,spread_assumption:entrySpread,slippage_assumption:slip,
+    entry_spread_estimate:entrySpread,exit_spread_estimate:exitCosts.spreadPrice,
+    entry_server_hour:entryCosts.serverHour,exit_server_hour:exitCosts.serverHour,
+    spread_profile_account:entryCosts.accountServer,spread_quantile:entryCosts.quantile,
+    entry_spread_source:entryCosts.source,exit_spread_source:exitCosts.source,
+    entry_spread_observations:entryCosts.observations,exit_spread_observations:exitCosts.observations,
+    spread_profile_id:entryCosts.profileId,spread_model:entryCosts.spreadModel,
     raw_stop_distance_bid:rawStopDistanceBid,effective_risk_distance:effectiveRiskDistance,
     risk_cash:riskCash,net_r:netR,net_pnl:netPnl,exit_reason:exitReason,
     holding_minutes:Math.max(0,(exitTime-nextBar.time)/60),
@@ -520,6 +582,9 @@ function toCsv(trades) {
   const headers=[
     'signal_time','entry_time','exit_time','signal_hour_utc','side','setup_type',
     'entry','entry_bid','stop_loss','take_profit','exit_price','spread_assumption','slippage_assumption',
+    'entry_spread_estimate','exit_spread_estimate','entry_server_hour','exit_server_hour',
+    'spread_profile_account','spread_quantile','entry_spread_source','exit_spread_source',
+    'entry_spread_observations','exit_spread_observations','spread_profile_id','spread_model',
     'raw_stop_distance_bid','effective_risk_distance','risk_cash','net_r','net_pnl','exit_reason','holding_minutes',
     'signal_atr','signal_rsi14','signal_ema20_distance_atr','range_atr','breakout_atr','volume_ratio',
     'stop_atr','extension_atr','pullback_touch_atr_tolerance','confirmation_body_atr','confirmation_close_location',
@@ -646,7 +711,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
   let postLockRejectedEntryGap=0;
   let postLockRejectedNextBarGap=0;
   const postDrawdownShadowTrades=[];
-  let signalsEvaluated=0, candidates=0, candidatesBuy=0, candidatesSell=0, rejectedEntryGap=0, rejectedNextBarGap=0, rejectedDirectionFilter=0;
+  let signalsEvaluated=0, candidates=0, candidatesBuy=0, candidatesSell=0, rejectedEntryGap=0, rejectedNextBarGap=0, rejectedDirectionFilter=0, rejectedSpreadGate=0;
   for(let i=first;i<m5Ind.length-1;i++) {
     const signal=m5Ind[i];
     if(signal.time<start) continue;
@@ -676,10 +741,16 @@ async function runOne(rawM5, rawH1, config, strategy) {
     if(setup.candidate==='BUY') candidatesBuy++;
     if(setup.candidate==='SELL') candidatesSell++;
     const contextNext=m5Ind[i+1];
+    const entryCosts=contextNext ? executionCostsAt(config,contextNext.time) : null;
+    if (config.spreadModel === 'xm_empirical_hourly' &&
+        entryCosts && entryCosts.spreadPrice > config.spreadGatePrice) {
+      rejectedSpreadGate++;
+      continue;
+    }
     const contextEntry=contextNext
       ? calculateEntryFill({
           side:setup.candidate,bidOpen:contextNext.open,
-          spread:config.spreadPrice,slippage:config.slippagePrice
+          spread:entryCosts.spreadPrice,slippage:entryCosts.slippagePrice
         })
       : null;
     const contextDiagnostics=buildTradeContextDiagnostics({
@@ -804,6 +875,11 @@ async function runOne(rawM5, rawH1, config, strategy) {
     rejected_next_bar_gap:rejectedNextBarGap,
     rejected_entry_gap:rejectedEntryGap,
     rejected_direction_filter:rejectedDirectionFilter,
+    rejected_spread_gate:rejectedSpreadGate,
+    spread_model:config.spreadModel || 'fixed',
+    spread_profile_account:config.spreadProfileAccountServer || null,
+    spread_quantile:config.spreadQuantile || null,
+    spread_gate_price:config.spreadGatePrice,
     post_drawdown_shadow:postDrawdownShadow,
     outcome_diagnostics:outcomeDiagnostics
   };
@@ -821,10 +897,20 @@ function parseArgs() {
 }
 
 function costScenarios(config) {
-  return [
-    {name:'baseline',spreadPrice:config.spreadPrice,slippagePrice:config.slippagePrice},
-    {name:'conservative',spreadPrice:Math.max(config.spreadPrice,0.75),slippagePrice:Math.max(config.slippagePrice,0.10)}
+  const scenarios = [
+    {name:'baseline',spreadModel:'fixed',spreadPrice:config.spreadPrice,slippagePrice:config.slippagePrice},
+    {name:'conservative',spreadModel:'fixed',spreadPrice:Math.max(config.spreadPrice,0.75),slippagePrice:Math.max(config.slippagePrice,0.10)}
   ];
+  if (config.includeXMEmpiricalScenarios) {
+    if (!config.spreadProfile) throw new Error('GOLD_BACKTEST_INCLUDE_XM_EMPIRICAL_SCENARIOS=true requires GOLD_BACKTEST_SPREAD_PROFILE_FILE');
+    scenarios.push(
+      {name:'xm_demo_p50',spreadModel:'xm_empirical_hourly',spreadProfileAccountServer:'XMTrading-Demo 6',spreadQuantile:'p50',slippagePrice:0.05},
+      {name:'xm_demo_p90',spreadModel:'xm_empirical_hourly',spreadProfileAccountServer:'XMTrading-Demo 6',spreadQuantile:'p90',slippagePrice:0.05},
+      {name:'xm_demo_p95_stress',spreadModel:'xm_empirical_hourly',spreadProfileAccountServer:'XMTrading-Demo 6',spreadQuantile:'p95',slippagePrice:0.10},
+      {name:'xm_real_p90',spreadModel:'xm_empirical_hourly',spreadProfileAccountServer:'XMTrading-Real 11',spreadQuantile:'p90',slippagePrice:0.05}
+    );
+  }
+  return scenarios;
 }
 
 async function main() {
@@ -845,6 +931,13 @@ async function main() {
     if(rawM5.length<200000) throw new Error('Insufficient Dukascopy XAUUSD M5 data: '+rawM5.length);
   }
   const config={...BASE_CONFIG,lookbackDays};
+  if (config.spreadProfileFile) {
+    config.spreadProfile=JSON.parse(await fs.readFile(config.spreadProfileFile,'utf8'));
+    validateEmpiricalSpreadProfile(config.spreadProfile);
+  }
+  if (config.includeXMEmpiricalScenarios && !config.spreadProfile) {
+    throw new Error('XM empirical spread scenarios require GOLD_BACKTEST_SPREAD_PROFILE_FILE');
+  }
   if (config.isOnly) {
     const isWindow = isolateIsWindow(rawM5, { oosDays: 730, barSeconds: 300, minBars: 200000 });
     rawM5 = isWindow.bars;
@@ -896,7 +989,26 @@ async function main() {
     assumptions:{initial_equity:config.initialEquity,risk_per_trade_pct:config.riskPct,execution:'next M5 bar open',same_bar_conflict:'stop first',max_hold_bars:config.maxHoldBars,entry_model:'bid data + spread/slippage by side',direction_filter_for_research_only:config.allowedSideFilter,strategy_variant:STRATEGY_VARIANT,evaluation_mode:config.isOnly?'IS_ONLY_CANDIDATE_SCREEN':'FULL_HISTORY_WITH_IS_OOS_SPLIT'},
     strategy_parameters:strategy,
     data_quality:dataQuality(rawM5),
-    cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{spread_price:costScenarios(config).find(c=>c.name===name).spreadPrice,slippage_price:costScenarios(config).find(c=>c.name===name).slippagePrice}])),
+    cost_scenarios:Object.fromEntries(Object.entries(results).map(([name,r])=>{
+      const scenario=costScenarios(config).find(c=>c.name===name);
+      return [name,{
+        spread_model:scenario.spreadModel,
+        spread_price:scenario.spreadPrice ?? null,
+        spread_profile_account:scenario.spreadProfileAccountServer || null,
+        spread_quantile:scenario.spreadQuantile || null,
+        spread_gate_price:config.spreadGatePrice,
+        slippage_price_per_side:scenario.slippagePrice,
+        commission_modelled:false,
+        swap_and_financing_modelled:false
+      }];
+    })),
+    cost_model_limitations:{
+      xm_empirical_spread_profile:config.spreadProfile ? config.spreadProfile.profile_id : null,
+      spread_sample_is_historical_proxy_not_full_history:true,
+      slippage_is_assumed_not_measured:true,
+      commission_modelled:false,
+      swap_and_financing_modelled:false
+    },
     results:Object.fromEntries(Object.entries(results).map(([name,r])=>[name,{
       evaluation_mode:r.evaluation_mode,summary:r.summary,recent365:r.recent365,is1095:r.is1095,oos730:r.oos730,annual:r.annual,positiveYears:r.positiveYears,positiveYearsWithSample:r.positiveYearsWithSample,qualityGate:r.qualityGate,
       signals_evaluated:r.signals_evaluated,candidates:r.candidates,candidates_buy:r.candidates_buy,candidates_sell:r.candidates_sell,
