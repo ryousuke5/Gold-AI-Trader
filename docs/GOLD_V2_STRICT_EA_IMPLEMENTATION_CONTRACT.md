@@ -6,11 +6,11 @@
 ## 1. Delivery stages
 
 1. **Price and signal parity (current):** pure execution-price helpers and tests; all strategy levels are BID-chart levels. Backtest outputs record the price basis.
-2. **MT4 signal-only EA:** MQL4 implementation of the frozen V2 Strict signal rules. It logs each completed M5 bar once, includes a version/hash and diagnostic fields, and has no `OrderSend`, `OrderClose`, pending-order, or live-position modification path.
-3. **Parity replay:** replay identical M5/H1 bars through JavaScript and MT4. Require exact candidate, reason, stop, target, and bar-time agreement within symbol tick size. Compare indicator warm-up, H1 bar boundaries, broker timezone, DST, and missing bars.
-4. **Demo shadow:** observe live Bid/Ask, spread, slippage, quote age and safety gates without opening orders. Collect a frozen prospective sample.
-5. **Demo order execution:** only after parity and shadow gates pass, implement order sizing and demo order handling behind a separate explicit enable flag. No real-money orders.
-6. **Live readiness review:** separate written approval after sufficient forward demo evidence. The default live-order gate remains OFF.
+2. **MT4 signal / telemetry layer:** reuse the existing `mt4/GoldAITraderV19.mq4` as the market-safety heartbeat and completed-bar feature bridge. V19 already sends completed M5/H1 candles and Bid/Ask quote context to `/api/gold/signal`; it has no order-sending path, and `AllowAutoOrders` is intentionally ignored. Do not modify or redeploy the production V19 copy during research. Capture its feature payload and the server's returned candidate/decision/entry/SL/TP/risk/`order_allowed` fields in a separate research ledger.
+3. **Parity replay:** replay identical M5/H1 bars through the JavaScript strategy and the MT4-to-API feature bridge. Require agreement for feature values, candidate, reason, stop, target, and bar-time within broker tick size. Compare indicator warm-up, H1 bar boundaries, broker timezone, DST, and missing bars. If a fully local MQL4 strategy copy is later added, test it against the same fixtures before using it.
+4. **Demo shadow:** continue V19 signal-only operation; observe live Bid/Ask, spread, quote age, rejected/late/duplicate bars and market-safety gates without opening orders. Collect a frozen prospective sample.
+5. **Demo order execution:** only after research and parity gates pass, build a separate versioned demo executor. It may use the API response only when the server reports `order_allowed=true` and risk approved, and it must independently check a fresh quote, local safety, demo account, symbol contract, risk sizing and idempotency. Default demo execution remains OFF until explicitly approved. No real-money orders.
+6. **Live readiness review:** separate written approval after sufficient forward demo evidence. The real-order gate remains OFF.
 
 ## 2. Frozen GOLD V2 Strict signal contract
 
