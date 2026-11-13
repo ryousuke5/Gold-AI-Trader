@@ -15,7 +15,7 @@ const PERIODS = [
 const VARIANTS = [
   { name: 'strict_breakout_v2', selector: 'breakout_v2', description: 'Production reference: H1 Strict + M5 compression/volume breakout', params: 'Existing GOLD V2 Strict parameters; unchanged' },
   { name: 'pullback_retest', selector: 'pullback_retest', description: 'H1 Strict + previous M5 candle EMA20 touch + current candle directional reconfirmation', params: 'EMA20 touch 0.15 ATR; pullback close tolerance 0.35 ATR; reconfirmation beyond prior candle extreme; extension <=1.5 ATR; SL 0.8-2.0 ATR; TP 2R' },
-  { name: 'halfback_v1', selector: 'halfback_v1', description: 'H1 Strict + confirmed M5 impulse + 45-55% retracement + continuation reconfirmation', params: 'Confirmed swing 2 left/2 right; impulse 5-40 bars and >=1.5 ATR; retracement 45-55%; body >=0.25 ATR; SL 0.5-2.5 ATR; TP 2R' ,
+  { name: 'halfback_v1', selector: 'halfback_v1', description: 'H1 Strict + confirmed M5 impulse + 45-55% retracement + continuation reconfirmation', params: 'Confirmed swing 2 left/2 right; impulse 5-40 bars and >=1.5 ATR; retracement 45-55%; body >=0.25 ATR; SL 0.5-2.5 ATR; TP 2R' },
   { name: 'momentum_pullback_v1', selector: 'momentum_pullback_v1', description: 'H1 strict trend + measurable 3-bar H1 momentum + M5 EMA20 pullback + re-acceleration confirmation', params: 'H1 close momentum >=0.35 ATR over 3 bars; EMA20/EMA50 gap >=0.15 H1 ATR; M5 EMA20 touch 0.20 ATR; EMA50 penetration <=0.15 ATR; confirmation body >=0.30 ATR; close location BUY >=0.70 / SELL <=0.30; stop 0.60-1.50 ATR; target 2.50R' }
 ];
 
