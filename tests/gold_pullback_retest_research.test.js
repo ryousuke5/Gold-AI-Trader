@@ -85,7 +85,7 @@ test('pullback/reconfirmation research strategy supports a mirrored bearish patt
 test('research backtest variant selector defaults safely and rejects unknown strategies', () => {
   assert.equal(normalizeBacktestStrategyVariant(), 'breakout_v2');
   assert.equal(normalizeBacktestStrategyVariant('pullback_retest'), 'pullback_retest');
-  assert.throws(() => normalizeBacktestStrategyVariant('live_auto'), /Use breakout_v2 or pullback_retest/);
+  assert.throws(() => normalizeBacktestStrategyVariant('live_auto'), /Invalid GOLD_BACKTEST_STRATEGY_VARIANT/);
 });
 
 test('trade outcome diagnostics group loss outcomes by side and exit reason', () => {
