@@ -1,0 +1,67 @@
+name: GOLD V2 H1 EMA Component Ablation (Research Only)
+
+on:
+  push:
+    branches:
+      - research/h1-ema-component-ablation-20261113
+    paths:
+      - 'src/gold_strategy_v2.js'
+      - 'tests/gold_strategy_v2.test.js'
+      - 'scripts/backtest-gold-v2-h1-ema-ablation.mjs'
+      - 'docs/GOLD_H1_EMA_ABLATION_RUNBOOK.md'
+      - '.github/workflows/gold-v2-h1-ema-ablation.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  h1-ema-ablation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Test H1 EMA mode behavior
+        run: node --test tests/gold_strategy_v2.test.js
+
+      - name: Download fixed Walk-Forward split datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-v2-walkforward
+          path: gold-v2-walkforward
+          repository: ${{ github.repository }}
+          run-id: 43349812731
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate source datasets
+        run: |
+          test -s gold-v2-walkforward/is_data.json.gz
+          test -s gold-v2-walkforward/oos_data.json.gz
+          ls -lh gold-v2-walkforward/is_data.json.gz gold-v2-walkforward/oos_data.json.gz
+
+      - name: Run pre-registered A-D H1 EMA comparison
+        env:
+          GOLD_H1_ABLATION_SOURCE_DIR: gold-v2-walkforward
+          GOLD_H1_ABLATION_OUTPUT_DIR: gold-h1-ema-ablation-output
+          GOLD_H1_ABLATION_SOURCE_RUN_ID: '43349812731'
+        run: node scripts/backtest-gold-v2-h1-ema-ablation.mjs
+
+      - name: Upload research-only ablation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-v2-h1-ema-ablation
+          path: gold-h1-ema-ablation-output/
+          retention-days: 30
+          if-no-files-found: warn
