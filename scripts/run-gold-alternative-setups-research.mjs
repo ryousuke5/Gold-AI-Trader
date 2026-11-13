@@ -174,7 +174,7 @@ function buildMarkdown(rows) {
     '- H1 trend remains Strict for every strategy.',
     '- Same initial equity, risk per trade, max daily loss, drawdown cap, max hold, entry-gap rule, session, baseline and conservative costs.',
     '- All alternate strategy parameters are fixed to their documented defaults before the run; no parameter search or OOS tuning.',
-    '- Momentum Pullback V1 explicitly requires H1 directional momentum and EMA separation, then waits for an M5 EMA20 pullback and directional re-acceleration; it targets 2.5R with a structure-based stop.'
+    '- Momentum Pullback V1 explicitly requires H1 directional momentum and EMA separation, then waits for an M5 EMA20 pullback and directional re-acceleration; it targets 2.5R with a structure-based stop.',
     '- The OOS period has already been consulted in earlier research. This is a repeated robustness check, not a fresh blind holdout.',
     '',
     '## Conservative-cost results',
