@@ -1004,7 +1004,7 @@ async function main() {
       const text = String(value ?? '');
       return /[,"\\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
     };
-    const csv = [headers.join(','), ...rows.map(row => headers.map(h => escapeCsv(row[h])).join(','))].join('\\n') + '\\n';
+    const csv = [headers.join(','), ...rows.map(row => headers.map(h => escapeCsv(row[h])).join(','))].join('\n') + '\n';
     await fs.writeFile(path.join(outDir,outputPrefix+'_m5_gate_shadow_baseline.csv'),csv);
   }
   for(const [name,r] of Object.entries(results)) {
