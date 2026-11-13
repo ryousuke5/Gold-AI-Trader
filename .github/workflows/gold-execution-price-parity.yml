@@ -12,6 +12,7 @@ on:
       - 'scripts/backtest-gold-v2.mjs'
       - 'scripts/run-gold-alternative-setups-research.mjs'
       - 'tests/gold_execution_price_model.test.js'
+      - 'tests/gold_trade_context_diagnostics.test.js'
       - 'tests/gold_pullback_retest_research.test.js'
       - 'tests/gold_h1_m5_halfback_v1.test.js'
       - 'docs/GOLD_V2_STRICT_EA_IMPLEMENTATION_CONTRACT.md'
@@ -40,6 +41,7 @@ jobs:
       - name: Test execution price model and strategy modules
         run: |
           node --test tests/gold_execution_price_model.test.js
+          node --test tests/gold_trade_context_diagnostics.test.js
           node --test tests/gold_pullback_retest_research.test.js
           node --test tests/gold_h1_m5_halfback_v1.test.js
 
