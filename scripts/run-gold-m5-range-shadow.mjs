@@ -55,7 +55,8 @@ async function runPeriod(period) {
     GOLD_SESSION_START_UTC: '7',
     GOLD_SESSION_END_UTC: '20',
     GOLD_H1_TREND_MODE: 'strict',
-    GOLD_RANGE_SHADOW_DIAGNOSTICS: 'true'
+    GOLD_RANGE_SHADOW_DIAGNOSTICS: 'true',
+    GOLD_M5_GATE_SHADOW_DIAGNOSTICS: 'true'
   };
   delete env.GOLD_STRATEGY_JSON;
 
@@ -68,9 +69,12 @@ async function runPeriod(period) {
 
   const reportPath = path.join(outDir, 'gold_v2_backtest_report.json');
   const csvPath = path.join(outDir, 'gold_v2_range_shadow_baseline.csv');
+  const m5GateCsvPath = path.join(outDir, 'gold_v2_m5_gate_shadow_baseline.csv');
   const report = JSON.parse(await fs.readFile(reportPath, 'utf8'));
   const diag = report.results?.baseline?.range_shadow_diagnostics;
+  const m5GateDiag = report.results?.baseline?.m5_gate_shadow_diagnostics;
   if (!diag?.enabled) throw new Error(`Range shadow diagnostics were not enabled for ${period.name}`);
+  if (!m5GateDiag?.enabled) throw new Error(`M5 gate shadow diagnostics were not enabled for ${period.name}`);
 
   const originalCompressionRejects = Number(report.results?.baseline?.setup_wait_reasons?.compression_filter || 0);
   if (originalCompressionRejects !== Number(diag.compression_rejects)) {
@@ -81,6 +85,25 @@ async function runPeriod(period) {
   const rowCount = Math.max(0, csv.trim().split(/\r?\n/).length - 1);
   if (rowCount !== Number(diag.compression_rejects)) {
     throw new Error(`CSV row count mismatch for ${period.name}: ${rowCount} vs ${diag.compression_rejects}`);
+  }
+
+  const expectedGateCounts = {
+    impulse_body_filter: Number(report.results.baseline.setup_wait_reasons?.impulse_body_filter || 0),
+    volume_expansion_filter: Number(report.results.baseline.setup_wait_reasons?.volume_expansion_filter || 0),
+    breakout_trigger_filter: Number(report.results.baseline.setup_wait_reasons?.breakout_trigger_filter || 0)
+  };
+  let expectedGateRows = 0;
+  for (const [gateName, expected] of Object.entries(expectedGateCounts)) {
+    const actual = Number(m5GateDiag.gates?.[gateName]?.count || 0);
+    if (actual !== expected) {
+      throw new Error(`M5 gate shadow count mismatch for ${period.name} / ${gateName}: ${actual} vs ${expected}`);
+    }
+    expectedGateRows += expected;
+  }
+  const gateCsv = await fs.readFile(m5GateCsvPath, 'utf8');
+  const gateRowCount = Math.max(0, gateCsv.trim().split(/\r?\n/).length - 1);
+  if (gateRowCount !== expectedGateRows) {
+    throw new Error(`M5 gate shadow CSV row count mismatch for ${period.name}: ${gateRowCount} vs ${expectedGateRows}`);
   }
 
   const summary = {
@@ -110,13 +133,24 @@ async function runPeriod(period) {
       },
       range_atr_bins: diag.range_atr_bins
     },
+    m5_gate_shadow: {
+      gates: Object.fromEntries(Object.entries(m5GateDiag.gates).map(([name, gate]) => [name, {
+        count: gate.count,
+        downstream_rejections: gate.downstream_rejections,
+        potential_candidates: gate.potential_candidates,
+        candidate_sides: gate.candidate_sides
+      }])),
+      detail_rows: gateRowCount
+    },
     costs: report.cost_scenarios,
     report_file: path.relative(OUTPUT_DIR, reportPath),
     detail_csv: path.relative(OUTPUT_DIR, csvPath),
-    detail_rows: rowCount
+    detail_rows: rowCount,
+    m5_gate_detail_csv: path.relative(OUTPUT_DIR, m5GateCsvPath)
   };
 
   await fs.copyFile(csvPath, path.join(OUTPUT_DIR, `gold_v2_range_shadow_${period.name}.csv`));
+  await fs.copyFile(m5GateCsvPath, path.join(OUTPUT_DIR, `gold_v2_m5_gate_shadow_${period.name}.csv`));
   return summary;
 }
 
@@ -148,20 +182,27 @@ function markdown(results) {
     lines.push(`| ${r.period} | ${r.range_shadow.compression_rejects} | ${r.range_shadow.range_atr_summary.mean} | ${r.range_shadow.range_atr_summary.median} | ${r.range_shadow.range_atr_summary.p90} | ${r.range_shadow.potential_candidates} |`);
   }
   for (const r of results) {
-    lines.push('', `## ${r.period}`, '', '### First downstream rejection after bypass', '', '| Reason | Count |', '|---|---:|');
+    lines.push('', `## ${r.period}`, '', '### First downstream rejection after Range ATR bypass', '', '| Reason | Count |', '|---|---:|');
     for (const item of topEntries(r.range_shadow.downstream_rejections, 20)) lines.push(`| ${item.reason} | ${item.count} |`);
     lines.push('', '### Range ATR distribution', '', '| Band | Count |', '|---|---:|');
     for (const item of r.range_shadow.range_atr_bins || []) lines.push(`| ${item.band} | ${item.count} |`);
-    lines.push('', `Detailed rows: ${r.detail_csv} (${r.detail_rows} records)`);
+    lines.push('', '### One-gate-at-a-time M5 shadow', '', '| Original failed gate | Count | Potential setups after bypass | Next reasons |', '|---|---:|---:|---|');
+    for (const [gateName, gate] of Object.entries(r.m5_gate_shadow.gates)) {
+      const next = topEntries(gate.downstream_rejections, 4).map(x => `${x.reason}: ${x.count}`).join('; ');
+      lines.push(`| ${gateName} | ${gate.count} | ${gate.potential_candidates} | ${next || 'none'} |`);
+    }
+    lines.push('', `Range detail rows: ${r.detail_csv} (${r.detail_rows} records)`, `M5 gate detail rows: ${r.m5_gate_detail_csv} (${r.m5_gate_shadow.detail_rows} records)`);
   }
   lines.push(
     '',
     '## Interpretation rules',
     '',
     '- These are bar-level filter evaluations, not independent trades or independent observations.',
-    '- A potential setup after Range ATR bypass is not an approved trade. Entry gap, portfolio overlap, daily loss, drawdown and execution safety still need separate evaluation.',
-    '- If potential setups are zero, the Range ATR gate is not the immediate cause of missed trades for this fixed dataset; downstream conditions explain the rejects.',
-    '- No threshold should be promoted based on this diagnostic alone. Any threshold sensitivity test must be pre-registered and evaluated on untouched OOS data.',
+    '- Each M5 gate shadow bypasses exactly one first-failing gate; all other thresholds remain unchanged.',
+    '- A potential setup after a one-gate bypass is not an approved trade. Entry gap, portfolio overlap, daily loss, drawdown and execution safety still need separate evaluation.',
+    '- Zero potential setups after a single-gate bypass means no single one of these gates alone explains a missed valid setup in this fixed sample.',
+    '- The 2024–2026 OOS split has been consulted in prior research and is not a fresh blind holdout. Treat it as a repeated robustness check, not independent confirmation.',
+    '- No threshold should be promoted based on these diagnostics alone. A future forward-paper sample is needed after any separately pre-registered research candidate.',
     '- Production remains GOLD V2 Strict, ANALYSIS, auto trading OFF, and real-order gate OFF.'
   );
   return lines.join('\n') + '\n';
@@ -199,8 +240,9 @@ async function main() {
     periods: results.map(r => ({
       period: r.period,
       range_rejects: r.range_shadow.compression_rejects,
-      downstream: r.range_shadow.downstream_rejections,
-      potential_candidates: r.range_shadow.potential_candidates
+      range_bypass_downstream: r.range_shadow.downstream_rejections,
+      range_bypass_candidates: r.range_shadow.potential_candidates,
+      m5_gate_shadow: r.m5_gate_shadow.gates
     })),
     production_changed: false
   }, null, 2));
