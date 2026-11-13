@@ -44,6 +44,8 @@ export function buildGoldV2Setup(features = {}, config = {}) {
     maxH1RsiSell: Math.min(99, n(config.maxH1RsiSell, 50)),
     // Research-only alternative; default remains the production-strict EMA stack.
     h1TrendMode: config.h1TrendMode === 'close_ema20_rsi' ? 'close_ema20_rsi' : 'strict',
+    // Diagnostic-only switch. It is never enabled in production config.
+    diagnosticIgnoreRangeAtr: config.diagnosticIgnoreRangeAtr === true,
     sessionStartUtc: Math.min(23, Math.max(0, Math.floor(n(config.sessionStartUtc, 7)))),
     sessionEndUtc: Math.min(23, Math.max(0, Math.floor(n(config.sessionEndUtc, 20))))
   };
@@ -97,7 +99,8 @@ export function buildGoldV2Setup(features = {}, config = {}) {
     min_volume_ratio: cfg.minVolumeRatio,
     volume_confirmation: range.averageVolume > 0 ? volumeRatio >= cfg.minVolumeRatio : null
   };
-  if (!(rangeWidth > 0) || rangeAtr < cfg.minRangeAtr || rangeAtr > cfg.maxRangeAtr) {
+  if (!(rangeWidth > 0) || (!cfg.diagnosticIgnoreRangeAtr &&
+    (rangeAtr < cfg.minRangeAtr || rangeAtr > cfg.maxRangeAtr))) {
     return { candidate: 'WAIT', trend: trendUp ? 'UP' : 'DOWN', reason: 'compression_filter', diagnostics: rangeDiagnostics };
   }
 
@@ -117,6 +120,8 @@ export function buildGoldV2Setup(features = {}, config = {}) {
 
   const breakoutDistanceUp = signal.close - range.high;
   const breakoutDistanceDown = range.low - signal.close;
+  rangeDiagnostics.breakout_distance_up_atr = breakoutDistanceUp / m5.atr14;
+  rangeDiagnostics.breakout_distance_down_atr = breakoutDistanceDown / m5.atr14;
 
   if (trendUp) {
     if (breakoutDistanceUp < cfg.breakoutAtr * m5.atr14) {
