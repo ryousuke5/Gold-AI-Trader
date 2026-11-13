@@ -1,4 +1,4 @@
-const VALID_QUANTILES = new Set(['p50', 'p75', 'p90', 'p95', 'p99', 'max']);
+const VALID_QUANTILES = new Set(['p50', 'p90', 'p95', 'p99', 'max']);
 
 function finiteNumber(value, label) {
   const n = Number(value);
