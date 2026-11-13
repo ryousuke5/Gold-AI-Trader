@@ -174,3 +174,23 @@ test('GOLD V2 diagnostic Range ATR bypass is opt-in and only skips the compressi
     'close_location_filter', 'm5_rsi_filter', 'm5_ema_alignment_filter',
     'extension_filter', 'stop_distance_filter'].includes(shadow.reason));
 });
+
+
+test('GOLD V2 diagnostic M5 bypass switches skip only their own gate', () => {
+  const bodyWeak = baseFeatures();
+  bodyWeak.recentM5.at(-1).open = 2503.7;
+  bodyWeak.recentM5.at(-1).close = 2504.0;
+  assert.equal(buildGoldV2Setup(bodyWeak).reason, 'impulse_body_filter');
+  assert.equal(buildGoldV2Setup(bodyWeak, { diagnosticIgnoreBodyAtr: true }).candidate, 'BUY');
+
+  const volumeWeak = baseFeatures();
+  volumeWeak.recentM5.at(-1).volume = 101;
+  assert.equal(buildGoldV2Setup(volumeWeak).reason, 'volume_expansion_filter');
+  assert.equal(buildGoldV2Setup(volumeWeak, { diagnosticIgnoreVolume: true }).candidate, 'BUY');
+
+  const breakoutWeak = baseFeatures();
+  breakoutWeak.recentM5.at(-1).close = 2503.35;
+  breakoutWeak.recentM5.at(-1).open = 2502.0;
+  assert.equal(buildGoldV2Setup(breakoutWeak).reason, 'breakout_trigger_filter');
+  assert.equal(buildGoldV2Setup(breakoutWeak, { diagnosticIgnoreBreakoutDistance: true }).candidate, 'BUY');
+});
