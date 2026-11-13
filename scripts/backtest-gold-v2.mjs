@@ -5,6 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
+import {
+  calculateEntryFill,
+  isStopTriggered,
+  isTargetTriggered,
+  calculateEffectiveRiskDistance,
+  calculateExitFill
+} from '../src/gold_execution_price_model.js';
 import { isolateIsWindow } from '../src/gold_backtest_split.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
@@ -353,67 +360,82 @@ function applyRiskGate(state, equity, timestamp, config) {
 function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,equity,config}) {
   const spread=config.spreadPrice, slip=config.slippagePrice;
   const side=setup.candidate;
-  const entry=side==='BUY' ? nextBar.open+spread+slip : nextBar.open-slip;
+  // Source OHLC and strategy levels are BID-based. Entry/exit fills use the
+  // executable quote side through the shared execution model.
+  const entry=calculateEntryFill({side,bidOpen:nextBar.open,spread,slippage:slip});
   const stop=setup.stop_loss, target=setup.take_profit;
   if(!(entry>0 && stop>0 && target>0)) return null;
-  const stopDistance=Math.abs(entry-stop);
-  if(!(stopDistance>0) || Math.abs(entry-setup.entry_reference)/Math.max(0.000001, Number(signalBar.atr14))>config.maxEntryGapAtr) return null;
+  const rawStopDistanceBid=Math.abs(Number(setup.entry_reference)-Number(stop));
+  const effectiveRiskDistance=calculateEffectiveRiskDistance({
+    side,entryFill:entry,stopLossBid:stop,spread,slippage:slip
+  });
+  if(!(effectiveRiskDistance>0)) return null;
+  if(Math.abs(entry-setup.entry_reference)/Math.max(0.000001, Number(signalBar.atr14))>config.maxEntryGapAtr) return null;
   const riskCash=equity*(config.riskPct/100);
-  const scanStart = Math.max(0, Math.floor(Number(futureStartIndex) || 0));
-  const scanEnd = Math.min(futureBars.length, scanStart + config.maxHoldBars);
-  const finalScanIndex = scanEnd - 1;
-  let exitTime = futureBars[finalScanIndex]?.time ?? nextBar.time;
-  let exitPrice = futureBars[finalScanIndex]?.close ?? nextBar.close;
+  const scanStart=Math.max(0,Math.floor(Number(futureStartIndex)||0));
+  const scanEnd=Math.min(futureBars.length,scanStart+config.maxHoldBars);
+  const finalScanIndex=scanEnd-1;
+  let exitBar=futureBars[finalScanIndex]||nextBar;
+  let exitTime=exitBar.time;
   let exitReason='TIME';
-  let previousBar = null;
+  let exitPrice=calculateExitFill({side,reason:'TIME',bidBar:exitBar,spread,slippage:slip});
+  let previousBar=null;
   for(let scanIndex=scanStart;scanIndex<scanEnd;scanIndex++) {
-    const bar = futureBars[scanIndex];
-    if(previousBar && bar.time - previousBar.time > 900) {
+    const bar=futureBars[scanIndex];
+    if(previousBar && bar.time-previousBar.time>900) {
+      exitBar=previousBar;
       exitTime=previousBar.time;
       exitReason='DATA_GAP';
-      exitPrice=side==='BUY' ? previousBar.close-slip : previousBar.close+spread+slip;
+      exitPrice=calculateExitFill({side,reason:'DATA_GAP',bidBar:previousBar,spread,slippage:slip});
       break;
     }
-    const stopHit=side==='BUY' ? bar.low<=stop : bar.high+spread>=stop;
-    const targetHit=side==='BUY' ? bar.high>=target : bar.low+spread<=target;
+    // Strategy SL/TP are BID chart-price levels. Check BID OHLC directly for
+    // both directions, then convert the exit to BID (BUY) / ASK (SELL).
+    const stopHit=isStopTriggered({side,bidBar:bar,stopLossBid:stop});
+    const targetHit=isTargetTriggered({side,bidBar:bar,takeProfitBid:target});
     if(stopHit) {
+      exitBar=bar;
       exitTime=bar.time;
       exitReason='STOP';
-      exitPrice=side==='BUY' ? stop-slip : stop+spread+slip;
+      exitPrice=calculateExitFill({side,reason:'STOP',bidBar:bar,levelBid:stop,spread,slippage:slip});
       break;
     }
     if(targetHit) {
+      exitBar=bar;
       exitTime=bar.time;
       exitReason='TARGET';
-      exitPrice=side==='BUY' ? target-slip : target+spread+slip;
+      exitPrice=calculateExitFill({side,reason:'TARGET',bidBar:bar,levelBid:target,spread,slippage:slip});
       break;
     }
     previousBar=bar;
   }
   const pnlPrice=side==='BUY' ? exitPrice-entry : entry-exitPrice;
-  const netR=pnlPrice/stopDistance;
+  const netR=pnlPrice/effectiveRiskDistance;
   const netPnl=riskCash*netR;
-  const signalAtr = Number(signalBar.atr14);
-  const signalEma20 = Number(signalBar.ema20);
+  const signalAtr=Number(signalBar.atr14);
+  const signalEma20=Number(signalBar.ema20);
   return {
-    signal_time:signalBar.time, entry_time:nextBar.time, exit_time:exitTime, side,
+    signal_time:signalBar.time,entry_time:nextBar.time,exit_time:exitTime,side,
     signal_hour_utc:new Date(signalBar.time*1000).getUTCHours(),
-    setup_type:setup.setup_type, entry, stop_loss:stop, take_profit:target,
-    risk_cash:riskCash, net_r:netR, net_pnl:netPnl, exit_reason:exitReason,
+    setup_type:setup.setup_type,entry,entry_bid:nextBar.open,stop_loss:stop,take_profit:target,
+    exit_price:exitPrice,spread_assumption:spread,slippage_assumption:slip,
+    raw_stop_distance_bid:rawStopDistanceBid,effective_risk_distance:effectiveRiskDistance,
+    risk_cash:riskCash,net_r:netR,net_pnl:netPnl,exit_reason:exitReason,
     holding_minutes:Math.max(0,(exitTime-nextBar.time)/60),
-    signal_atr:Number.isFinite(signalAtr) ? signalAtr : null,
-    signal_rsi14:Number.isFinite(Number(signalBar.rsi14)) ? Number(signalBar.rsi14) : null,
-    signal_ema20_distance_atr:Number.isFinite(signalAtr) && signalAtr>0 && Number.isFinite(signalEma20)
-      ? Math.abs(signalBar.close-signalEma20)/signalAtr : null,
-    range_atr:setup.diagnostics?.range_atr ?? null,
-    breakout_atr:setup.diagnostics?.breakout_atr ?? null,
-    volume_ratio:setup.diagnostics?.volume_ratio ?? null,
-    stop_atr:setup.diagnostics?.stop_atr ??
-      (Number.isFinite(signalAtr) && signalAtr>0 ? stopDistance/signalAtr : null),
-    extension_atr:setup.diagnostics?.extension_atr ?? null,
-    pullback_touch_atr_tolerance:setup.diagnostics?.pullback_touch_atr_tolerance ?? null,
-    confirmation_body_atr:setup.diagnostics?.confirmation_body_atr ?? null,
-    confirmation_close_location:setup.diagnostics?.confirmation_close_location ?? null
+    signal_atr:Number.isFinite(signalAtr)?signalAtr:null,
+    signal_rsi14:Number.isFinite(Number(signalBar.rsi14))?Number(signalBar.rsi14):null,
+    signal_ema20_distance_atr:Number.isFinite(signalAtr)&&signalAtr>0&&Number.isFinite(signalEma20)
+      ? Math.abs(signalBar.close-signalEma20)/signalAtr:null,
+    range_atr:setup.diagnostics?.range_atr??null,
+    breakout_atr:setup.diagnostics?.breakout_atr??null,
+    volume_ratio:setup.diagnostics?.volume_ratio??null,
+    // Keep strategy geometry separate from execution-cost-adjusted monetary risk.
+    stop_atr:setup.diagnostics?.stop_atr??
+      (Number.isFinite(signalAtr)&&signalAtr>0?rawStopDistanceBid/signalAtr:null),
+    extension_atr:setup.diagnostics?.extension_atr??null,
+    pullback_touch_atr_tolerance:setup.diagnostics?.pullback_touch_atr_tolerance??null,
+    confirmation_body_atr:setup.diagnostics?.confirmation_body_atr??null,
+    confirmation_close_location:setup.diagnostics?.confirmation_close_location??null
   };
 }
 
@@ -468,7 +490,8 @@ function annualSummary(trades, initialEquity) {
 function toCsv(trades) {
   const headers=[
     'signal_time','entry_time','exit_time','signal_hour_utc','side','setup_type',
-    'entry','stop_loss','take_profit','risk_cash','net_r','net_pnl','exit_reason','holding_minutes',
+    'entry','entry_bid','stop_loss','take_profit','exit_price','spread_assumption','slippage_assumption',
+    'raw_stop_distance_bid','effective_risk_distance','risk_cash','net_r','net_pnl','exit_reason','holding_minutes',
     'signal_atr','signal_rsi14','signal_ema20_distance_atr','range_atr','breakout_atr','volume_ratio',
     'stop_atr','extension_atr','pullback_touch_atr_tolerance','confirmation_body_atr','confirmation_close_location',
     'post_drawdown_lock_shadow'
