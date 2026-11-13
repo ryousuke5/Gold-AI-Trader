@@ -152,3 +152,25 @@ test('GOLD V2 research H1 mode is opt-in and default remains strict', () => {
   assert.notEqual(relaxed.reason, 'h1_trend_filter');
   assert.equal(buildGoldV2Setup(features, { h1TrendMode: 'unknown' }).reason, 'h1_trend_filter');
 });
+
+
+test('GOLD V2 diagnostic Range ATR bypass is opt-in and only skips the compression gate', () => {
+  const f = baseFeatures();
+  for (const [index, bar] of f.recentM5.slice(0, -1).entries()) {
+    const center = 2502 + (index % 2) * 0.2;
+    bar.open = center;
+    bar.close = center + 0.1;
+    bar.high = center + 4.0;
+    bar.low = center - 4.0;
+  }
+  const regular = buildGoldV2Setup(f);
+  const shadow = buildGoldV2Setup(f, { diagnosticIgnoreRangeAtr: true });
+
+  assert.equal(regular.candidate, 'WAIT');
+  assert.equal(regular.reason, 'compression_filter');
+  assert.notEqual(shadow.reason, 'compression_filter');
+  assert.equal(shadow.candidate, 'WAIT');
+  assert.ok(['impulse_body_filter', 'volume_expansion_filter', 'breakout_trigger_filter',
+    'close_location_filter', 'm5_rsi_filter', 'm5_ema_alignment_filter',
+    'extension_filter', 'stop_distance_filter'].includes(shadow.reason));
+});
