@@ -357,7 +357,7 @@ function applyRiskGate(state, equity, timestamp, config) {
   return {allowed:!reasons.length,reasons,daily,dd};
 }
 
-function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,equity,config}) {
+function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,equity,config,contextDiagnostics={}}) {
   const spread=config.spreadPrice, slip=config.slippagePrice;
   const side=setup.candidate;
   // Source OHLC and strategy levels are BID-based. Entry/exit fills use the
@@ -435,7 +435,8 @@ function simulateTrade({signalBar,nextBar,futureBars,futureStartIndex=0,setup,eq
     extension_atr:setup.diagnostics?.extension_atr??null,
     pullback_touch_atr_tolerance:setup.diagnostics?.pullback_touch_atr_tolerance??null,
     confirmation_body_atr:setup.diagnostics?.confirmation_body_atr??null,
-    confirmation_close_location:setup.diagnostics?.confirmation_close_location??null
+    confirmation_close_location:setup.diagnostics?.confirmation_close_location??null,
+    ...contextDiagnostics
   };
 }
 
@@ -494,9 +495,52 @@ function toCsv(trades) {
     'raw_stop_distance_bid','effective_risk_distance','risk_cash','net_r','net_pnl','exit_reason','holding_minutes',
     'signal_atr','signal_rsi14','signal_ema20_distance_atr','range_atr','breakout_atr','volume_ratio',
     'stop_atr','extension_atr','pullback_touch_atr_tolerance','confirmation_body_atr','confirmation_close_location',
+    'h1_rsi14','h1_close_to_ema20_atr','h1_ema20_slope_3_atr','h1_ema50_slope_3_atr',
+    'h1_ema20_ema50_gap_atr','h1_ema50_ema200_gap_atr','m5_ema20_slope_3_atr',
+    'm5_close_to_ema20_atr','signal_body_atr','signal_close_location','entry_gap_atr',
+    'observed_retracement','impulse_range_atr','impulse_bars','setup_extension_atr',
+    'setup_confirmation_body_atr','setup_confirmation_close_location',
     'post_drawdown_lock_shadow'
   ];
   return headers.join(',')+'\n'+trades.map(t=>headers.map(h=>String(t[h]??'')).join(',')).join('\n')+'\n';
+}
+
+export function buildTradeContextDiagnostics({
+  signalBar = {}, previousM5 = null, h1Bar = {}, previousH1 = null,
+  setup = {}, entryPrice = null
+} = {}) {
+  const safeRatio = (numerator, denominator) => {
+    const n = Number(numerator), d = Number(denominator);
+    return Number.isFinite(n) && Number.isFinite(d) && Math.abs(d) > 1e-12 ? n / d : null;
+  };
+  const m5Atr = Number(signalBar.atr14);
+  const h1Atr = Number(h1Bar.atr14);
+  const candleRange = Number(signalBar.high) - Number(signalBar.low);
+  const body = Math.abs(Number(signalBar.close) - Number(signalBar.open));
+  return {
+    h1_rsi14: Number.isFinite(Number(h1Bar.rsi14)) ? Number(h1Bar.rsi14) : null,
+    h1_close_to_ema20_atr: safeRatio(Number(h1Bar.close) - Number(h1Bar.ema20), h1Atr),
+    h1_ema20_slope_3_atr: previousH1
+      ? safeRatio(Number(h1Bar.ema20) - Number(previousH1.ema20), h1Atr) : null,
+    h1_ema50_slope_3_atr: previousH1
+      ? safeRatio(Number(h1Bar.ema50) - Number(previousH1.ema50), h1Atr) : null,
+    h1_ema20_ema50_gap_atr: safeRatio(Number(h1Bar.ema20) - Number(h1Bar.ema50), h1Atr),
+    h1_ema50_ema200_gap_atr: safeRatio(Number(h1Bar.ema50) - Number(h1Bar.ema200), h1Atr),
+    m5_ema20_slope_3_atr: previousM5
+      ? safeRatio(Number(signalBar.ema20) - Number(previousM5.ema20), m5Atr) : null,
+    m5_close_to_ema20_atr: safeRatio(Number(signalBar.close) - Number(signalBar.ema20), m5Atr),
+    signal_body_atr: safeRatio(body, m5Atr),
+    signal_close_location: candleRange > 0
+      ? safeRatio(Number(signalBar.close) - Number(signalBar.low), candleRange) : null,
+    entry_gap_atr: entryPrice !== null && entryPrice !== undefined
+      ? safeRatio(Math.abs(Number(entryPrice) - Number(setup.entry_reference)), m5Atr) : null,
+    observed_retracement: setup.diagnostics?.observed_retracement ?? null,
+    impulse_range_atr: setup.diagnostics?.impulse_range_atr ?? null,
+    impulse_bars: setup.diagnostics?.impulse_bars ?? null,
+    setup_extension_atr: setup.diagnostics?.extension_atr ?? null,
+    setup_confirmation_body_atr: setup.diagnostics?.confirmation_body_atr ?? null,
+    setup_confirmation_close_location: setup.diagnostics?.confirmation_close_location ?? null
+  };
 }
 
 function groupTradeOutcomes(trades, field, labeler = (value) => String(value ?? 'UNKNOWN')) {
@@ -601,6 +645,21 @@ async function runOne(rawM5, rawH1, config, strategy) {
     candidates++;
     if(setup.candidate==='BUY') candidatesBuy++;
     if(setup.candidate==='SELL') candidatesSell++;
+    const contextNext=m5Ind[i+1];
+    const contextEntry=contextNext
+      ? calculateEntryFill({
+          side:setup.candidate,bidOpen:contextNext.open,
+          spread:config.spreadPrice,slippage:config.slippagePrice
+        })
+      : null;
+    const contextDiagnostics=buildTradeContextDiagnostics({
+      signalBar:signal,
+      previousM5:i>=3?m5Ind[i-3]:null,
+      h1Bar:h,
+      previousH1:h1i>=3?h1Ind[h1i-3]:null,
+      setup,
+      entryPrice:contextEntry
+    });
     if(!isAllowedResearchSide(setup.candidate, config.allowedSideFilter)) {
       rejectedDirectionFilter++;
       continue;
@@ -625,7 +684,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
         // this branch intentionally bypasses only the DD lock for diagnostics.
         const shadowTrade=simulateTrade({
           signalBar:signal,nextBar:next,futureBars:m5Ind,futureStartIndex:i+1,
-          setup,equity:config.initialEquity,config
+          setup,equity:config.initialEquity,config,contextDiagnostics
         });
         if(!shadowTrade) {
           postLockRejectedEntryGap++;
@@ -643,7 +702,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
       rejectedNextBarGap++;
       continue;
     }
-    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind,futureStartIndex:i+1,setup,equity,config});
+    const trade=simulateTrade({signalBar:signal,nextBar:next,futureBars:m5Ind,futureStartIndex:i+1,setup,equity,config,contextDiagnostics});
     if(!trade) { rejectedEntryGap++; continue; }
     trade.post_drawdown_lock_shadow=false;
     trades.push(trade); equity+=trade.net_pnl;
