@@ -152,3 +152,42 @@ test('GOLD V2 research H1 mode is opt-in and default remains strict', () => {
   assert.notEqual(relaxed.reason, 'h1_trend_filter');
   assert.equal(buildGoldV2Setup(features, { h1TrendMode: 'unknown' }).reason, 'h1_trend_filter');
 });
+
+
+test('GOLD V2 EMA ablation keeps EMA20/EMA50 while removing only EMA50/EMA200', () => {
+  const f = baseFeatures();
+  f.h1.ema20 = 2500;
+  f.h1.ema50 = 2490;
+  f.h1.ema200 = 2495; // EMA20 > EMA50, but EMA50 is not above EMA200.
+  assert.equal(buildGoldV2Setup(f).reason, 'h1_trend_filter');
+  assert.equal(buildGoldV2Setup(f, { h1TrendMode: 'keep_ema20_ema50' }).candidate, 'BUY');
+  assert.equal(buildGoldV2Setup(f, { h1TrendMode: 'keep_ema50_ema200' }).reason, 'h1_trend_filter');
+});
+
+test('GOLD V2 EMA ablation keeps EMA50/EMA200 while removing only EMA20/EMA50', () => {
+  const f = baseFeatures();
+  f.h1.ema20 = 2500;
+  f.h1.ema50 = 2502; // EMA20 is not above EMA50, but EMA50 > EMA200.
+  f.h1.ema200 = 2490;
+  assert.equal(buildGoldV2Setup(f).reason, 'h1_trend_filter');
+  assert.equal(buildGoldV2Setup(f, { h1TrendMode: 'keep_ema20_ema50' }).reason, 'h1_trend_filter');
+  assert.equal(buildGoldV2Setup(f, { h1TrendMode: 'keep_ema50_ema200' }).candidate, 'BUY');
+});
+
+test('GOLD V2 EMA ablation modes remain research opt-ins and preserve close-vs-EMA20 plus RSI', () => {
+  const f = baseFeatures();
+  f.h1.close = 2499; // Below EMA20: every mode must still reject BUY.
+  f.h1.ema20 = 2500;
+  f.h1.ema50 = 2490;
+  f.h1.ema200 = 2480;
+  f.h1.rsi14 = 60;
+  for (const h1TrendMode of ['strict', 'keep_ema20_ema50', 'keep_ema50_ema200', 'close_ema20_rsi']) {
+    assert.equal(buildGoldV2Setup(f, { h1TrendMode }).reason, 'h1_trend_filter');
+  }
+
+  f.h1.close = 2504;
+  f.h1.rsi14 = 80; // Outside the unchanged BUY H1 RSI band.
+  for (const h1TrendMode of ['strict', 'keep_ema20_ema50', 'keep_ema50_ema200', 'close_ema20_rsi']) {
+    assert.equal(buildGoldV2Setup(f, { h1TrendMode }).reason, 'h1_trend_filter');
+  }
+});
