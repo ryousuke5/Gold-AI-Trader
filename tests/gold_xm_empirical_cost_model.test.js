@@ -78,3 +78,24 @@ test('validates versioned spread profile structure', () => {
   assert.equal(validateEmpiricalSpreadProfile(profile), true);
   assert.throws(() => validateEmpiricalSpreadProfile({ ...profile, schema_version: 2 }), /Unsupported/);
 });
+
+test('committed XM spread profile passes structural validation and preserves both account servers', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, resolve } = await import('node:path');
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const actual = JSON.parse(await readFile(resolve(root, 'data/gold_xm_empirical_spread_profile_20261113.json'), 'utf8'));
+  assert.equal(validateEmpiricalSpreadProfile(actual), true);
+  assert.ok(actual.profiles['XMTrading-Demo 6']);
+  assert.ok(actual.profiles['XMTrading-Real 11']);
+  assert.equal(actual.source.raw_rows, 4221339);
+  assert.equal(actual.source.duplicate_rows_removed, 254926);
+  const demo = resolveEmpiricalSpread({
+    profile: actual,
+    accountServer: 'XMTrading-Demo 6',
+    timestampSeconds: Date.parse('2026-11-13T00:30:00Z') / 1000,
+    quantile: 'p90'
+  });
+  assert.equal(demo.serverHour, 2);
+  assert.equal(demo.spreadPrice, 0.29);
+});
