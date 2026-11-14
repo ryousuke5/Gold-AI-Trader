@@ -124,7 +124,7 @@ V19 sends candle-close timestamps in UTC (`bar_time` and each recent bar `time`)
 
 ### EXIT
 
-Send EXIT once the virtual position is resolved. `cost_completeness` must explicitly distinguish quote-side-only R from a result that includes commission and swap. The shadow EA reports `QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP`; do not present that as fully cost-adjusted expectancy. `exit_price` is the actual executable close fill: BUY closes on BID; SELL closes on ASK. Submit both exit quotes and a spread matching `exit_ask - exit_bid`; the server records the quote side and reconstructs signed adverse slippage (positive means adverse). `net_r` uses the ENTRY event's `effective_risk_distance_price`. In the initial EA integration it is quote-side R based on executable entry and exit fills, with commission and swap excluded; only report fully cost-adjusted expectancy when those costs are actually supplied and `cost_completeness` is `FULL_COMMISSION_SWAP_INCLUDED`.
+Send EXIT once the virtual position is resolved. `cost_completeness` must explicitly distinguish spread and configured-slippage R from a result that includes commission and swap. The shadow EA reports `SPREAD_AND_CONFIGURED_SLIPPAGE_EXCLUDES_COMMISSION_SWAP`; do not present that as fully cost-adjusted expectancy. `exit_price` is the actual executable close fill: BUY closes on BID; SELL closes on ASK. Submit both exit quotes and a spread matching `exit_ask - exit_bid`; the server records the quote side and reconstructs signed adverse slippage (positive means adverse). `net_r` uses the ENTRY event's `effective_risk_distance_price`. In the initial EA integration it is spread and configured-slippage R based on executable entry and exit fills, with commission and swap excluded; only report fully cost-adjusted expectancy when those costs are actually supplied and `cost_completeness` is `FULL_COMMISSION_SWAP_INCLUDED`.
 
 ```json
 {
@@ -139,7 +139,7 @@ Send EXIT once the virtual position is resolved. `cost_completeness` must explic
     "exit_bid": 2498.30,
     "exit_ask": 2498.42,
     "exit_reason": "STOP",
-    "cost_completeness": "QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP",
+    "cost_completeness": "SPREAD_AND_CONFIGURED_SLIPPAGE_EXCLUDES_COMMISSION_SWAP",
     "net_r": -1.06,
     "holding_seconds": 2100,
     "exit_spread_price": 0.12,
@@ -184,7 +184,7 @@ The research-only MT4 implementation is present in `mt4/GoldAITraderV19.mq4` on 
 - Every M5 interval is sent as a BAR event. Initial partial intervals and exit-truncated intervals are tagged partial and have an explicit duration. Stale tick / missing interval conditions send GAP. A recovered active virtual position is restored from terminal Global Variables and attempts to write the prior partial bar and a GAP before resuming.
 - Logical SL/TP touches are evaluated from BID quotes for both directions; the recorded close fill is BID for BUY and ASK for SELL.
 - The research observer resolves an observation on logical STOP or TARGET, or at a fixed 1,800-second (30-minute) horizon if neither barrier has been reached. The `TIME` event is an observation-window end only, not a live strategy exit or a claim that the production strategy would close there. This fixed horizon prevents one unresolved diagnostic candidate from blocking later observations.
-- EXIT reports `QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP`. It is not fully net-of-commission/swap expectancy. Keep this field visible in any report and do not compare it directly to fully cost-adjusted backtest returns.
+- EXIT reports `SPREAD_AND_CONFIGURED_SLIPPAGE_EXCLUDES_COMMISSION_SWAP`. It is not fully net-of-commission/swap expectancy. Keep this field visible in any report and do not compare it directly to fully cost-adjusted backtest returns.
 
 ### Activation sequence — do not skip
 
