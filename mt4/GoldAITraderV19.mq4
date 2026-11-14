@@ -751,6 +751,621 @@ bool PostJson(string path, string payload, string &response)
 }
 
 //---------------------------------------------------------
+// Research-only Forward/Paper shadow telemetry. No trading functions.
+//---------------------------------------------------------
+bool JsonFindValueStart(string json, string key, int &valueStart)
+{
+   string marker = "\"" + key + "\"";
+   int keyPos = StringFind(json, marker);
+   if(keyPos < 0) return false;
+   int colon = StringFind(json, ":", keyPos + StringLen(marker));
+   if(colon < 0) return false;
+   int pos = colon + 1;
+   while(pos < StringLen(json))
+   {
+      int ch = StringGetCharacter(json, pos);
+      if(ch != 32 && ch != 9 && ch != 10 && ch != 13) break;
+      pos++;
+   }
+   if(pos >= StringLen(json)) return false;
+   valueStart = pos;
+   return true;
+}
+
+bool JsonExtractObjectField(string json, string key, string &objectJson)
+{
+   objectJson = "";
+   int start = 0;
+   if(!JsonFindValueStart(json, key, start)) return false;
+   if(StringGetCharacter(json, start) != 123) return false;
+
+   int depth = 0;
+   bool inString = false;
+   bool escaped = false;
+   for(int i = start; i < StringLen(json); i++)
+   {
+      int ch = StringGetCharacter(json, i);
+      if(inString)
+      {
+         if(escaped) escaped = false;
+         else if(ch == 92) escaped = true;
+         else if(ch == 34) inString = false;
+         continue;
+      }
+      if(ch == 34) inString = true;
+      else if(ch == 123) depth++;
+      else if(ch == 125)
+      {
+         depth--;
+         if(depth == 0)
+         {
+            objectJson = StringSubstr(json, start, i - start + 1);
+            return true;
+         }
+      }
+   }
+   return false;
+}
+
+bool JsonExtractStringField(string json, string key, string &value)
+{
+   value = "";
+   int start = 0;
+   if(!JsonFindValueStart(json, key, start)) return false;
+   if(StringGetCharacter(json, start) != 34) return false;
+   bool escaped = false;
+   for(int i = start + 1; i < StringLen(json); i++)
+   {
+      int ch = StringGetCharacter(json, i);
+      if(escaped)
+      {
+         if(ch == 34 || ch == 92 || ch == 47) value += CharToString((uchar)ch);
+         else if(ch == 110) value += "\n";
+         else if(ch == 114) value += "\r";
+         else if(ch == 116) value += "\t";
+         else value += CharToString((uchar)ch);
+         escaped = false;
+      }
+      else if(ch == 92) escaped = true;
+      else if(ch == 34) return true;
+      else value += CharToString((uchar)ch);
+   }
+   return false;
+}
+
+bool JsonExtractNumberField(string json, string key, double &value)
+{
+   value = 0.0;
+   int start = 0;
+   if(!JsonFindValueStart(json, key, start)) return false;
+   int end = start;
+   while(end < StringLen(json))
+   {
+      int ch = StringGetCharacter(json, end);
+      if(ch == 44 || ch == 125 || ch == 93 || ch == 32 || ch == 9 || ch == 10 || ch == 13) break;
+      end++;
+   }
+   if(end <= start) return false;
+   string raw = TrimText(StringSubstr(json, start, end - start));
+   if(raw == "" || raw == "null") return false;
+   value = StringToDouble(raw);
+   return true;
+}
+
+bool JsonExtractBoolField(string json, string key, bool &value)
+{
+   value = false;
+   int start = 0;
+   if(!JsonFindValueStart(json, key, start)) return false;
+   string raw = StringSubstr(json, start, 5);
+   if(StringSubstr(raw, 0, 4) == "true") { value = true; return true; }
+   if(StringSubstr(raw, 0, 5) == "false") { value = false; return true; }
+   return false;
+}
+
+string UtcIsoFromEpoch(datetime epochUtc)
+{
+   if(epochUtc <= 0) return "";
+   MqlDateTime dt;
+   if(!TimeToStruct(epochUtc, dt)) return "";
+   return StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ",
+                       dt.year, dt.mon, dt.day, dt.hour, dt.min, dt.sec);
+}
+
+datetime CurrentQuoteTimeUtc(string sym)
+{
+   datetime serverTime = (datetime)MarketInfo(sym, MODE_TIME);
+   int offsetSeconds = 0;
+   if(serverTime <= 0 || !GetServerUtcOffsetSeconds(offsetSeconds)) return 0;
+   return serverTime - offsetSeconds;
+}
+
+string ShadowGlobalKey(string suffix)
+{
+   return MarketSafetyKey("SHADOW_" + suffix);
+}
+
+string BuildShadowEntryId()
+{
+   string sym = TradeSymbol();
+   StringReplace(sym, "#", "_");
+   StringReplace(sym, ".", "_");
+   return "shadow-" + IntegerToString(AccountNumber()) + "-" +
+          StringSubstr(sym, 0, 10) + "-" +
+          IntegerToString((int)g_shadowSignalTimeUtc) + "-" +
+          (g_shadowSide > 0 ? "BUY" : "SELL");
+}
+
+void PersistShadowState()
+{
+   if(!g_shadowActive) return;
+   GlobalVariableSet(ShadowGlobalKey("ACTIVE"), 1.0);
+   GlobalVariableSet(ShadowGlobalKey("SIDE"), (double)g_shadowSide);
+   GlobalVariableSet(ShadowGlobalKey("ENTRY_PRICE"), g_shadowEntryPrice);
+   GlobalVariableSet(ShadowGlobalKey("SIGNAL_BID"), g_shadowSignalBid);
+   GlobalVariableSet(ShadowGlobalKey("STOP_BID"), g_shadowStopBid);
+   GlobalVariableSet(ShadowGlobalKey("TARGET_BID"), g_shadowTargetBid);
+   GlobalVariableSet(ShadowGlobalKey("EXPECTED_STOP_FILL"), g_shadowExpectedStopFill);
+   GlobalVariableSet(ShadowGlobalKey("EFFECTIVE_RISK"), g_shadowEffectiveRisk);
+   GlobalVariableSet(ShadowGlobalKey("ENTRY_BID"), g_shadowEntryBid);
+   GlobalVariableSet(ShadowGlobalKey("ENTRY_ASK"), g_shadowEntryAsk);
+   GlobalVariableSet(ShadowGlobalKey("ENTRY_SPREAD"), g_shadowEntrySpread);
+   GlobalVariableSet(ShadowGlobalKey("SIGNAL_UTC"), (double)g_shadowSignalTimeUtc);
+   GlobalVariableSet(ShadowGlobalKey("ENTRY_UTC"), (double)g_shadowEntryTimeUtc);
+   GlobalVariableSet(ShadowGlobalKey("BAR_OPEN_SERVER"), (double)g_shadowCurrentBarOpenServer);
+   GlobalVariableSet(ShadowGlobalKey("BAR_START_UTC"), (double)g_shadowCurrentBarStartUtc);
+   GlobalVariableSet(ShadowGlobalKey("LAST_TICK_UTC"), (double)g_shadowLastTickUtc);
+   GlobalVariableSet(ShadowGlobalKey("BARS_COUNT"), (double)g_shadowBarsSinceEntry);
+   GlobalVariableSet(ShadowGlobalKey("BID_OPEN"), g_shadowBidOpen);
+   GlobalVariableSet(ShadowGlobalKey("BID_HIGH"), g_shadowBidHigh);
+   GlobalVariableSet(ShadowGlobalKey("BID_LOW"), g_shadowBidLow);
+   GlobalVariableSet(ShadowGlobalKey("BID_CLOSE"), g_shadowBidClose);
+   GlobalVariableSet(ShadowGlobalKey("ASK_OPEN"), g_shadowAskOpen);
+   GlobalVariableSet(ShadowGlobalKey("ASK_HIGH"), g_shadowAskHigh);
+   GlobalVariableSet(ShadowGlobalKey("ASK_LOW"), g_shadowAskLow);
+   GlobalVariableSet(ShadowGlobalKey("ASK_CLOSE"), g_shadowAskClose);
+}
+
+double ShadowGlobal(string suffix, double fallback = 0.0)
+{
+   string key = ShadowGlobalKey(suffix);
+   if(!GlobalVariableCheck(key)) return fallback;
+   return GlobalVariableGet(key);
+}
+
+void LoadShadowState()
+{
+   if(!EnableForwardShadowTelemetry) return;
+   if(ShadowGlobal("ACTIVE", 0.0) < 0.5) return;
+   g_shadowSide = (int)ShadowGlobal("SIDE");
+   g_shadowEntryPrice = ShadowGlobal("ENTRY_PRICE");
+   g_shadowSignalBid = ShadowGlobal("SIGNAL_BID");
+   g_shadowStopBid = ShadowGlobal("STOP_BID");
+   g_shadowTargetBid = ShadowGlobal("TARGET_BID");
+   g_shadowExpectedStopFill = ShadowGlobal("EXPECTED_STOP_FILL");
+   g_shadowEffectiveRisk = ShadowGlobal("EFFECTIVE_RISK");
+   g_shadowEntryBid = ShadowGlobal("ENTRY_BID");
+   g_shadowEntryAsk = ShadowGlobal("ENTRY_ASK");
+   g_shadowEntrySpread = ShadowGlobal("ENTRY_SPREAD");
+   g_shadowSignalTimeUtc = (datetime)ShadowGlobal("SIGNAL_UTC");
+   g_shadowEntryTimeUtc = (datetime)ShadowGlobal("ENTRY_UTC");
+   g_shadowCurrentBarOpenServer = (datetime)ShadowGlobal("BAR_OPEN_SERVER");
+   g_shadowCurrentBarStartUtc = (datetime)ShadowGlobal("BAR_START_UTC");
+   g_shadowLastTickUtc = (datetime)ShadowGlobal("LAST_TICK_UTC");
+   g_shadowBarsSinceEntry = (int)ShadowGlobal("BARS_COUNT");
+   g_shadowBidOpen = ShadowGlobal("BID_OPEN");
+   g_shadowBidHigh = ShadowGlobal("BID_HIGH");
+   g_shadowBidLow = ShadowGlobal("BID_LOW");
+   g_shadowBidClose = ShadowGlobal("BID_CLOSE");
+   g_shadowAskOpen = ShadowGlobal("ASK_OPEN");
+   g_shadowAskHigh = ShadowGlobal("ASK_HIGH");
+   g_shadowAskLow = ShadowGlobal("ASK_LOW");
+   g_shadowAskClose = ShadowGlobal("ASK_CLOSE");
+   if(g_shadowSide == 1 || g_shadowSide == -1)
+   {
+      g_shadowEntryId = BuildShadowEntryId();
+      g_shadowActive = true;
+      g_shadowRecovered = true;
+      Print("[GOLD SHADOW] restored_virtual_position entry_id=", g_shadowEntryId,
+            " side=", (g_shadowSide > 0 ? "BUY" : "SELL"),
+            " last_tick_utc=", TimeToString(g_shadowLastTickUtc, TIME_DATE|TIME_SECONDS));
+   }
+}
+
+void ClearShadowState()
+{
+   string suffixes[24] = {
+      "ACTIVE","SIDE","ENTRY_PRICE","SIGNAL_BID","STOP_BID","TARGET_BID",
+      "EXPECTED_STOP_FILL","EFFECTIVE_RISK","ENTRY_BID","ENTRY_ASK","ENTRY_SPREAD",
+      "SIGNAL_UTC","ENTRY_UTC","BAR_OPEN_SERVER","BAR_START_UTC","LAST_TICK_UTC",
+      "BARS_COUNT","BID_OPEN","BID_HIGH","BID_LOW","BID_CLOSE",
+      "ASK_OPEN","ASK_HIGH","ASK_LOW"
+   };
+   for(int i = 0; i < ArraySize(suffixes); i++)
+      GlobalVariableDel(ShadowGlobalKey(suffixes[i]));
+   GlobalVariableDel(ShadowGlobalKey("ASK_CLOSE"));
+   g_shadowActive = false;
+   g_shadowRecovered = false;
+   g_shadowEntryId = "";
+   g_shadowSide = 0;
+   g_shadowLastTickUtc = 0;
+}
+
+bool PostForwardShadowJson(string json, string &response)
+{
+   response = "";
+   string baseUrl = TrimText(ForwardShadowApiBaseUrl);
+   if(StringFind(baseUrl, "https://") != 0 || baseUrl == TrimText(ApiBaseUrl))
+   {
+      Print("[GOLD SHADOW] rejected_send: research endpoint is missing or equals production ApiBaseUrl");
+      return false;
+   }
+   int baseLength = StringLen(baseUrl);
+   if(baseLength > 0 && StringSubstr(baseUrl, baseLength - 1, 1) == "/")
+      baseUrl = StringSubstr(baseUrl, 0, baseLength - 1);
+
+   string url = baseUrl + "/api/gold/forward-shadow/event";
+   string headers = "Content-Type: application/json\r\n";
+   headers += "X-Gold-API-Key: " + TrimText(ApiKey) + "\r\n";
+   headers += "X-Request-Id: shadow-" + IntegerToString((int)GetTickCount()) + "\r\n";
+   uchar postData[];
+   uchar result[];
+   string resultHeaders = "";
+   int payloadLength = StringLen(json);
+   ArrayResize(postData, payloadLength);
+   if(payloadLength > 0)
+      StringToCharArray(json, postData, 0, payloadLength, CP_UTF8);
+   ResetLastError();
+   int httpCode = WebRequest("POST", url, headers, RequestTimeoutMs,
+                             postData, result, resultHeaders);
+   int errorCode = GetLastError();
+   response = CharArrayToString(result, 0, -1, CP_UTF8);
+   if(httpCode < 200 || httpCode >= 300)
+   {
+      Print("[GOLD SHADOW] event_post_failed HTTP=", httpCode,
+            " error=", errorCode, " response=", response);
+      return false;
+   }
+   return (StringFind(response, "\"persisted\":true") >= 0);
+}
+
+bool SendShadowGap(datetime fromUtc, datetime toUtc, string reason)
+{
+   if(!g_shadowActive || fromUtc <= 0 || toUtc <= fromUtc) return true;
+   int seconds = (int)(toUtc - fromUtc);
+   if(seconds > 86400) seconds = 86400;
+   string json = "{";
+   json += "\"event_type\":\"GAP\",";
+   json += "\"entry_id\":\"" + JsonEscape(g_shadowEntryId) + "\",";
+   json += "\"symbol\":\"" + JsonEscape(TradeSymbol()) + "\",";
+   json += "\"strategy_version\":\"gold-m5-h1-v2\",";
+   json += "\"side\":\"" + (g_shadowSide > 0 ? "BUY" : "SELL") + "\",";
+   json += "\"payload\":{";
+   json += "\"from_time_utc\":\"" + UtcIsoFromEpoch(fromUtc) + "\",";
+   json += "\"to_time_utc\":\"" + UtcIsoFromEpoch(toUtc) + "\",";
+   json += "\"gap_seconds\":" + IntegerToString(seconds) + ",";
+   json += "\"reason\":\"" + JsonEscape(reason) + "\"";
+   json += "}}";
+   string response = "";
+   return PostForwardShadowJson(json, response);
+}
+
+bool SendShadowBar(datetime eventTimeUtc, bool isPartial, int durationSeconds)
+{
+   if(!g_shadowActive || eventTimeUtc <= 0) return false;
+   int duration = MathMax(1, MathMin(300, durationSeconds));
+   int nextIndex = g_shadowBarsSinceEntry + 1;
+   int digits = (int)MarketInfo(TradeSymbol(), MODE_DIGITS);
+   double closeSpread = g_shadowAskClose - g_shadowBidClose;
+   if(closeSpread < 0.0) return false;
+   string json = "{";
+   json += "\"event_type\":\"BAR\",";
+   json += "\"entry_id\":\"" + JsonEscape(g_shadowEntryId) + "\",";
+   json += "\"symbol\":\"" + JsonEscape(TradeSymbol()) + "\",";
+   json += "\"strategy_version\":\"gold-m5-h1-v2\",";
+   json += "\"side\":\"" + (g_shadowSide > 0 ? "BUY" : "SELL") + "\",";
+   json += "\"payload\":{";
+   json += "\"bars_since_entry\":" + IntegerToString(nextIndex) + ",";
+   json += "\"bar_time_utc\":\"" + UtcIsoFromEpoch(eventTimeUtc) + "\",";
+   json += "\"is_partial\":" + (isPartial ? "true" : "false") + ",";
+   json += "\"bar_duration_seconds\":" + IntegerToString(duration) + ",";
+   json += "\"bid_ohlc\":{";
+   json += "\"open\":" + JsonNumber(g_shadowBidOpen, digits) + ",";
+   json += "\"high\":" + JsonNumber(g_shadowBidHigh, digits) + ",";
+   json += "\"low\":" + JsonNumber(g_shadowBidLow, digits) + ",";
+   json += "\"close\":" + JsonNumber(g_shadowBidClose, digits) + "},";
+   json += "\"ask_ohlc\":{";
+   json += "\"open\":" + JsonNumber(g_shadowAskOpen, digits) + ",";
+   json += "\"high\":" + JsonNumber(g_shadowAskHigh, digits) + ",";
+   json += "\"low\":" + JsonNumber(g_shadowAskLow, digits) + ",";
+   json += "\"close\":" + JsonNumber(g_shadowAskClose, digits) + "},";
+   json += "\"spread_price\":" + JsonNumber(closeSpread, digits) + ",";
+   json += "\"quote_age_seconds\":0,";
+   json += "\"tick_data_quality\":\"BID_ASK_TICK_AGGREGATED\"";
+   json += "}}";
+   string response = "";
+   bool sent = PostForwardShadowJson(json, response);
+   if(sent)
+   {
+      g_shadowBarsSinceEntry = nextIndex;
+      PersistShadowState();
+   }
+   return sent;
+}
+
+bool SendShadowExit(datetime exitTimeUtc, double bid, double ask, string exitReason)
+{
+   if(!g_shadowActive || exitTimeUtc <= 0 || bid <= 0.0 || ask < bid) return false;
+   double exitFill = (g_shadowSide > 0 ? bid : ask);
+   double pnlPrice = (g_shadowSide > 0 ? exitFill - g_shadowEntryPrice : g_shadowEntryPrice - exitFill);
+   double quoteNetR = (g_shadowEffectiveRisk > 0.0 ? pnlPrice / g_shadowEffectiveRisk : 0.0);
+   double spread = ask - bid;
+   int digits = (int)MarketInfo(TradeSymbol(), MODE_DIGITS);
+   string json = "{";
+   json += "\"event_type\":\"EXIT\",";
+   json += "\"entry_id\":\"" + JsonEscape(g_shadowEntryId) + "\",";
+   json += "\"symbol\":\"" + JsonEscape(TradeSymbol()) + "\",";
+   json += "\"strategy_version\":\"gold-m5-h1-v2\",";
+   json += "\"side\":\"" + (g_shadowSide > 0 ? "BUY" : "SELL") + "\",";
+   json += "\"payload\":{";
+   json += "\"exit_time_utc\":\"" + UtcIsoFromEpoch(exitTimeUtc) + "\",";
+   json += "\"exit_price\":" + JsonNumber(exitFill, digits) + ",";
+   json += "\"exit_bid\":" + JsonNumber(bid, digits) + ",";
+   json += "\"exit_ask\":" + JsonNumber(ask, digits) + ",";
+   json += "\"exit_spread_price\":" + JsonNumber(spread, digits) + ",";
+   json += "\"exit_reason\":\"" + JsonEscape(exitReason) + "\",";
+   json += "\"cost_completeness\":\"QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP\",";
+   json += "\"gross_r\":" + JsonNumber(quoteNetR, 6) + ",";
+   json += "\"net_r\":" + JsonNumber(quoteNetR, 6) + ",";
+   json += "\"holding_seconds\":" + IntegerToString((int)(exitTimeUtc - g_shadowEntryTimeUtc)) + ",";
+   json += "\"data_gap_seconds\":0";
+   json += "}}";
+   string response = "";
+   bool sent = PostForwardShadowJson(json, response);
+   if(sent)
+      Print("[GOLD SHADOW] virtual_exit_saved entry_id=", g_shadowEntryId,
+            " reason=", exitReason, " quote_net_r=", DoubleToString(quoteNetR, 4),
+            " cost_status=QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP");
+   return sent;
+}
+
+void ResetShadowBar(string sym, datetime tickUtc, double bid, double ask)
+{
+   int offsetSeconds = 0;
+   datetime barOpenServer = iTime(sym, PERIOD_M5, 0);
+   if(barOpenServer <= 0 || !GetServerUtcOffsetSeconds(offsetSeconds)) return;
+   g_shadowCurrentBarOpenServer = barOpenServer;
+   datetime barOpenUtc = barOpenServer - offsetSeconds;
+   g_shadowCurrentBarStartUtc = (barOpenUtc > g_shadowEntryTimeUtc ? barOpenUtc : g_shadowEntryTimeUtc);
+   g_shadowBidOpen = bid; g_shadowBidHigh = bid; g_shadowBidLow = bid; g_shadowBidClose = bid;
+   g_shadowAskOpen = ask; g_shadowAskHigh = ask; g_shadowAskLow = ask; g_shadowAskClose = ask;
+   g_shadowLastTickUtc = tickUtc;
+   PersistShadowState();
+}
+
+void UpdateShadowBarQuotes(datetime tickUtc, double bid, double ask)
+{
+   if(g_shadowBidOpen <= 0.0)
+   {
+      g_shadowBidOpen = bid; g_shadowBidHigh = bid; g_shadowBidLow = bid;
+      g_shadowAskOpen = ask; g_shadowAskHigh = ask; g_shadowAskLow = ask;
+   }
+   if(bid > g_shadowBidHigh) g_shadowBidHigh = bid;
+   if(bid < g_shadowBidLow) g_shadowBidLow = bid;
+   if(ask > g_shadowAskHigh) g_shadowAskHigh = ask;
+   if(ask < g_shadowAskLow) g_shadowAskLow = ask;
+   g_shadowBidClose = bid;
+   g_shadowAskClose = ask;
+   g_shadowLastTickUtc = tickUtc;
+   PersistShadowState();
+}
+
+bool StartForwardShadowFromSignal(string signalPayload, string signalResponse)
+{
+   if(!EnableForwardShadowTelemetry || !g_shadowActive == false) return false;
+   if(g_shadowActive || AllowAutoOrders || !g_marketSafetyAllowed) return false;
+   if(TrimText(ForwardShadowApiBaseUrl) == "" ||
+      StringFind(TrimText(ForwardShadowApiBaseUrl), "https://") != 0 ||
+      TrimText(ForwardShadowApiBaseUrl) == TrimText(ApiBaseUrl)) return false;
+   if(ForwardShadowExpectedStopSlippagePrice < 0.0 ||
+      TrimText(ForwardShadowCostModelVersion) == "") return false;
+
+   string featuresJson = "", decisionJson = "", riskJson = "", safetyJson = "";
+   string candidate = "", signalId = "", decisionSide = "";
+   if(!JsonExtractObjectField(signalPayload, "features", featuresJson) ||
+      !JsonExtractObjectField(signalResponse, "decision", decisionJson) ||
+      !JsonExtractObjectField(signalResponse, "risk", riskJson) ||
+      !JsonExtractObjectField(signalResponse, "market_safety", safetyJson)) return false;
+   bool riskApproved = false, safetyAllowed = false;
+   if(!JsonExtractStringField(signalResponse, "candidate", candidate) ||
+      !JsonExtractStringField(signalResponse, "signal_id", signalId) ||
+      !JsonExtractStringField(decisionJson, "decision", decisionSide) ||
+      !JsonExtractBoolField(riskJson, "approved", riskApproved) ||
+      !JsonExtractBoolField(safetyJson, "allowed", safetyAllowed)) return false;
+   StringToUpper(candidate);
+   StringToUpper(decisionSide);
+   int side = (candidate == "BUY" ? 1 : (candidate == "SELL" ? -1 : 0));
+   if(side == 0 || decisionSide != candidate || !riskApproved || !safetyAllowed) return false;
+
+   double strategyEntry = 0.0, stopBid = 0.0, targetBid = 0.0, signalBarTimeNumber = 0.0;
+   if(!JsonExtractNumberField(decisionJson, "entry", strategyEntry) ||
+      !JsonExtractNumberField(decisionJson, "stop_loss", stopBid) ||
+      !JsonExtractNumberField(decisionJson, "take_profit", targetBid) ||
+      !JsonExtractNumberField(featuresJson, "bar_time", signalBarTimeNumber)) return false;
+
+   datetime signalTimeUtc = (datetime)signalBarTimeNumber;
+   datetime entryTimeUtc = CurrentQuoteTimeUtc(TradeSymbol());
+   if(signalTimeUtc <= 0 || entryTimeUtc < signalTimeUtc) return false;
+   RefreshRates();
+   string sym = TradeSymbol();
+   double bid = MarketInfo(sym, MODE_BID);
+   double ask = MarketInfo(sym, MODE_ASK);
+   double spread = ask - bid;
+   double signalBid = iClose(sym, PERIOD_M5, 1);
+   if(bid <= 0.0 || ask < bid || spread > MathMin(0.50, MaxSpreadPrice) || signalBid <= 0.0) return false;
+
+   double entryFill = (side > 0 ? ask : bid);
+   double expectedStopSpread = (side > 0 ? 0.0 : spread);
+   double expectedStopFill = (side > 0
+      ? stopBid - ForwardShadowExpectedStopSlippagePrice
+      : stopBid + expectedStopSpread + ForwardShadowExpectedStopSlippagePrice);
+   if(side > 0)
+   {
+      if(!(stopBid < signalBid && targetBid > signalBid && targetBid > entryFill && expectedStopFill < entryFill)) return false;
+   }
+   else
+   {
+      if(!(targetBid < signalBid && stopBid > signalBid && targetBid < entryFill && expectedStopFill > entryFill)) return false;
+   }
+   double effectiveRisk = MathAbs(entryFill - expectedStopFill);
+   if(effectiveRisk <= 0.0) return false;
+
+   string entryId = "shadow-" + IntegerToString(AccountNumber()) + "-" +
+                    StringSubstr(sym, 0, 10) + "-" +
+                    IntegerToString((int)signalTimeUtc) + "-" + candidate;
+   int digits = (int)MarketInfo(sym, MODE_DIGITS);
+   int quoteAge = (int)MathMax(0, TimeGMT() - entryTimeUtc);
+   string json = "{";
+   json += "\"event_type\":\"ENTRY\",";
+   json += "\"entry_id\":\"" + JsonEscape(entryId) + "\",";
+   json += "\"symbol\":\"" + JsonEscape(sym) + "\",";
+   json += "\"strategy_version\":\"gold-m5-h1-v2\",";
+   json += "\"side\":\"" + candidate + "\",";
+   json += "\"features\":" + featuresJson + ",";
+   json += "\"payload\":{";
+   json += "\"signal_time_utc\":\"" + UtcIsoFromEpoch(signalTimeUtc) + "\",";
+   json += "\"entry_time_utc\":\"" + UtcIsoFromEpoch(entryTimeUtc) + "\",";
+   json += "\"expected_entry_price\":" + JsonNumber(strategyEntry, digits) + ",";
+   json += "\"entry_price\":" + JsonNumber(entryFill, digits) + ",";
+   json += "\"signal_reference_bid\":" + JsonNumber(signalBid, digits) + ",";
+   json += "\"stop_price\":" + JsonNumber(stopBid, digits) + ",";
+   json += "\"target_price\":" + JsonNumber(targetBid, digits) + ",";
+   json += "\"expected_stop_fill_price\":" + JsonNumber(expectedStopFill, digits) + ",";
+   json += "\"expected_stop_spread_price\":" + JsonNumber(expectedStopSpread, digits) + ",";
+   json += "\"expected_stop_slippage_price\":" + JsonNumber(ForwardShadowExpectedStopSlippagePrice, digits) + ",";
+   json += "\"cost_model_version\":\"" + JsonEscape(ForwardShadowCostModelVersion) + "\",";
+   json += "\"entry_bid\":" + JsonNumber(bid, digits) + ",";
+   json += "\"entry_ask\":" + JsonNumber(ask, digits) + ",";
+   json += "\"spread_price\":" + JsonNumber(spread, digits) + ",";
+   json += "\"quote_age_seconds\":" + IntegerToString(quoteAge) + ",";
+   json += "\"setup_diagnostics\":{},";
+   json += "\"market_safety\":{\"allowed\":true,\"reason\":\"" + JsonEscape(g_marketSafetyReason) + "\"}";
+   json += "}}";
+
+   string response = "";
+   if(!PostForwardShadowJson(json, response)) return false;
+
+   g_shadowActive = true;
+   g_shadowRecovered = false;
+   g_shadowEntryId = entryId;
+   g_shadowSide = side;
+   g_shadowEntryPrice = entryFill;
+   g_shadowSignalBid = signalBid;
+   g_shadowStopBid = stopBid;
+   g_shadowTargetBid = targetBid;
+   g_shadowExpectedStopFill = expectedStopFill;
+   g_shadowEffectiveRisk = effectiveRisk;
+   g_shadowEntryBid = bid;
+   g_shadowEntryAsk = ask;
+   g_shadowEntrySpread = spread;
+   g_shadowSignalTimeUtc = signalTimeUtc;
+   g_shadowEntryTimeUtc = entryTimeUtc;
+   g_shadowBarsSinceEntry = 0;
+   ResetShadowBar(sym, entryTimeUtc, bid, ask);
+   Print("[GOLD SHADOW] virtual_entry_saved entry_id=", g_shadowEntryId,
+         " side=", candidate,
+         " entry=", DoubleToString(entryFill, digits),
+         " stop_bid=", DoubleToString(stopBid, digits),
+         " target_bid=", DoubleToString(targetBid, digits),
+         " effective_R_price=", DoubleToString(effectiveRisk, digits),
+         " cost_model=", ForwardShadowCostModelVersion,
+         " orders_executed=false");
+   return true;
+}
+
+void UpdateForwardShadowOnTick()
+{
+   if(!EnableForwardShadowTelemetry || !g_shadowActive) return;
+   string sym = TradeSymbol();
+   RefreshRates();
+   double bid = MarketInfo(sym, MODE_BID);
+   double ask = MarketInfo(sym, MODE_ASK);
+   datetime tickUtc = CurrentQuoteTimeUtc(sym);
+   datetime currentBarOpen = iTime(sym, PERIOD_M5, 0);
+   if(bid <= 0.0 || ask < bid || tickUtc <= 0 || currentBarOpen <= 0) return;
+
+   if(g_shadowRecovered)
+   {
+      if(g_shadowLastTickUtc > g_shadowCurrentBarStartUtc)
+      {
+         int priorDuration = (int)(g_shadowLastTickUtc - g_shadowCurrentBarStartUtc);
+         if(!SendShadowBar(g_shadowLastTickUtc, true, priorDuration)) return;
+      }
+      if(g_shadowLastTickUtc > 0 && tickUtc > g_shadowLastTickUtc)
+      {
+         if(!SendShadowGap(g_shadowLastTickUtc, tickUtc, "ea_restart_or_connection_gap")) return;
+      }
+      ResetShadowBar(sym, tickUtc, bid, ask);
+      g_shadowRecovered = false;
+   }
+   else
+   {
+      if(g_shadowLastTickUtc > 0 && tickUtc - g_shadowLastTickUtc > 300)
+      {
+         int priorDuration = (int)(g_shadowLastTickUtc - g_shadowCurrentBarStartUtc);
+         if(priorDuration > 0 && !SendShadowBar(g_shadowLastTickUtc, true, priorDuration)) return;
+         if(!SendShadowGap(g_shadowLastTickUtc, tickUtc, "missing_ticks_or_connection_gap")) return;
+         ResetShadowBar(sym, tickUtc, bid, ask);
+      }
+      else if(currentBarOpen != g_shadowCurrentBarOpenServer)
+      {
+         int offsetSeconds = 0;
+         if(!GetServerUtcOffsetSeconds(offsetSeconds)) return;
+         datetime priorCloseUtc = g_shadowCurrentBarOpenServer + 300 - offsetSeconds;
+         if(g_shadowLastTickUtc >= priorCloseUtc - 1)
+         {
+            int duration = (int)(priorCloseUtc - g_shadowCurrentBarStartUtc);
+            if(!SendShadowBar(priorCloseUtc, duration < 300, duration)) return;
+         }
+         else
+         {
+            if(g_shadowLastTickUtc > g_shadowCurrentBarStartUtc)
+            {
+               int partialDuration = (int)(g_shadowLastTickUtc - g_shadowCurrentBarStartUtc);
+               if(!SendShadowBar(g_shadowLastTickUtc, true, partialDuration)) return;
+            }
+            if(g_shadowLastTickUtc > 0 && tickUtc > g_shadowLastTickUtc)
+            {
+               if(!SendShadowGap(g_shadowLastTickUtc, tickUtc, "m5_interval_without_complete_tick_path")) return;
+            }
+         }
+         ResetShadowBar(sym, tickUtc, bid, ask);
+      }
+   }
+
+   UpdateShadowBarQuotes(tickUtc, bid, ask);
+   bool stopHit = (g_shadowSide > 0 ? bid <= g_shadowStopBid : bid >= g_shadowStopBid);
+   bool targetHit = (g_shadowSide > 0 ? bid >= g_shadowTargetBid : bid <= g_shadowTargetBid);
+   if(stopHit || targetHit)
+   {
+      int partialDuration = (int)(tickUtc - g_shadowCurrentBarStartUtc);
+      if(partialDuration <= 0) partialDuration = 1;
+      if(!SendShadowBar(tickUtc, true, partialDuration)) return;
+      string exitReason = (stopHit ? "STOP" : "TARGET");
+      if(SendShadowExit(tickUtc, bid, ask, exitReason))
+      {
+         Print("[GOLD SHADOW] virtual_position_completed entry_id=", g_shadowEntryId,
+               " reason=", exitReason, " orders_executed=false");
+         ClearShadowState();
+      }
+   }
+}
+
+//---------------------------------------------------------
+// End research-only Forward/Paper shadow telemetry helpers.
+//---------------------------------------------------------
+
+//---------------------------------------------------------
 // Lightweight V19 market-safety heartbeat for Forward Monitor.
 // This reports the local gate even when signal requests are blocked.
 // It contains no trading instruction and does not run AI analysis.
