@@ -180,8 +180,8 @@ test('ENTRY event is normalized with directional prices, an idempotency key, and
       recentH1: h1Series()
     },
     payload: {
-      signal_time_utc: '2026-11-01T04:55:00.000Z',
-      entry_time_utc: '2026-11-01T05:00:00.000Z',
+      signal_time_utc: '2026-11-01T05:00:00.000Z',
+      entry_time_utc: '2026-11-01T05:00:03.000Z',
       entry_price: 105,
       stop_price: 103,
       target_price: 109,
@@ -303,7 +303,7 @@ test('ENTRY rejects a virtual fill timestamp before the signal timestamp', () =>
     side: 'BUY',
     payload: {
       signal_time_utc: '2026-11-01T05:00:00Z',
-      entry_time_utc: '2026-11-01T04:59:59Z',
+      entry_time_utc: '2026-11-01T05:00:03Z',
       entry_price: 100,
       stop_price: 98,
       target_price: 104
@@ -311,4 +311,25 @@ test('ENTRY rejects a virtual fill timestamp before the signal timestamp', () =>
   });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'entry_time_must_not_precede_signal_time');
+});
+
+
+test('ENTRY signal timestamp must match the completed M5 feature bar', () => {
+  const result = normalizeGoldForwardShadowEvent({
+    event_type: 'ENTRY',
+    entry_id: 'paper-entry-0006',
+    symbol: 'GOLD#',
+    strategy_version: 'gold-m5-h1-v2',
+    side: 'BUY',
+    features: { barTime: BASE + 5 * HOUR - 300, recentH1: h1Series() },
+    payload: {
+      signal_time_utc: '2026-11-01T05:00:20Z',
+      entry_time_utc: '2026-11-01T05:00:23Z',
+      entry_price: 100,
+      stop_price: 98,
+      target_price: 104
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'signal_time_does_not_match_completed_m5_bar');
 });
