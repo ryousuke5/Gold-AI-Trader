@@ -155,6 +155,7 @@ export function buildGoldForwardPathMetrics({
   targetPrice,
   expectedStopFillPrice,
   effectiveRiskDistancePrice,
+  rawStopDistanceBid = null,
   bars = []
 } = {}) {
   const normalizedSide = String(side || '').toUpperCase();
@@ -163,6 +164,7 @@ export function buildGoldForwardPathMetrics({
   const targetBid = numberOrNull(targetPrice);
   const expectedStopFill = numberOrNull(expectedStopFillPrice);
   const suppliedRiskDistance = numberOrNull(effectiveRiskDistancePrice);
+  const rawGeometryDistance = numberOrNull(rawStopDistanceBid);
   if (!validSide(normalizedSide) || !(entry > 0) || !(stopBid > 0) ||
       !(targetBid > 0) || !(expectedStopFill > 0) || !(suppliedRiskDistance > 0)) {
     return { ok: false, error: 'side_entry_bid_stop_target_expected_stop_fill_and_effective_risk_required' };
@@ -275,7 +277,7 @@ export function buildGoldForwardPathMetrics({
     target_price_bid: targetBid,
     expected_stop_fill_price_executable: expectedStopFill,
     expected_stop_fill_quote_side: normalizedSide === 'BUY' ? 'BID' : 'ASK',
-    raw_stop_distance_bid: null,
+    raw_stop_distance_bid: rawGeometryDistance,
     effective_risk_distance_price: suppliedRiskDistance,
     bars_observed: path.length,
     data_gap_count: dataGapCount,
