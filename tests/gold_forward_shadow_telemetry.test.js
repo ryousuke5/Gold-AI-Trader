@@ -107,7 +107,7 @@ test('BUY MFE/MAE uses executable BID exit OHLC and effective entry-to-stop-fill
   const result = buildGoldForwardPathMetrics({
     side: 'BUY', entryPrice: 100, stopPrice: 98, targetPrice: 102,
     expectedStopFillPrice: 98, effectiveRiskDistancePrice: 2,
-    rawStopDistanceBid: 2.1, bars
+    rawStopDistanceBid: 2.1, entryTimeUtc: new Date((BASE - 297) * 1000).toISOString(), bars
   });
   assert.equal(result.ok, true);
   assert.equal(result.effective_risk_distance_price, 2);
@@ -126,7 +126,7 @@ test('SELL MFE/MAE uses executable ASK exit OHLC while logical barriers use BID'
   const sell = buildGoldForwardPathMetrics({
     side: 'SELL', entryPrice: 100, stopPrice: 102, targetPrice: 98,
     expectedStopFillPrice: 102.15, effectiveRiskDistancePrice: 2.15,
-    rawStopDistanceBid: 2,
+    rawStopDistanceBid: 2, entryTimeUtc: new Date((BASE - 297) * 1000).toISOString(),
     bars: [
       dualBar(BASE, { open: 100, high: 100.4, low: 99.4, close: 99.6 }, 0.1),
       dualBar(BASE + 300, { open: 99.6, high: 100.8, low: 98.8, close: 99.1 }, 0.1)
@@ -279,6 +279,8 @@ test('BAR, GAP, and EXIT events have stable idempotency keys and validated times
     payload: {
       bars_since_entry: 1,
       bar_time_utc: '2026-11-01T05:05:00Z',
+      is_partial: false,
+      bar_duration_seconds: 300,
       bid_ohlc: { open: 100, high: 101, low: 99, close: 99.5 },
       ask_ohlc: { open: 100.1, high: 101.1, low: 99.1, close: 99.6 },
       tick_data_quality: 'BID_ASK_TICK_AGGREGATED'
@@ -287,6 +289,7 @@ test('BAR, GAP, and EXIT events have stable idempotency keys and validated times
   assert.equal(bar.ok, true);
   assert.equal(bar.row.event_key, 'paper-entry-0003:BAR:2026-11-01T05:05:00.000Z');
   assert.equal(bar.row.payload.ask_ohlc.close, 99.6);
+  assert.equal(bar.row.payload.bar_duration_seconds, 300);
 
   const invalidBar = normalizeGoldForwardShadowEvent({
     ...common, event_type: 'BAR',
@@ -341,4 +344,47 @@ test('shadow event validation rejects unknown event types and non-GOLD symbols',
     strategy_version: 'test', side: 'BUY', payload: {}
   });
   assert.equal(result.error, 'gold_symbol_required');
+});
+
+
+test('BAR accepts an explicitly bounded partial M5 interval with a tick-time timestamp', () => {
+  const result = normalizeGoldForwardShadowEvent({
+    entry_id: 'paper-entry-partial-1',
+    symbol: 'GOLD#',
+    strategy_version: 'gold-m5-h1-v2',
+    side: 'BUY',
+    event_type: 'BAR',
+    payload: {
+      bars_since_entry: 1,
+      bar_time_utc: '2026-11-01T05:02:17Z',
+      is_partial: true,
+      bar_duration_seconds: 134,
+      bid_ohlc: { open: 100, high: 101, low: 99.5, close: 100.8 },
+      ask_ohlc: { open: 100.1, high: 101.1, low: 99.6, close: 100.9 },
+      tick_data_quality: 'BID_ASK_TICK_AGGREGATED'
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.row.payload.is_partial, true);
+  assert.equal(result.row.payload.bar_duration_seconds, 134);
+});
+
+test('BAR rejects a partial interval longer than one M5 period', () => {
+  const result = normalizeGoldForwardShadowEvent({
+    entry_id: 'paper-entry-partial-2',
+    symbol: 'GOLD#',
+    strategy_version: 'gold-m5-h1-v2',
+    side: 'BUY',
+    event_type: 'BAR',
+    payload: {
+      bars_since_entry: 1,
+      bar_time_utc: '2026-11-01T05:02:17Z',
+      is_partial: true,
+      bar_duration_seconds: 301,
+      bid_ohlc: { open: 100, high: 101, low: 99.5, close: 100.8 },
+      ask_ohlc: { open: 100.1, high: 101.1, low: 99.6, close: 100.9 },
+      tick_data_quality: 'BID_ASK_TICK_AGGREGATED'
+    }
+  });
+  assert.equal(result.ok, false);
 });
