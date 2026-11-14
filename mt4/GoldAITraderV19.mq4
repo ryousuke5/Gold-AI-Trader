@@ -1119,10 +1119,8 @@ bool SendShadowExit(datetime exitTimeUtc, double bid, double ask, string exitRea
    json += "\"exit_spread_price\":" + JsonNumber(spread, digits) + ",";
    json += "\"exit_reason\":\"" + JsonEscape(exitReason) + "\",";
    json += "\"cost_completeness\":\"QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP\",";
-   json += "\"gross_r\":" + JsonNumber(quoteNetR, 6) + ",";
    json += "\"net_r\":" + JsonNumber(quoteNetR, 6) + ",";
    json += "\"holding_seconds\":" + IntegerToString((int)(exitTimeUtc - g_shadowEntryTimeUtc)) + ",";
-   json += "\"data_gap_seconds\":0";
    json += "}}";
    string response = "";
    bool sent = PostForwardShadowJson(json, response);
@@ -1186,22 +1184,28 @@ bool StartForwardShadowFromSignal(string signalPayload, string signalResponse)
    if(ForwardShadowExpectedStopSlippagePrice < 0.0 ||
       TrimText(ForwardShadowCostModelVersion) == "") return false;
 
-   string featuresJson = "", decisionJson = "", riskJson = "", safetyJson = "";
-   string candidate = "", signalId = "", decisionSide = "";
+   string featuresJson = "", decisionJson = "", riskJson = "", safetyJson = "", stateJson = "";
+   string candidate = "", signalId = "", decisionSide = "", stateMode = "";
    if(!JsonExtractObjectField(signalPayload, "features", featuresJson) ||
       !JsonExtractObjectField(signalResponse, "decision", decisionJson) ||
       !JsonExtractObjectField(signalResponse, "risk", riskJson) ||
-      !JsonExtractObjectField(signalResponse, "market_safety", safetyJson)) return false;
-   bool riskApproved = false, safetyAllowed = false;
+      !JsonExtractObjectField(signalResponse, "market_safety", safetyJson) ||
+      !JsonExtractObjectField(signalResponse, "state", stateJson)) return false;
+   bool riskApproved = false, safetyAllowed = false, remoteAutoTrading = true, orderAllowed = true;
    if(!JsonExtractStringField(signalResponse, "candidate", candidate) ||
       !JsonExtractStringField(signalResponse, "signal_id", signalId) ||
       !JsonExtractStringField(decisionJson, "decision", decisionSide) ||
       !JsonExtractBoolField(riskJson, "approved", riskApproved) ||
-      !JsonExtractBoolField(safetyJson, "allowed", safetyAllowed)) return false;
+      !JsonExtractBoolField(safetyJson, "allowed", safetyAllowed) ||
+      !JsonExtractStringField(stateJson, "mode", stateMode) ||
+      !JsonExtractBoolField(stateJson, "auto_trading_enabled", remoteAutoTrading) ||
+      !JsonExtractBoolField(signalResponse, "order_allowed", orderAllowed)) return false;
    StringToUpper(candidate);
    StringToUpper(decisionSide);
+   StringToUpper(stateMode);
    int side = (candidate == "BUY" ? 1 : (candidate == "SELL" ? -1 : 0));
-   if(side == 0 || decisionSide != candidate || !riskApproved || !safetyAllowed) return false;
+   if(side == 0 || decisionSide != candidate || !riskApproved || !safetyAllowed ||
+      stateMode != "ANALYSIS" || remoteAutoTrading || orderAllowed) return false;
 
    double strategyEntry = 0.0, stopBid = 0.0, targetBid = 0.0, signalBarTimeNumber = 0.0;
    if(!JsonExtractNumberField(decisionJson, "entry", strategyEntry) ||
