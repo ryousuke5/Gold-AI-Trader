@@ -44,3 +44,11 @@ test('shadow exits explicitly label quote-side R as excluding commissions and sw
   assert.match(ea, /QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP/);
   assert.match(ea, /orders_executed=false/);
 });
+
+
+test('the 30-minute horizon ends only the research observation, not a broker position', () => {
+  assert.match(ea, /#define\s+SHADOW_OBSERVATION_HORIZON_SECONDS\s+1800/);
+  assert.match(ea, /tickUtc\s*-\s*g_shadowEntryTimeUtc\s*>=\s*SHADOW_OBSERVATION_HORIZON_SECONDS/);
+  assert.match(ea, /SendShadowExit\(tickUtc, bid, ask, "TIME"\)/);
+  assert.match(ea, /observation_horizon_complete/);
+});
