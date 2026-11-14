@@ -46,7 +46,7 @@ function entryPayload(overrides = {}) {
 test('H1 telemetry uses only completed H1 candles and reports directional trend strength', () => {
   const recentH1 = h1Series();
   recentH1.push({
-    time: BASE + 5 * HOUR, open: 105, high: 109, low: 104, close: 108,
+    time: BASE + 6 * HOUR, open: 105, high: 109, low: 104, close: 108,
     ema20: 106, ema50: 104, ema200: 101, atr14: 10
   });
   const result = buildGoldForwardH1Telemetry({
@@ -61,7 +61,7 @@ test('H1 telemetry uses only completed H1 candles and reports directional trend 
   assert.equal(result.h1_directional_ema20_slope_agreement_count_last3, 3);
   assert.equal(result.h1_directional_ema20_slope_agreement_ratio_last3, 1);
   assert.equal(result.h1_directionally_aligned, true);
-  assert.equal(result.latest_completed_h1_close_time_utc, new Date((BASE + 4 * HOUR) * 1000).toISOString());
+  assert.equal(result.latest_completed_h1_close_time_utc, new Date((BASE + 5 * HOUR) * 1000).toISOString());
 });
 
 test('H1 telemetry direction-normalizes SELL and flags gaps in completed H1 series', () => {
