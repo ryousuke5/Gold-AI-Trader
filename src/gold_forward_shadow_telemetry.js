@@ -427,7 +427,6 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
   } else if (eventType === 'BAR') {
     const barTime = requireIso(payload.bar_time_utc, 'bar_time_utc');
     if (barTime.error) return { ok: false, error: barTime.error };
-    if (epochSeconds(barTime.value) % 300 !== 0) return { ok: false, error: 'bar_time_must_align_to_m5_utc_boundary' };
     const index = Number(payload.segments_since_entry);
     const bid = normalizeOhlc(payload.bid_ohlc, 'BID');
     const ask = normalizeOhlc(payload.ask_ohlc, 'ASK');
