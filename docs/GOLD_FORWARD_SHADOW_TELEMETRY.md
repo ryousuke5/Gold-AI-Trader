@@ -79,7 +79,7 @@ If there are fewer than four contiguous completed H1 bars, telemetry records an 
 
 ### BAR
 
-Send one BAR event for each completed M5 candle after the virtual entry. Include all bars, not only the 3rd and 6th. The first interval after entry may be shorter than five minutes; mark it `is_partial: true` and report the observed `bar_duration_seconds`. A final intra-candle stop/target exit is also sent as a partial BAR before EXIT. Normal completed bars use `is_partial: false` and 300 seconds. The stored sequence is later used to reconstruct cumulative MFE/MAE, close progress in R, first +0.25R / -0.50R threshold, 3-/6-segment snapshots, and the first observations at or after 15/30 elapsed minutes.
+Send one BAR event for each completed M5 candle after the virtual entry. Include all bars, not only the 3rd and 6th. The first interval after entry may be shorter than five minutes; mark it `is_partial: true` and report the observed `bar_duration_seconds`. If no stop or target is reached, the observation ends at the first tick at or after 30 elapsed minutes with an EXIT event whose reason is `TIME`. A final intra-candle stop/target exit is also sent as a partial BAR before EXIT. Normal completed bars use `is_partial: false` and 300 seconds. The stored sequence is later used to reconstruct cumulative MFE/MAE, close progress in R, first +0.25R / -0.50R threshold, 3-/6-segment snapshots, and the first observations at or after 15/30 elapsed minutes.
 
 ```json
 {
@@ -183,7 +183,7 @@ The research-only MT4 implementation is present in `mt4/GoldAITraderV19.mq4` on 
 - On each MT4 tick, Bid and Ask OHLC are independently aggregated from actual quote ticks. Ask OHLC is not synthesized by adding a fixed spread to Bid OHLC.
 - Every M5 interval is sent as a BAR event. Initial partial intervals and exit-truncated intervals are tagged partial and have an explicit duration. Stale tick / missing interval conditions send GAP. A recovered active virtual position is restored from terminal Global Variables and attempts to write the prior partial bar and a GAP before resuming.
 - Logical SL/TP touches are evaluated from BID quotes for both directions; the recorded close fill is BID for BUY and ASK for SELL.
-- The current EA resolves a virtual position on logical STOP or TARGET. It does not currently impose an independent TIME exit. A position that reaches neither barrier can remain active and suppress new virtual entries; monitor this behavior during the test.
+- The research observer resolves an observation on logical STOP or TARGET, or at a fixed 1,800-second (30-minute) horizon if neither barrier has been reached. The `TIME` event is an observation-window end only, not a live strategy exit or a claim that the production strategy would close there. This fixed horizon prevents one unresolved diagnostic candidate from blocking later observations.
 - EXIT reports `QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP`. It is not fully net-of-commission/swap expectancy. Keep this field visible in any report and do not compare it directly to fully cost-adjusted backtest returns.
 
 ### Activation sequence — do not skip
@@ -194,13 +194,13 @@ The research-only MT4 implementation is present in `mt4/GoldAITraderV19.mq4` on 
 4. On a separate demo / analysis MT4 terminal, leave `AllowAutoOrders=false`. Keep `EnableForwardShadowTelemetry=false` until the dedicated API and schema checks pass. Then configure a distinct HTTPS `ForwardShadowApiBaseUrl` and a separate `ForwardShadowApiKey`.
 5. Add both API hosts to MT4's WebRequest allowed list. Check Experts logs for `[GOLD SHADOW]` and confirm ENTRY/BAR/GAP/EXIT rows in the research table.
 6. Run at least one synthetic BUY and SELL path through ENTRY/BAR/GAP/EXIT and verify idempotency, data-gap handling, executable quote-side calculations, and same-candle ambiguity.
-7. Only after all above checks should telemetry be enabled for a small, monitored Forward/Paper collection window. Do not change the production EA, production strategy settings, runtime state, order gate, or the production service.
+7. Only after all above checks should telemetry be enabled for a small, monitored Forward/Paper collection window. The observation horizon is fixed at 30 minutes and should not be tuned from the same sample. Do not change the production EA, production strategy settings, runtime state, order gate, or the production service.
 
 ## Known limitations before real collection
 
 - The +0.25R / -0.50R early movement labels are descriptive thresholds only. They do not manage positions.
 - M5 tick-aggregated OHLC provides accurate quote-side extrema but not the intrabar order of those extrema. Same-bar thresholds or SL/TP touches remain ambiguous; do not infer which occurred first.
 - The expected stop-slippage input and SELL stop-spread proxy are model assumptions. A later comparison should separate observed entry spread, assumed stop spread, assumed stop slippage, actual virtual exit quote, and any commission/swap not included.
-- One virtual position at a time and no TIME exit can create selection / holding-period differences versus historical backtests. Report ignored overlapping candidates and still-open positions before drawing conclusions.
+- One virtual position at a time and the fixed 30-minute observation horizon create selection / holding-period differences versus historical backtests. Report ignored overlapping candidates and distinguish `TIME` observation-window ends from strategy STOP/TARGET outcomes.
 - An MT4 terminal restart creates an explicit GAP; data across that interval is incomplete and must not be treated as a complete price path.
 - No research service has been deployed and no SQL migration has been applied as part of this branch work. Forward/Paper collection has therefore not started.
