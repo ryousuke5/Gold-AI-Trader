@@ -450,6 +450,14 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const exitTime = requireIso(payload.exit_time_utc, 'exit_time_utc');
     if (exitTime.error) return { ok: false, error: exitTime.error };
     if (!validPrice(payload.exit_price)) return { ok: false, error: 'exit_price_must_be_positive' };
+    const exitBid = numberOrNull(payload.exit_bid);
+    const exitAsk = numberOrNull(payload.exit_ask);
+    const exitSpread = numberOrNull(payload.exit_spread_price);
+    const exitPrice = Number(payload.exit_price);
+    if (exitBid === null || exitAsk === null || !(exitBid > 0) || !(exitAsk >= exitBid) ||
+        exitSpread === null || exitSpread < 0 || Math.abs(exitSpread - (exitAsk - exitBid)) > 1e-6) {
+      return { ok: false, error: 'exit_bid_ask_and_consistent_spread_required' };
+    }
     const exitReason = cleanText(payload.exit_reason, 24).toUpperCase();
     if (!['STOP', 'TARGET', 'TIME', 'MANUAL', 'DATA_GAP', 'OTHER'].includes(exitReason)) return { ok: false, error: 'invalid_exit_reason' };
     if (!finite(payload.net_r) || !finite(payload.holding_seconds) || Number(payload.holding_seconds) < 0) {
@@ -457,13 +465,18 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     }
     normalizedPayload = {
       exit_time_utc: exitTime.value,
-      exit_price: Number(payload.exit_price),
+      exit_price: exitPrice,
+      exit_quote_side: side === 'BUY' ? 'BID' : 'ASK',
+      exit_bid: exitBid,
+      exit_ask: exitAsk,
       exit_reason: exitReason,
       gross_r: finite(payload.gross_r) ? Number(payload.gross_r) : null,
       net_r: Number(payload.net_r),
       holding_seconds: Math.floor(Number(payload.holding_seconds)),
-      exit_spread_price: finite(payload.exit_spread_price) && Number(payload.exit_spread_price) >= 0 ? Number(payload.exit_spread_price) : null,
-      exit_slippage_price: finite(payload.exit_slippage_price) ? Number(payload.exit_slippage_price) : null,
+      exit_spread_price: exitSpread,
+      exit_slippage_price_signed: side === 'BUY' ? exitBid - exitPrice : exitPrice - exitAsk,
+      commission_account_currency: finite(payload.commission_account_currency) ? Number(payload.commission_account_currency) : null,
+      swap_account_currency: finite(payload.swap_account_currency) ? Number(payload.swap_account_currency) : null,
       data_gap_seconds: finite(payload.data_gap_seconds) && Number(payload.data_gap_seconds) >= 0 ? Number(payload.data_gap_seconds) : null
     };
     eventTime = exitTime.value;
