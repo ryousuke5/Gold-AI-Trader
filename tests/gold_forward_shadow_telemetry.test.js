@@ -115,8 +115,10 @@ test('BUY MFE/MAE uses executable BID exit OHLC and effective entry-to-stop-fill
   assert.equal(result.entry_quote_side, 'ASK');
   assert.equal(result.after_3_segments.segments_since_entry, 3);
   assert.equal(result.after_6_segments.segments_since_entry, 6);
-  assert.equal(result.after_3_bars.mfe_r, 1);
-  assert.equal(result.after_3_bars.mae_r, 0.5);
+  assert.equal(result.after_15_minutes.segments_since_entry, 4);
+  assert.equal(result.after_30_minutes.segments_since_entry, 6);
+  assert.equal(result.after_3_segments.mfe_r, 1);
+  assert.equal(result.after_3_segments.mae_r, 0.5);
   assert.equal(result.first_threshold, 'FAVORABLE_0_25R');
   assert.equal(result.data_gap_count, 1);
   assert.equal(result.max_gap_seconds, 600);
@@ -136,7 +138,7 @@ test('SELL MFE/MAE uses executable ASK exit OHLC while logical barriers use BID'
   assert.equal(sell.entry_quote_side, 'BID');
   assert.equal(sell.expected_stop_fill_quote_side, 'ASK');
   assert.equal(sell.first_threshold, 'FAVORABLE_0_25R');
-  assert.equal(sell.after_3_bars, null);
+  assert.equal(sell.after_3_segments, null);
   assert.ok(Math.abs(sell.path[1].mae_r - (100.9 - 100) / 2.15) < 1e-6);
 });
 
