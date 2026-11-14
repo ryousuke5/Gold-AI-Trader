@@ -9,6 +9,11 @@ input bool   RequireGoldSymbol = true;
 input bool   EnableSignalRequests = true;
 input bool   RunAITestOnce = false;
 input bool   AllowAutoOrders = false;
+// Research-only virtual position recorder. Off by default; never sends trade orders.
+input bool   EnableForwardShadowTelemetry = false;
+input string ForwardShadowApiBaseUrl = "";
+input double ForwardShadowExpectedStopSlippagePrice = 0.05;
+input string ForwardShadowCostModelVersion = "XM_KIWAMI_ENTRY_SPREAD_PROXY_STOP_SLIP_005_V1";
 input int    TimerSeconds = 1;
 input int    MagicNumber = 26092801;
 input double MaxSpreadPrice = 0.50;
@@ -46,6 +51,29 @@ datetime g_marketSafetyQuoteTimeUtc = 0;
 bool g_marketSafetyAllowed = false;
 string g_marketSafetyReason = "not_initialized";
 string g_lastMarketSafetyLog = "";
+
+// One virtual shadow position only. No broker order/ticket is created.
+bool g_shadowActive = false;
+bool g_shadowRecovered = false;
+string g_shadowEntryId = "";
+int g_shadowSide = 0; // BUY=1, SELL=-1
+double g_shadowEntryPrice = 0.0;
+double g_shadowSignalBid = 0.0;
+double g_shadowStopBid = 0.0;
+double g_shadowTargetBid = 0.0;
+double g_shadowExpectedStopFill = 0.0;
+double g_shadowEffectiveRisk = 0.0;
+double g_shadowEntryBid = 0.0;
+double g_shadowEntryAsk = 0.0;
+double g_shadowEntrySpread = 0.0;
+datetime g_shadowSignalTimeUtc = 0;
+datetime g_shadowEntryTimeUtc = 0;
+datetime g_shadowCurrentBarOpenServer = 0;
+datetime g_shadowCurrentBarStartUtc = 0;
+datetime g_shadowLastTickUtc = 0;
+int g_shadowBarsSinceEntry = 0;
+double g_shadowBidOpen = 0.0, g_shadowBidHigh = 0.0, g_shadowBidLow = 0.0, g_shadowBidClose = 0.0;
+double g_shadowAskOpen = 0.0, g_shadowAskHigh = 0.0, g_shadowAskLow = 0.0, g_shadowAskClose = 0.0;
 
 //---------------------------------------------------------
 // String helpers
