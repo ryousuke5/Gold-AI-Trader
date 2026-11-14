@@ -21,7 +21,7 @@ function h1Series(count = 5) {
 
 function dualBar(time, bid, spread = 0.1) {
   const ask = Object.fromEntries(Object.entries(bid).map(([key, value]) => [key, value + spread]));
-  return { time, bid_ohlc: bid, ask_ohlc: ask };
+  return { time, bid_ohlc: bid, ask_ohlc: ask, tick_data_quality: 'BID_ASK_TICK_AGGREGATED' };
 }
 
 function entryPayload(overrides = {}) {
