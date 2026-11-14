@@ -33,6 +33,8 @@ function entryPayload(overrides = {}) {
     stop_price: 103,
     target_price: 109,
     expected_stop_fill_price: 102.95,
+    expected_stop_spread_price: 0,
+    expected_stop_slippage_price: 0.05,
     cost_model_version: 'XM_KIWAMI_BID_ASK_SLIPPAGE_V1',
     entry_bid: 104.9,
     entry_ask: 105,
@@ -226,6 +228,7 @@ test('SELL ENTRY calculates spread and stop slippage into its effective risk dis
     payload: entryPayload({
       entry_price: 104.9, signal_reference_bid: 105, stop_price: 107,
       target_price: 101, expected_stop_fill_price: 107.2,
+      expected_stop_spread_price: 0.1, expected_stop_slippage_price: 0.1,
       entry_bid: 104.9, entry_ask: 105, spread_price: 0.1
     })
   });
