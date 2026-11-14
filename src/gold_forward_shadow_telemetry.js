@@ -312,6 +312,8 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
   const side = cleanText(body.side, 8).toUpperCase();
   const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
     ? body.payload : {};
+  const features = body.features && typeof body.features === 'object' && !Array.isArray(body.features)
+    ? body.features : {};
   if (!['ENTRY', 'BAR', 'GAP', 'EXIT'].includes(eventType)) return { ok: false, error: 'unsupported_event_type' };
   if (entryId.length < 8) return { ok: false, error: 'entry_id_required' };
   if (!/^(XAUUSD|GOLD)([.#][A-Z0-9]*)?$/i.test(symbol)) return { ok: false, error: 'gold_symbol_required' };
@@ -334,6 +336,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const stop = Number(payload.stop_price);
     const target = Number(payload.target_price);
     const expectedStopFill = numberOrNull(payload.expected_stop_fill_price);
+    const signalReferenceBid = numberOrNull(payload.signal_reference_bid);
     const entryBid = numberOrNull(payload.entry_bid);
     const entryAsk = numberOrNull(payload.entry_ask);
     const spreadPrice = numberOrNull(payload.spread_price);
@@ -346,22 +349,22 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
         Math.abs(epochSeconds(signalTime.value) - (featureBarTime + 300)) > 1) {
       return { ok: false, error: 'signal_time_does_not_match_completed_m5_bar' };
     }
-    if (entryBid === null || entryAsk === null || !(entryAsk >= entryBid) ||
+    if (signalReferenceBid === null || !(signalReferenceBid > 0) ||
+        entryBid === null || entryAsk === null || !(entryAsk >= entryBid) ||
         spreadPrice === null || spreadPrice < 0 ||
         !costModelVersion || expectedStopFill === null || !(expectedStopFill > 0)) {
       return { ok: false, error: 'entry_bid_ask_spread_cost_model_and_expected_stop_fill_required' };
     }
-    if (side === 'BUY' ? !(stop < entryBid && target > entryBid && expectedStopFill < entry)
-                       : !(target < entryBid && stop > entryBid && expectedStopFill > entry)) {
+    if (side === 'BUY' ? !(stop < signalReferenceBid && target > signalReferenceBid && target > entry && expectedStopFill < entry)
+                       : !(target < signalReferenceBid && stop > signalReferenceBid && target < entry && expectedStopFill > entry)) {
       return { ok: false, error: 'entry_stop_target_or_expected_fill_direction_mismatch' };
     }
     const effectiveRiskDistance = Math.abs(entry - expectedStopFill);
     if (!(effectiveRiskDistance > 0)) {
       return { ok: false, error: 'effective_risk_distance_must_be_positive' };
     }
-    const rawStopDistanceBid = Math.abs(entryBid - stop);
-    const featuresForH1 = body.features && typeof body.features === 'object' ? body.features : {};
-    const h1Telemetry = buildGoldForwardH1Telemetry(featuresForH1, side);
+    const rawStopDistanceBid = Math.abs(signalReferenceBid - stop);
+    const h1Telemetry = buildGoldForwardH1Telemetry(features, side);
     normalizedPayload = {
       signal_time_utc: signalTime.value,
       entry_time_utc: entryTime.value,
@@ -370,6 +373,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
       entry_bid: entryBid,
       entry_ask: entryAsk,
       entry_spread_price: spreadPrice,
+      signal_reference_bid: signalReferenceBid,
       stop_price_bid: stop,
       target_price_bid: target,
       expected_stop_fill_price: expectedStopFill,
