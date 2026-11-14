@@ -497,7 +497,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const exitReason = cleanText(payload.exit_reason, 24).toUpperCase();
     if (!['STOP', 'TARGET', 'TIME', 'MANUAL', 'DATA_GAP', 'OTHER'].includes(exitReason)) return { ok: false, error: 'invalid_exit_reason' };
     const costCompleteness = cleanText(payload.cost_completeness, 64).toUpperCase();
-    if (!['QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP', 'FULL_COMMISSION_SWAP_INCLUDED', 'PARTIAL_COSTS'].includes(costCompleteness)) {
+    if (!['SPREAD_AND_CONFIGURED_SLIPPAGE_EXCLUDES_COMMISSION_SWAP', 'FULL_COMMISSION_SWAP_INCLUDED', 'PARTIAL_COSTS'].includes(costCompleteness)) {
       return { ok: false, error: 'explicit_cost_completeness_required' };
     }
     if (!finite(payload.net_r) || !finite(payload.holding_seconds) || Number(payload.holding_seconds) < 0) {
