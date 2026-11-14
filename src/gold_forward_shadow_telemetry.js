@@ -15,8 +15,8 @@ const directionForSide = (side) => side === 'BUY' ? 1 : -1;
 
 /**
  * Builds entry-time H1 context exclusively from completed H1 bars.
- * recentH1 rows must carry timestamp (bar open), close, EMA20/50/200 and ATR14.
- * The final M5 signal bar is treated as completed at barTime + 300 seconds.
+ * recentH1 rows must carry UTC candle-close timestamps, close, EMA20/50/200 and ATR14.
+ * features.barTime is the completed M5 candle-close timestamp in UTC.
  */
 export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
   const normalizedSide = String(side || '').toUpperCase();
@@ -28,7 +28,7 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
   if (!(signalBarTime > 0)) {
     return { schema_version: 1, quality: 'MISSING', reason: 'missing_m5_signal_bar_time' };
   }
-  const signalCloseTime = signalBarTime + 300;
+  const signalCloseTime = signalBarTime;
   const sourceBars = Array.isArray(features.recentH1)
     ? features.recentH1
     : Array.isArray(features.recent_h1) ? features.recent_h1 : [];
@@ -51,8 +51,8 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
       bar.ema200 !== null &&
       bar.atr14 !== null &&
       bar.atr14 > 0 &&
-      // H1 bar timestamp is its open time; do not use an unfinished H1 bar.
-      bar.time + 3600 <= signalCloseTime
+      // V19 sends H1 candle-close timestamps; do not use an unfinished H1 bar.
+      bar.time <= signalCloseTime
     )
     .sort((a, b) => a.time - b.time);
 
@@ -112,7 +112,7 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
     quality: 'OK',
     source: 'completed_h1_ema_series',
     side: normalizedSide,
-    latest_completed_h1_open_time_utc: new Date(latest.time * 1000).toISOString(),
+    latest_completed_h1_close_time_utc: new Date(latest.time * 1000).toISOString(),
     completed_h1_bars_used: contiguous.length,
     h1_ema20_slope_1bar_atr: (latest.ema20 - oneBack.ema20) / atr,
     h1_ema20_slope_3bar_atr: (latest.ema20 - threeBack.ema20) / atr,
@@ -353,7 +353,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const featureBarTime = numberOrNull(features.barTime ?? features.bar_time);
     if (!(featureBarTime > 0) || featureBarTime % 300 !== 0 ||
         epochSeconds(signalTime.value) % 300 !== 0 ||
-        Math.abs(epochSeconds(signalTime.value) - (featureBarTime + 300)) > 1) {
+        Math.abs(epochSeconds(signalTime.value) - featureBarTime) > 1) {
       return { ok: false, error: 'signal_time_does_not_match_completed_m5_bar' };
     }
     if (signalReferenceBid === null || !(signalReferenceBid > 0) ||
