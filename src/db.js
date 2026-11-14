@@ -24,6 +24,18 @@ export async function insertOrder(row){if(!supabase)return{row,persisted:false};
 export async function updateState(patch){if(!supabase)return{row:{id:'global',...patch},persisted:false};const{data,error}=await supabase.from('gold_system_state').upsert({id:'global',...patch,updated_at:new Date().toISOString()}).select().single();if(error)throw error;return{row:data,persisted:true};}
 export async function getState(){if(!supabase)return null;const{data,error}=await supabase.from('gold_system_state').select('*').eq('id','global').maybeSingle();if(error)throw error;return data;}
 export async function insertEvent(row){if(!supabase)return{row,persisted:false};const{data,error}=await supabase.from('gold_system_events').insert(row).select().single();if(error)throw error;return{row:data,persisted:true};}
+export async function insertGoldForwardShadowEvent(row) {
+  if (!supabase) return { row, persisted: false, duplicate: false };
+  const { data, error } = await supabase
+    .from('gold_forward_shadow_events')
+    .upsert(row, { onConflict: 'event_key', ignoreDuplicates: true })
+    .select('event_key')
+    .maybeSingle();
+  if (error) throw error;
+  // With ignoreDuplicates, an empty result means this idempotency key was
+  // already stored. It is a successful no-op, not a failed event write.
+  return { row: data || row, persisted: true, duplicate: !data };
+}
 export async function insertTradeResult(row){if(!supabase)return{row,persisted:false};const{data,error}=await supabase.from('gold_trade_results').upsert(row,{onConflict:'idempotency_key'}).select().single();if(error)throw error;return{row:data,persisted:true};}
 
 
