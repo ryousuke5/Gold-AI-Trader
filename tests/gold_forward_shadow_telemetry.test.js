@@ -316,7 +316,7 @@ test('BAR, GAP, and EXIT events have stable idempotency keys and validated times
     payload: {
       exit_time_utc: '2026-11-01T05:35:00Z',
       exit_price: 98.1, exit_bid: 98, exit_ask: 98.1, exit_spread_price: 0.1,
-      exit_reason: 'STOP', net_r: -1.04, holding_seconds: 2100
+      exit_reason: 'STOP', cost_completeness: 'QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP', net_r: -1.04, holding_seconds: 2100
     }
   });
   assert.equal(exit.ok, true);
@@ -330,7 +330,7 @@ test('BAR, GAP, and EXIT events have stable idempotency keys and validated times
     payload: {
       exit_time_utc: '2026-11-01T05:40:00Z',
       exit_price: 98, exit_bid: 98, exit_ask: 98.1, exit_spread_price: 0.1,
-      exit_reason: 'STOP', net_r: -1, holding_seconds: 2400
+      exit_reason: 'STOP', cost_completeness: 'QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP', net_r: -1, holding_seconds: 2400
     }
   });
   assert.equal(badExitSide.ok, false);
@@ -387,4 +387,22 @@ test('BAR rejects a partial interval longer than one M5 period', () => {
     }
   });
   assert.equal(result.ok, false);
+});
+
+
+test('EXIT refuses to label quote-only results as fully cost-adjusted without cost status', () => {
+  const result = normalizeGoldForwardShadowEvent({
+    entry_id: 'paper-entry-cost-1',
+    symbol: 'GOLD#',
+    strategy_version: 'gold-m5-h1-v2',
+    side: 'BUY',
+    event_type: 'EXIT',
+    payload: {
+      exit_time_utc: '2026-11-01T05:45:00Z',
+      exit_price: 100, exit_bid: 100, exit_ask: 100.1, exit_spread_price: 0.1,
+      exit_reason: 'TIME', net_r: 0.2, holding_seconds: 2700
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'explicit_cost_completeness_required');
 });
