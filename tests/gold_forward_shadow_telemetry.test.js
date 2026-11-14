@@ -113,8 +113,8 @@ test('BUY MFE/MAE uses executable BID exit OHLC and effective entry-to-stop-fill
   assert.equal(result.effective_risk_distance_price, 2);
   assert.equal(result.raw_stop_distance_bid, 2.1);
   assert.equal(result.entry_quote_side, 'ASK');
-  assert.equal(result.after_3_bars.bars_since_entry, 3);
-  assert.equal(result.after_6_bars.bars_since_entry, 6);
+  assert.equal(result.after_3_segments.segments_since_entry, 3);
+  assert.equal(result.after_6_segments.segments_since_entry, 6);
   assert.equal(result.after_3_bars.mfe_r, 1);
   assert.equal(result.after_3_bars.mae_r, 0.5);
   assert.equal(result.first_threshold, 'FAVORABLE_0_25R');
@@ -277,7 +277,7 @@ test('BAR, GAP, and EXIT events have stable idempotency keys and validated times
   const bar = normalizeGoldForwardShadowEvent({
     ...common, event_type: 'BAR',
     payload: {
-      bars_since_entry: 1,
+      segments_since_entry: 1,
       bar_time_utc: '2026-11-01T05:05:00Z',
       is_partial: false,
       bar_duration_seconds: 300,
@@ -294,7 +294,7 @@ test('BAR, GAP, and EXIT events have stable idempotency keys and validated times
   const invalidBar = normalizeGoldForwardShadowEvent({
     ...common, event_type: 'BAR',
     payload: {
-      bars_since_entry: 2, bar_time_utc: '2026-11-01T05:10:00Z',
+      segments_since_entry: 2, bar_time_utc: '2026-11-01T05:10:00Z',
       bid_ohlc: { open: 100, high: 101, low: 99, close: 99.5 }
     }
   });
@@ -355,7 +355,7 @@ test('BAR accepts an explicitly bounded partial M5 interval with a tick-time tim
     side: 'BUY',
     event_type: 'BAR',
     payload: {
-      bars_since_entry: 1,
+      segments_since_entry: 1,
       bar_time_utc: '2026-11-01T05:02:17Z',
       is_partial: true,
       bar_duration_seconds: 134,
@@ -377,7 +377,7 @@ test('BAR rejects a partial interval longer than one M5 period', () => {
     side: 'BUY',
     event_type: 'BAR',
     payload: {
-      bars_since_entry: 1,
+      segments_since_entry: 1,
       bar_time_utc: '2026-11-01T05:02:17Z',
       is_partial: true,
       bar_duration_seconds: 301,
@@ -424,7 +424,7 @@ test('BAR event keys include sequence numbers for same-second partial segments',
     ask_ohlc: { open: 100.1, high: 100.2, low: 100, close: 100.1 },
     tick_data_quality: 'BID_ASK_TICK_AGGREGATED'
   };
-  const first = normalizeGoldForwardShadowEvent({ ...common, payload: { ...payload, bars_since_entry: 1 } });
-  const second = normalizeGoldForwardShadowEvent({ ...common, payload: { ...payload, bars_since_entry: 2 } });
+  const first = normalizeGoldForwardShadowEvent({ ...common, payload: { ...payload, segments_since_entry: 1 } });
+  const second = normalizeGoldForwardShadowEvent({ ...common, payload: { ...payload, segments_since_entry: 2 } });
   assert.notEqual(first.row.event_key, second.row.event_key);
 });
