@@ -1,4 +1,5 @@
-const finite = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+const finite = (value) => value !== null && value !== undefined && value !== '' &&
+  (typeof value === 'number' || typeof value === 'string') && Number.isFinite(Number(value));
 const numberOrNull = (value) => finite(value) ? Number(value) : null;
 const epochSeconds = (value) => {
   const parsed = Date.parse(String(value || ''));
@@ -417,9 +418,12 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const bid = normalizeOhlc(payload.bid_ohlc, 'BID');
     const ask = normalizeOhlc(payload.ask_ohlc, 'ASK');
     const tickDataQuality = cleanText(payload.tick_data_quality, 40);
+    const closeSpread = bid && ask ? ask.close - bid.close : null;
+    const reportedSpread = numberOrNull(payload.spread_price);
     if (!Number.isInteger(index) || index < 1 || index > 10000 || !bid || !ask ||
         tickDataQuality !== 'BID_ASK_TICK_AGGREGATED' || ask.open < bid.open || ask.high < bid.high ||
-        ask.low < bid.low || ask.close < bid.close) {
+        ask.low < bid.low || ask.close < bid.close || !(closeSpread >= 0) ||
+        (reportedSpread !== null && (reportedSpread < 0 || Math.abs(reportedSpread - closeSpread) > 1e-6))) {
       return { ok: false, error: 'invalid_or_missing_bid_ask_ohlc' };
     }
     normalizedPayload = {
@@ -427,7 +431,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
       bar_time_utc: barTime.value,
       bid_ohlc: { open: bid.open, high: bid.high, low: bid.low, close: bid.close },
       ask_ohlc: { open: ask.open, high: ask.high, low: ask.low, close: ask.close },
-      spread_price: finite(payload.spread_price) && Number(payload.spread_price) >= 0 ? Number(payload.spread_price) : null,
+      spread_price: closeSpread,
       quote_age_seconds: finite(payload.quote_age_seconds) && Number(payload.quote_age_seconds) >= 0 ? Number(payload.quote_age_seconds) : null,
       tick_data_quality: tickDataQuality
     };
