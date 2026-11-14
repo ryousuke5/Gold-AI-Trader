@@ -430,3 +430,41 @@ test('BAR event keys include sequence numbers for same-second partial segments',
   const second = normalizeGoldForwardShadowEvent({ ...common, payload: { ...payload, segments_since_entry: 2 } });
   assert.notEqual(first.row.event_key, second.row.event_key);
 });
+
+
+test('ENTRY rejects fills that are not on the executable quote side', () => {
+  const badBuy = normalizeGoldForwardShadowEvent({
+    event_type: 'ENTRY',
+    entry_id: 'paper-entry-bad-buy',
+    symbol: 'GOLD#',
+    strategy_version: 'gold-m5-h1-v2',
+    side: 'BUY',
+    features: { barTime: BASE + 5 * HOUR, recentH1: h1Series() },
+    payload: entryPayload({ entry_price: 104.95 })
+  });
+  assert.equal(badBuy.ok, false);
+  assert.equal(badBuy.error, 'entry_quote_and_stop_cost_model_fields_required_or_inconsistent');
+
+  const badSell = normalizeGoldForwardShadowEvent({
+    event_type: 'ENTRY',
+    entry_id: 'paper-entry-bad-sell',
+    symbol: 'GOLD#',
+    strategy_version: 'gold-m5-h1-v2',
+    side: 'SELL',
+    features: { barTime: BASE + 5 * HOUR, recentH1: h1Series() },
+    payload: entryPayload({
+      entry_price: 104.95,
+      signal_reference_bid: 105,
+      stop_price: 107,
+      target_price: 101,
+      expected_stop_spread_price: 0.1,
+      expected_stop_slippage_price: 0.1,
+      expected_stop_fill_price: 107.2,
+      entry_bid: 104.9,
+      entry_ask: 105,
+      spread_price: 0.1
+    })
+  });
+  assert.equal(badSell.ok, false);
+  assert.equal(badSell.error, 'entry_quote_and_stop_cost_model_fields_required_or_inconsistent');
+});
