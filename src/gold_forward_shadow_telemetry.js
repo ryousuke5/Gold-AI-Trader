@@ -361,13 +361,23 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const expectedStopSpread = numberOrNull(payload.expected_stop_spread_price);
     const expectedStopSlippage = numberOrNull(payload.expected_stop_slippage_price);
     const costModelVersion = cleanText(payload.cost_model_version, 80);
+    const featureBarTime = numberOrNull(features.barTime ?? features.bar_time);
+    const signalEpoch = epochSeconds(signalTime.value);
+    const featureBarTimeAvailable = featureBarTime !== null && featureBarTime > 0;
+    const signalMatchesCompletedBar = featureBarTimeAvailable &&
+      featureBarTime % 300 === 0 &&
+      signalEpoch % 300 === 0 &&
+      Math.abs(signalEpoch - featureBarTime) <= 1;
+    // When a feature bar is present, validate its relationship to the signal
+    // before comparing entry time. This reports a stale/misaligned signal
+    // accurately even if the supplied entry timestamp is also earlier.
+    if (featureBarTimeAvailable && !signalMatchesCompletedBar) {
+      return { ok: false, error: 'signal_time_does_not_match_completed_m5_bar' };
+    }
     if (Date.parse(entryTime.value) < Date.parse(signalTime.value)) {
       return { ok: false, error: 'entry_time_must_not_precede_signal_time' };
     }
-    const featureBarTime = numberOrNull(features.barTime ?? features.bar_time);
-    if (!(featureBarTime > 0) || featureBarTime % 300 !== 0 ||
-        epochSeconds(signalTime.value) % 300 !== 0 ||
-        Math.abs(epochSeconds(signalTime.value) - featureBarTime) > 1) {
+    if (!signalMatchesCompletedBar) {
       return { ok: false, error: 'signal_time_does_not_match_completed_m5_bar' };
     }
     if (signalReferenceBid === null || !(signalReferenceBid > 0) ||
@@ -391,11 +401,11 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     if (Math.abs(calculatedExpectedStopFill - expectedStopFill) > 1e-6) {
       return { ok: false, error: 'expected_stop_fill_does_not_match_cost_model' };
     }
-    const effectiveRiskDistance = Math.abs(entry - calculatedExpectedStopFill);
+    const effectiveRiskDistance = Number(Math.abs(entry - calculatedExpectedStopFill).toFixed(8));
     if (!(effectiveRiskDistance > 0)) {
       return { ok: false, error: 'effective_risk_distance_must_be_positive' };
     }
-    const rawStopDistanceBid = Math.abs(signalReferenceBid - stop);
+    const rawStopDistanceBid = Number(Math.abs(signalReferenceBid - stop).toFixed(8));
     const h1Telemetry = buildGoldForwardH1Telemetry(features, side);
     normalizedPayload = {
       signal_time_utc: signalTime.value,
