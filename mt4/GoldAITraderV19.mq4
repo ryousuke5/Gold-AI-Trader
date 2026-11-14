@@ -1115,7 +1115,7 @@ bool SendShadowExit(datetime exitTimeUtc, double bid, double ask, string exitRea
 {
    if(!g_shadowActive || exitTimeUtc <= 0 || bid <= 0.0 || ask < bid) return false;
    double executableQuoteFill = (g_shadowSide > 0 ? bid : ask);
-   double exitSlippage = (StringCompare(exitReason, "STOP", false) == 0
+   double exitSlippage = (exitReason == "STOP"
       ? ForwardShadowExpectedStopSlippagePrice
       : ForwardShadowExpectedExitSlippagePrice);
    if(exitSlippage < 0.0) return false;
