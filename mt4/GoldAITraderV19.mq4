@@ -624,6 +624,11 @@ bool BuildSignalPayload(string &payload)
       json += ",\"low\":" + JsonNumber(iLow(sym, PERIOD_H1, shiftH1), digits);
       json += ",\"close\":" + JsonNumber(iClose(sym, PERIOD_H1, shiftH1), digits);
       json += ",\"volume\":" + JsonNumber(iVolume(sym, PERIOD_H1, shiftH1), 0);
+      // H1 EMA/ATR values are calculated on the same completed candle (shift >= 1).
+      json += ",\"ema20\":" + JsonNumber(iMA(sym, PERIOD_H1, 20, 0, MODE_EMA, PRICE_CLOSE, shiftH1), digits);
+      json += ",\"ema50\":" + JsonNumber(iMA(sym, PERIOD_H1, 50, 0, MODE_EMA, PRICE_CLOSE, shiftH1), digits);
+      json += ",\"ema200\":" + JsonNumber(iMA(sym, PERIOD_H1, 200, 0, MODE_EMA, PRICE_CLOSE, shiftH1), digits);
+      json += ",\"atr14\":" + JsonNumber(iATR(sym, PERIOD_H1, 14, shiftH1), digits);
       json += "}";
       firstH1 = false;
    }
