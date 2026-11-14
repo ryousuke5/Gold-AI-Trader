@@ -89,7 +89,7 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
   const threeBack = contiguous.at(-4);
   const oneBack = contiguous.at(-2);
   const atr = latest.atr14;
-  const lastThreeDirectionalSteps = contiguous.slice(-3).map((bar, index, items) => {
+  const lastThreeDirectionalSteps = contiguous.slice(-4).map((bar, index, items) => {
     if (index === 0) return null;
     return directionForSide(normalizedSide) * (bar.ema20 - items[index - 1].ema20);
   }).filter((value) => value !== null);
