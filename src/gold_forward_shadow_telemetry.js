@@ -460,7 +460,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const fromSeconds = epochSeconds(from.value);
     const toSeconds = epochSeconds(to.value);
     const gapSeconds = Number(payload.gap_seconds);
-    if (!Number.isFinite(gapSeconds) || gapSeconds <= 0 || gapSeconds > 86400 ||
+    if (!Number.isFinite(gapSeconds) || gapSeconds <= 0 || gapSeconds > 2678400 ||
         toSeconds <= fromSeconds || Math.abs((toSeconds - fromSeconds) - gapSeconds) > 1) {
       return { ok: false, error: 'gap_interval_and_gap_seconds_must_match' };
     }
