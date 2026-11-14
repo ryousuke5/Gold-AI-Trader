@@ -41,7 +41,7 @@ test('completed H1 EMA and ATR series are included in V19 features', () => {
 });
 
 test('shadow exits explicitly label quote-side R as excluding commissions and swaps', () => {
-  assert.match(ea, /QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP/);
+  assert.match(ea, /SPREAD_AND_CONFIGURED_SLIPPAGE_EXCLUDES_COMMISSION_SWAP/);
   assert.match(ea, /orders_executed=false/);
 });
 
