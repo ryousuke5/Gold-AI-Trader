@@ -1,0 +1,23 @@
+name: GOLD Forward Shadow Telemetry Tests
+
+on:
+  push:
+    branches:
+      - research/gold-forward-loss-telemetry-20261114
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  telemetry-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run shadow telemetry unit tests
+        run: node --test tests/gold_forward_shadow_telemetry.test.js
