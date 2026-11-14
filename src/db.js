@@ -255,3 +255,40 @@ export async function updateEurUsdForwardTrade(id,row){
 
   return{row:mapForwardOrder(data),persisted:true};
 }
+
+
+export async function listPendingGoldForwardResearchObservations({ symbol, limit = 200 } = {}) {
+  if (!supabase) return [];
+  let query = supabase.from('gold_forward_research_observations')
+    .select('*')
+    .eq('status', 'PENDING')
+    .order('signal_bar_time', { ascending: true })
+    .limit(Math.max(1, Math.min(500, Number(limit) || 200)));
+  if (symbol) query = query.eq('symbol', String(symbol));
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+export async function insertGoldForwardResearchObservation(row) {
+  if (!supabase) return { row, persisted: false };
+  const { data, error } = await supabase
+    .from('gold_forward_research_observations')
+    .upsert(row, { onConflict: 'observation_key' })
+    .select()
+    .single();
+  if (error) throw error;
+  return { row: data, persisted: true };
+}
+
+export async function updateGoldForwardResearchObservation(id, patch) {
+  if (!supabase) return { row: { id, ...patch }, persisted: false };
+  const { data, error } = await supabase
+    .from('gold_forward_research_observations')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return { row: data, persisted: true };
+}
