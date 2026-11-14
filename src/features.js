@@ -2,10 +2,18 @@ function n(v, fallback = 0) {
   const x = Number(v);
   return Number.isFinite(x) ? x : fallback;
 }
+function optionalNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 function bars(input) {
   if (!Array.isArray(input)) return [];
   return input.slice(-64).map((b) => ({
-    time: n(b.time), open: n(b.open), high: n(b.high), low: n(b.low), close: n(b.close), volume: n(b.volume)
+    time: n(b.time), open: n(b.open), high: n(b.high), low: n(b.low), close: n(b.close), volume: n(b.volume),
+    // Optional completed-candle indicators are retained for research telemetry only.
+    ema20: optionalNumber(b.ema20), ema50: optionalNumber(b.ema50),
+    ema200: optionalNumber(b.ema200), atr14: optionalNumber(b.atr14)
   }));
 }
 export function normalizeFeatures(input = {}) {
