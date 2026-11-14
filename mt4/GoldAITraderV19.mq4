@@ -881,6 +881,17 @@ datetime CurrentQuoteTimeUtc(string sym)
    return serverTime - offsetSeconds;
 }
 
+string UrlHostOnly(string url)
+{
+   string value = TrimText(url);
+   if(StringFind(value, "https://") == 0) value = StringSubstr(value, 8);
+   else if(StringFind(value, "http://") == 0) value = StringSubstr(value, 7);
+   int slash = StringFind(value, "/");
+   if(slash >= 0) value = StringSubstr(value, 0, slash);
+   StringToLower(value);
+   return value;
+}
+
 string ShadowGlobalKey(string suffix)
 {
    return MarketSafetyKey("SHADOW_" + suffix);
@@ -996,17 +1007,18 @@ bool PostForwardShadowJson(string json, string &response)
 {
    response = "";
    string baseUrl = TrimText(ForwardShadowApiBaseUrl);
-   if(StringFind(baseUrl, "https://") != 0 || baseUrl == TrimText(ApiBaseUrl) ||
+   int baseLength = StringLen(baseUrl);
+   if(baseLength > 0 && StringSubstr(baseUrl, baseLength - 1, 1) == "/")
+      baseUrl = StringSubstr(baseUrl, 0, baseLength - 1);
+   if(StringFind(baseUrl, "https://") != 0 ||
+      UrlHostOnly(baseUrl) == UrlHostOnly(ApiBaseUrl) ||
       StringLen(TrimText(ForwardShadowApiKey)) < 16 ||
       TrimText(ForwardShadowApiKey) == "CHANGE_ME" ||
       TrimText(ForwardShadowApiKey) == TrimText(ApiKey))
    {
-      Print("[GOLD SHADOW] rejected_send: research endpoint is missing or equals production ApiBaseUrl");
+      Print("[GOLD SHADOW] rejected_send: require a separate HTTPS research host and API key");
       return false;
    }
-   int baseLength = StringLen(baseUrl);
-   if(baseLength > 0 && StringSubstr(baseUrl, baseLength - 1, 1) == "/")
-      baseUrl = StringSubstr(baseUrl, 0, baseLength - 1);
 
    string url = baseUrl + "/api/gold/forward-shadow/event";
    string headers = "Content-Type: application/json\r\n";
@@ -1682,8 +1694,12 @@ int OnInit()
          return INIT_FAILED;
       }
       string shadowBase = TrimText(ForwardShadowApiBaseUrl);
+      int shadowBaseLength = StringLen(shadowBase);
+      if(shadowBaseLength > 0 && StringSubstr(shadowBase, shadowBaseLength - 1, 1) == "/")
+         shadowBase = StringSubstr(shadowBase, 0, shadowBaseLength - 1);
       string shadowKey = TrimText(ForwardShadowApiKey);
-      if(StringFind(shadowBase, "https://") != 0 || shadowBase == TrimText(ApiBaseUrl) ||
+      if(StringFind(shadowBase, "https://") != 0 ||
+         UrlHostOnly(shadowBase) == UrlHostOnly(ApiBaseUrl) ||
          StringLen(shadowKey) < 16 || shadowKey == "CHANGE_ME" || shadowKey == TrimText(ApiKey))
       {
          Print("[GOLD SHADOW] initialization refused: configure a separate HTTPS research endpoint, not ApiBaseUrl.");
