@@ -14,7 +14,8 @@ input bool   EnableForwardShadowTelemetry = false;
 input string ForwardShadowApiBaseUrl = "";
 input string ForwardShadowApiKey = "";
 input double ForwardShadowExpectedStopSlippagePrice = 0.05;
-input string ForwardShadowCostModelVersion = "XM_KIWAMI_ENTRY_SPREAD_PROXY_CONFIGURED_SLIP_V1";
+input double ForwardShadowExpectedExitSlippagePrice = 0.05;
+input string ForwardShadowCostModelVersion = "XM_KIWAMI_ENTRY_SPREAD_AND_CONFIGURED_EXIT_SLIPPAGE_V1";
 input int    TimerSeconds = 1;
 input int    MagicNumber = 26092801;
 input double MaxSpreadPrice = 0.50;
@@ -1113,9 +1114,18 @@ bool SendShadowBar(datetime eventTimeUtc, bool isPartial, int durationSeconds)
 bool SendShadowExit(datetime exitTimeUtc, double bid, double ask, string exitReason)
 {
    if(!g_shadowActive || exitTimeUtc <= 0 || bid <= 0.0 || ask < bid) return false;
-   double exitFill = (g_shadowSide > 0 ? bid : ask);
+   double executableQuoteFill = (g_shadowSide > 0 ? bid : ask);
+   double exitSlippage = (StringCompare(exitReason, "STOP", false) == 0
+      ? ForwardShadowExpectedStopSlippagePrice
+      : ForwardShadowExpectedExitSlippagePrice);
+   if(exitSlippage < 0.0) return false;
+   // Apply configured adverse slippage to the virtual exit fill; retain Bid/Ask
+   // quotes separately so observed path extrema are never rewritten.
+   double exitFill = (g_shadowSide > 0
+      ? executableQuoteFill - exitSlippage
+      : executableQuoteFill + exitSlippage);
    double pnlPrice = (g_shadowSide > 0 ? exitFill - g_shadowEntryPrice : g_shadowEntryPrice - exitFill);
-   double quoteNetR = (g_shadowEffectiveRisk > 0.0 ? pnlPrice / g_shadowEffectiveRisk : 0.0);
+   double modeledNetR = (g_shadowEffectiveRisk > 0.0 ? pnlPrice / g_shadowEffectiveRisk : 0.0);
    double spread = ask - bid;
    int digits = (int)MarketInfo(TradeSymbol(), MODE_DIGITS);
    string json = "{";
@@ -1131,16 +1141,17 @@ bool SendShadowExit(datetime exitTimeUtc, double bid, double ask, string exitRea
    json += "\"exit_ask\":" + JsonNumber(ask, digits) + ",";
    json += "\"exit_spread_price\":" + JsonNumber(spread, digits) + ",";
    json += "\"exit_reason\":\"" + JsonEscape(exitReason) + "\",";
-   json += "\"cost_completeness\":\"QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP\",";
-   json += "\"net_r\":" + JsonNumber(quoteNetR, 6) + ",";
-   json += "\"holding_seconds\":" + IntegerToString((int)(exitTimeUtc - g_shadowEntryTimeUtc)) + ",";
+   json += "\"cost_completeness\":\"SPREAD_AND_CONFIGURED_SLIPPAGE_EXCLUDES_COMMISSION_SWAP\",";
+   json += "\"net_r\":" + JsonNumber(modeledNetR, 6) + ",";
+   json += "\"holding_seconds\":" + IntegerToString((int)(exitTimeUtc - g_shadowEntryTimeUtc));
    json += "}}";
    string response = "";
    bool sent = PostForwardShadowJson(json, response);
    if(sent)
       Print("[GOLD SHADOW] virtual_exit_saved entry_id=", g_shadowEntryId,
-            " reason=", exitReason, " quote_net_r=", DoubleToString(quoteNetR, 4),
-            " cost_status=QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP");
+            " reason=", exitReason, " modeled_net_r=", DoubleToString(modeledNetR, 4),
+            " configured_exit_slippage=", DoubleToString(exitSlippage, 3),
+            " cost_status=SPREAD_AND_CONFIGURED_SLIPPAGE_EXCLUDES_COMMISSION_SWAP");
    return sent;
 }
 
@@ -1721,6 +1732,7 @@ int OnInit()
          return INIT_FAILED;
       }
       if(ForwardShadowExpectedStopSlippagePrice < 0.0 ||
+         ForwardShadowExpectedExitSlippagePrice < 0.0 ||
          TrimText(ForwardShadowCostModelVersion) == "")
       {
          Print("[GOLD SHADOW] initialization refused: expected stop slippage or cost model version invalid.");
