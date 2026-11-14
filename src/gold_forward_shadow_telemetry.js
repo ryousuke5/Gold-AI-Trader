@@ -10,6 +10,8 @@ const isoTime = (value) => {
 };
 const validSide = (value) => ['BUY', 'SELL'].includes(String(value || '').toUpperCase());
 
+const directionForSide = (side) => side === 'BUY' ? 1 : -1;
+
 /**
  * Builds entry-time H1 context exclusively from completed H1 bars.
  * recentH1 rows must carry timestamp (bar open), close, EMA20/50/200 and ATR14.
@@ -87,6 +89,11 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
   const threeBack = contiguous.at(-4);
   const oneBack = contiguous.at(-2);
   const atr = latest.atr14;
+  const lastThreeDirectionalSteps = contiguous.slice(-3).map((bar, index, items) => {
+    if (index === 0) return null;
+    return directionForSide(normalizedSide) * (bar.ema20 - items[index - 1].ema20);
+  }).filter((value) => value !== null);
+  const slopeAgreementCount = lastThreeDirectionalSteps.filter((value) => value > 0).length;
   const direction = normalizedSide === 'BUY' ? 1 : -1;
   const aligned = (bar) => normalizedSide === 'BUY'
     ? bar.close > bar.ema20 && bar.ema20 > bar.ema50 && bar.ema50 > bar.ema200
@@ -109,6 +116,8 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
     h1_ema20_slope_3bar_atr: (latest.ema20 - threeBack.ema20) / atr,
     h1_directional_ema20_slope_1bar_atr: direction * (latest.ema20 - oneBack.ema20) / atr,
     h1_directional_ema20_slope_3bar_atr: direction * (latest.ema20 - threeBack.ema20) / atr,
+    h1_directional_ema20_slope_agreement_count_last3: slopeAgreementCount,
+    h1_directional_ema20_slope_agreement_ratio_last3: slopeAgreementCount / 3,
     h1_ema20_ema50_gap_atr: (latest.ema20 - latest.ema50) / atr,
     h1_directional_ema20_ema50_gap_atr: direction * (latest.ema20 - latest.ema50) / atr,
     h1_close_ema20_gap_atr: (latest.close - latest.ema20) / atr,
@@ -128,6 +137,7 @@ export function buildGoldForwardPathMetrics({
   side,
   entryPrice,
   stopPrice,
+  targetPrice = null,
   bars = [],
 } = {}) {
   const normalizedSide = String(side || '').toUpperCase();
@@ -192,7 +202,7 @@ export function buildGoldForwardPathMetrics({
     }
 
     const stopHit = direction > 0 ? low <= stop : high >= stop;
-    const target = numberOrNull(bar.targetPrice ?? bar.target_price);
+    const target = numberOrNull(bar.targetPrice ?? bar.target_price ?? targetPrice);
     const targetHit = target !== null && target > 0
       ? (direction > 0 ? high >= target : low <= target)
       : false;
@@ -276,6 +286,9 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const entry = Number(payload.entry_price);
     const stop = Number(payload.stop_price);
     const target = Number(payload.target_price);
+    if (Date.parse(entryTime.value) < Date.parse(signalTime.value)) {
+      return { ok: false, error: 'entry_time_must_not_precede_signal_time' };
+    }
     if (side === 'BUY' ? !(stop < entry && target > entry) : !(target < entry && stop > entry)) {
       return { ok: false, error: 'entry_stop_target_direction_mismatch' };
     }
@@ -289,6 +302,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
       stop_price: stop,
       target_price: target,
       risk_distance_price: riskDistance,
+      expected_entry_price: validPrice(payload.expected_entry_price) ? Number(payload.expected_entry_price) : null,
       entry_bid: validPrice(payload.entry_bid) ? Number(payload.entry_bid) : null,
       entry_ask: validPrice(payload.entry_ask) ? Number(payload.entry_ask) : null,
       spread_price: finite(payload.spread_price) && Number(payload.spread_price) >= 0 ? Number(payload.spread_price) : null,
