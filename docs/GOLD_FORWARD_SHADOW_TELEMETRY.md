@@ -41,12 +41,12 @@ Send one ENTRY event when a research strategy creates a virtual entry. Define vi
   "strategy_version": "gold-m5-h1-v2",
   "side": "BUY",
   "features": {
-    "bar_time": 1794639300,
+    "bar_time": 1794639600,
     "recent_h1": [
-      { "time": 1794625200, "open": 2495.0, "high": 2500.0, "low": 2493.0, "close": 2499.0, "ema20": 2497.0, "ema50": 2496.0, "ema200": 2494.0, "atr14": 8.0 },
-      { "time": 1794628800, "open": 2499.0, "high": 2504.0, "low": 2497.0, "close": 2503.0, "ema20": 2499.0, "ema50": 2497.0, "ema200": 2494.5, "atr14": 8.0 },
-      { "time": 1794632400, "open": 2503.0, "high": 2506.0, "low": 2500.0, "close": 2505.0, "ema20": 2501.0, "ema50": 2498.0, "ema200": 2495.0, "atr14": 8.0 },
-      { "time": 1794636000, "open": 2505.0, "high": 2508.0, "low": 2502.0, "close": 2507.0, "ema20": 2503.0, "ema50": 2499.0, "ema200": 2495.5, "atr14": 8.0 }
+      { "time": 1794628800, "open": 2495.0, "high": 2500.0, "low": 2493.0, "close": 2499.0, "ema20": 2497.0, "ema50": 2496.0, "ema200": 2494.0, "atr14": 8.0 },
+      { "time": 1794632400, "open": 2499.0, "high": 2504.0, "low": 2497.0, "close": 2503.0, "ema20": 2499.0, "ema50": 2497.0, "ema200": 2494.5, "atr14": 8.0 },
+      { "time": 1794636000, "open": 2503.0, "high": 2506.0, "low": 2500.0, "close": 2505.0, "ema20": 2501.0, "ema50": 2498.0, "ema200": 2495.0, "atr14": 8.0 },
+      { "time": 1794639600, "open": 2505.0, "high": 2508.0, "low": 2502.0, "close": 2507.0, "ema20": 2503.0, "ema50": 2499.0, "ema200": 2495.5, "atr14": 8.0 }
     ]
   },
   "payload": {
@@ -73,7 +73,7 @@ Send one ENTRY event when a research strategy creates a virtual entry. Define vi
 
 The ENTRY fill price is executable-side: BUY uses Ask; SELL uses Bid. `signal_reference_bid`, `stop_price`, and `target_price` are BID-chart values. The server checks that `spread_price` equals `entry_ask - entry_bid`. The caller supplies the expected stop-side fill and the frozen cost model inputs: for BUY, `expected_stop_fill_price = stop_price - expected_stop_slippage_price`; for SELL, `expected_stop_fill_price = stop_price + expected_stop_spread_price + expected_stop_slippage_price`. All expected costs must be nonnegative and the expected stop fill must be on the loss side of the entry. The server calculates `effective_risk_distance_price = abs(entry_price - expected_stop_fill_price)`. It separately calculates `raw_stop_distance_bid = abs(signal_reference_bid - stop_price)`. Never use the raw BID distance as the R denominator. `entry_slippage_price_signed` is reconstructed from the actual executable entry price and the observed entry quote. `cost_model_version` is mandatory so different cost conventions cannot be mixed.
 
-The server calculates and saves entry-time H1 context from `features.recent_h1` (or `recentH1`). Each H1 row must be a completed candle and include its open timestamp, close, EMA20, EMA50, EMA200, and ATR14. H1 EMA20 slope is reported over 1 and 3 completed bars, normalized by H1 ATR; EMA alignment age is the consecutive aligned-bar count at entry.
+The server calculates and saves entry-time H1 context from `features.recent_h1` (or `recentH1`). Each H1 row must be a completed candle and include its UTC candle-close timestamp, close, EMA20, EMA50, EMA200, and ATR14. H1 EMA20 slope is reported over 1 and 3 completed bars, normalized by H1 ATR; EMA alignment age is the consecutive aligned-bar count at entry.
 
 If there are fewer than four contiguous completed H1 bars, telemetry records an explicit insufficient-history or H1-gap quality status. It does not substitute the current, possibly unfinished H1 candle.
 
@@ -169,7 +169,7 @@ The repository copy used for this branch contains the Node.js API and research s
 Before any Forward/Paper observation starts, the EA integration must:
 1. Generate a stable `entry_id` per virtual setup and submit ENTRY once.
 2. Include only completed H1 bars in `recent_h1`, with EMA20/50/200 and ATR14 calculated at each bar close.
-3. Submit every completed M5 candle as BAR, preserving UTC candle-open time and independently tick-aggregated Bid OHLC and Ask OHLC.
+3. Submit every completed M5 candle as BAR, preserving UTC candle-close time and independently tick-aggregated Bid OHLC and Ask OHLC.
 4. Submit GAP on disconnect or missing history and EXIT when the virtual position resolves.
 5. Record actual XM Bid/Ask, virtual executable entry fill, expected stop spread/slippage, actual entry spread, and a frozen `cost_model_version`. Calculate R from the actual entry fill to expected executable stop fill; also store raw BID stop geometry.
 6. Never call OrderSend from this telemetry path and never use the telemetry response to authorize orders.
