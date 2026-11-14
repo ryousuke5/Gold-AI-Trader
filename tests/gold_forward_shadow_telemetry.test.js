@@ -468,3 +468,25 @@ test('ENTRY rejects fills that are not on the executable quote side', () => {
   assert.equal(badSell.ok, false);
   assert.equal(badSell.error, 'entry_quote_and_stop_cost_model_fields_required_or_inconsistent');
 });
+
+
+test('BAR rejects incomplete intervals that are not explicitly marked partial', () => {
+  const result = normalizeGoldForwardShadowEvent({
+    entry_id: 'paper-entry-full-short-1',
+    symbol: 'GOLD#',
+    strategy_version: 'gold-m5-h1-v2',
+    side: 'BUY',
+    event_type: 'BAR',
+    payload: {
+      segments_since_entry: 1,
+      bar_time_utc: '2026-11-01T05:05:00Z',
+      is_partial: false,
+      bar_duration_seconds: 299,
+      bid_ohlc: { open: 100, high: 101, low: 99.5, close: 100.8 },
+      ask_ohlc: { open: 100.1, high: 101.1, low: 99.6, close: 100.9 },
+      tick_data_quality: 'BID_ASK_TICK_AGGREGATED'
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'invalid_or_missing_bid_ask_ohlc');
+});
