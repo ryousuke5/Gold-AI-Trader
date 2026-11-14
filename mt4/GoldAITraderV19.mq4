@@ -27,6 +27,7 @@ input int    TickRecoverySamples = 3;
 input int    MaxQuoteAgeSeconds = 30;
 input bool   EnableSafetyHeartbeat = true;
 input int    SafetyHeartbeatSeconds = 15;
+#define SHADOW_OBSERVATION_HORIZON_SECONDS 1800
 
 datetime g_lastClosedM5Bar = 0;
 datetime g_lastAttemptedM5Bar = 0;
@@ -1400,6 +1401,20 @@ void UpdateForwardShadowOnTick()
       {
          Print("[GOLD SHADOW] virtual_position_completed entry_id=", g_shadowEntryId,
                " reason=", exitReason, " orders_executed=false");
+         ClearShadowState();
+      }
+   }
+   else if(tickUtc - g_shadowEntryTimeUtc >= SHADOW_OBSERVATION_HORIZON_SECONDS)
+   {
+      // Fixed 30-minute observation window only. This is not a V2 strategy exit.
+      int partialDuration = (int)(tickUtc - g_shadowCurrentBarStartUtc);
+      if(partialDuration <= 0) partialDuration = 1;
+      if(!SendShadowBar(tickUtc, true, partialDuration)) return;
+      if(SendShadowExit(tickUtc, bid, ask, "TIME"))
+      {
+         Print("[GOLD SHADOW] observation_horizon_complete entry_id=", g_shadowEntryId,
+               " horizon_seconds=", SHADOW_OBSERVATION_HORIZON_SECONDS,
+               " orders_executed=false");
          ClearShadowState();
       }
    }
