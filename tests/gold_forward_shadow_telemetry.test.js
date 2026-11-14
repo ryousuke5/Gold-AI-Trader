@@ -42,6 +42,8 @@ test('H1 telemetry uses only completed H1 candles and reports directional trend 
   assert.ok(Math.abs(result.h1_ema20_slope_3bar_atr - 0.3) < 1e-9);
   assert.ok(Math.abs(result.h1_directional_ema20_slope_3bar_atr - 0.3) < 1e-9);
   assert.equal(result.h1_ema_alignment_age_bars, 5);
+  assert.equal(result.h1_directional_ema20_slope_agreement_count_last3, 3);
+  assert.equal(result.h1_directional_ema20_slope_agreement_ratio_last3, 1);
   assert.equal(result.h1_directionally_aligned, true);
   assert.equal(result.latest_completed_h1_open_time_utc, new Date((BASE + 4 * HOUR) * 1000).toISOString());
 });
@@ -145,8 +147,9 @@ test('MFE/MAE flags a same-candle stop and target touch as ambiguous', () => {
     side: 'BUY',
     entryPrice: 100,
     stopPrice: 98,
+    targetPrice: 102,
     bars: [
-      { time: BASE, open: 100, high: 103, low: 97, close: 100, targetPrice: 102 }
+      { time: BASE, open: 100, high: 103, low: 97, close: 100 }
     ]
   });
   assert.equal(result.first_exit_barrier, 'AMBIGUOUS_STOP_AND_TARGET_SAME_BAR');
@@ -288,4 +291,24 @@ test('MFE/MAE rejects reverse-ordered bars instead of hiding a timestamp error',
   });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'non_ascending_m5_bar_time');
+});
+
+
+test('ENTRY rejects a virtual fill timestamp before the signal timestamp', () => {
+  const result = normalizeGoldForwardShadowEvent({
+    event_type: 'ENTRY',
+    entry_id: 'paper-entry-0005',
+    symbol: 'GOLD#',
+    strategy_version: 'gold-m5-h1-v2',
+    side: 'BUY',
+    payload: {
+      signal_time_utc: '2026-11-01T05:00:00Z',
+      entry_time_utc: '2026-11-01T04:59:59Z',
+      entry_price: 100,
+      stop_price: 98,
+      target_price: 104
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'entry_time_must_not_precede_signal_time');
 });
