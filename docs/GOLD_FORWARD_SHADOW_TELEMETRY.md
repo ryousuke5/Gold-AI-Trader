@@ -165,25 +165,45 @@ The pure helper `buildGoldForwardPathMetrics` consumes a chronologically ordered
 
 This OHLC method cannot determine intrabar sequence. If a candle reaches both a threshold or both BID stop and target, keep the ambiguity label; do not choose a sequence from OHLC. Tick-aggregated Ask/Bid bars provide quote-side extrema, but they still do not reveal the order in which extrema occurred. Preserve raw tick ordering separately when available.
 
-## Current implementation boundary / EA handoff
+## Current implementation boundary and EA status
 
-The repository copy used for this branch contains the Node.js API and research strategy modules, but no GOLD V19 MQL4 source file was located. Therefore this commit adds the API, data table migration, validation, metrics, and tests; it does not claim that MT4 is already sending these events.
+The research-only MT4 implementation is present in `mt4/GoldAITraderV19.mq4` on this branch. It is not enabled by default and has not been compiled in MetaEditor or connected to a research service as part of this change.
 
-Before any Forward/Paper observation starts, the EA integration must:
-1. Generate a stable `entry_id` per virtual setup and submit ENTRY once.
-2. Include only completed H1 bars in `recent_h1`, with EMA20/50/200 and ATR14 calculated at each bar close.
-3. Submit every completed M5 candle as BAR, preserving UTC candle-close time and independently tick-aggregated Bid OHLC and Ask OHLC. Mark the initial and exit-truncated intervals as partial.
-4. Submit GAP on disconnect, EA restart, stale quote, or missing history and EXIT when the virtual position resolves. GAP events preserve the full interval up to 31 days (including weekend closures).
-5. Record actual XM Bid/Ask, virtual executable entry fill, expected stop spread/slippage, actual entry spread, and a frozen `cost_model_version`. The current EA default expected stop slippage is a configured 0.05 price-unit estimate, not a claim of measured stop slippage; every ENTRY stores the exact value and formula version. Calculate R from the actual entry fill to expected executable stop fill; also store raw BID stop geometry.
-6. Never call OrderSend from this telemetry path and never use the telemetry response to authorize orders.
+### EA controls and entry eligibility
 
-## Validation and activation order
+- `EnableForwardShadowTelemetry=false` by default.
+- `ForwardShadowApiBaseUrl=""` and `ForwardShadowApiKey=""` by default.
+- The EA refuses initialization if telemetry is enabled while `AllowAutoOrders=true`, if the shadow URL is not HTTPS, if the shadow host matches `ApiBaseUrl`, or if the shadow key is missing / reused from `ApiKey`.
+- A virtual ENTRY is considered only when the API candidate and deterministic decision agree on BUY/SELL, risk is approved, market safety is allowed, remote mode is exactly `ANALYSIS`, remote `auto_trading_enabled=false`, and `order_allowed=false`.
+- The existing signal request is still sent to `ApiBaseUrl`; only the research ENTRY/BAR/GAP/EXIT event stream is posted to the distinct `ForwardShadowApiBaseUrl` with `ForwardShadowApiKey`. Keep the signal endpoint in ANALYSIS mode with automatic trading disabled.
+- The EA contains no `OrderSend`, `OrderClose`, or `OrderModify` calls. The shadow state is a virtual observation and cannot submit, close, or modify a broker order.
 
-1. Run `npm test` on this research branch.
-2. Apply the SQL migration only to the intended test / research Supabase project.
-3. Exercise ENTRY/BAR/GAP/EXIT with synthetic events; verify duplicate posts do not create duplicate rows.
-4. Verify the dashboard / query can reconstruct one complete path and flags missing bars.
-5. Only then wire the MT4 EA to this endpoint in Forward/Paper monitor-only mode.
-6. Keep the telemetry collecting until the pre-registered comparison groups have enough completed observations. Small samples remain `UNDETERMINED`.
+### Data collection behavior
 
-Do not modify GOLD V2 Strict filters, stop/target logic, risk percentage, session window, spread cap, runtime mode, auto-trading, or V19 order permission as part of this research.
+- The signal payload includes up to 24 completed H1 bars with EMA20/50/200 and ATR14 calculated at the matching completed bar shift, plus the existing completed M5 series.
+- One virtual position is tracked at a time. New BUY/SELL candidates that arrive while one shadow position remains active are not opened as a second virtual position; this limits overlap and must be considered when comparing the collected sample to multi-position backtests.
+- The virtual entry is priced at Ask for BUY and Bid for SELL. The EA records the observed entry Bid/Ask and uses the current spread as the expected stop-side spread proxy for SELL. The configured stop-slippage assumption defaults to 0.05 price units. This is a documented cost-model assumption, not a claim of measured stop-fill slippage.
+- On each MT4 tick, Bid and Ask OHLC are independently aggregated from actual quote ticks. Ask OHLC is not synthesized by adding a fixed spread to Bid OHLC.
+- Every M5 interval is sent as a BAR event. Initial partial intervals and exit-truncated intervals are tagged partial and have an explicit duration. Stale tick / missing interval conditions send GAP. A recovered active virtual position is restored from terminal Global Variables and attempts to write the prior partial bar and a GAP before resuming.
+- Logical SL/TP touches are evaluated from BID quotes for both directions; the recorded close fill is BID for BUY and ASK for SELL.
+- The current EA resolves a virtual position on logical STOP or TARGET. It does not currently impose an independent TIME exit. A position that reaches neither barrier can remain active and suppress new virtual entries; monitor this behavior during the test.
+- EXIT reports `QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP`. It is not fully net-of-commission/swap expectancy. Keep this field visible in any report and do not compare it directly to fully cost-adjusted backtest returns.
+
+### Activation sequence — do not skip
+
+1. Compile the branch's `mt4/GoldAITraderV19.mq4` in MetaEditor and inspect all compiler warnings/errors. The GitHub tests are static-source and Node.js tests; they do not replace an actual MT4 compile.
+2. Create/use a dedicated research Render service for the API endpoint and a dedicated research Supabase project. Do not use the production Render service or production Supabase for this branch's event table.
+3. Configure the research API service with its own `GOLD_API_KEY` and apply only `supabase/migrations/202611140001_gold_forward_shadow_events.sql` to the research database. Confirm the table exists, RLS is enabled, and the API can persist a synthetic event.
+4. On a separate demo / analysis MT4 terminal, leave `AllowAutoOrders=false`. Keep `EnableForwardShadowTelemetry=false` until the dedicated API and schema checks pass. Then configure a distinct HTTPS `ForwardShadowApiBaseUrl` and a separate `ForwardShadowApiKey`.
+5. Add both API hosts to MT4's WebRequest allowed list. Check Experts logs for `[GOLD SHADOW]` and confirm ENTRY/BAR/GAP/EXIT rows in the research table.
+6. Run at least one synthetic BUY and SELL path through ENTRY/BAR/GAP/EXIT and verify idempotency, data-gap handling, executable quote-side calculations, and same-candle ambiguity.
+7. Only after all above checks should telemetry be enabled for a small, monitored Forward/Paper collection window. Do not change the production EA, production strategy settings, runtime state, order gate, or the production service.
+
+## Known limitations before real collection
+
+- The +0.25R / -0.50R early movement labels are descriptive thresholds only. They do not manage positions.
+- M5 tick-aggregated OHLC provides accurate quote-side extrema but not the intrabar order of those extrema. Same-bar thresholds or SL/TP touches remain ambiguous; do not infer which occurred first.
+- The expected stop-slippage input and SELL stop-spread proxy are model assumptions. A later comparison should separate observed entry spread, assumed stop spread, assumed stop slippage, actual virtual exit quote, and any commission/swap not included.
+- One virtual position at a time and no TIME exit can create selection / holding-period differences versus historical backtests. Report ignored overlapping candidates and still-open positions before drawing conclusions.
+- An MT4 terminal restart creates an explicit GAP; data across that interval is incomplete and must not be treated as a complete price path.
+- No research service has been deployed and no SQL migration has been applied as part of this branch work. Forward/Paper collection has therefore not started.
