@@ -202,7 +202,13 @@ export function buildGoldForwardPathMetrics({
     const time = numberOrNull(bar.time ?? bar.bar_time_epoch) ?? epochSeconds(bar.bar_time_utc);
     const bid = normalizeOhlc(bar.bid_ohlc, 'BID');
     const ask = normalizeOhlc(bar.ask_ohlc, 'ASK');
-    if (time === null || !bid || !ask || bar.tick_data_quality !== 'BID_ASK_TICK_AGGREGATED' ||
+    const isPartial = bar.is_partial === true;
+    const barDurationSeconds = numberOrNull(bar.bar_duration_seconds) ?? 300;
+    if (!(time > 0) || !Number.isInteger(time) ||
+        !(barDurationSeconds > 0 && barDurationSeconds <= 300) ||
+        (!isPartial && (time % 300 !== 0 || barDurationSeconds !== 300)) ||
+        (entryEpochSeconds !== null && time < entryEpochSeconds) ||
+        !bid || !ask || bar.tick_data_quality !== 'BID_ASK_TICK_AGGREGATED' ||
         ask.open < bid.open || ask.high < bid.high ||
         ask.low < bid.low || ask.close < bid.close) {
       return { ok: false, error: 'invalid_or_missing_bid_ask_ohlc', bar_index: index + 1 };
@@ -252,14 +258,13 @@ export function buildGoldForwardPathMetrics({
       firstExitBarrierTime = new Date(time * 1000).toISOString();
     }
 
-    const elapsedSeconds = entryEpochSeconds === null ? null : Math.max(0, time - entryEpochSeconds);
-    const barDurationSeconds = numberOrNull(bar.bar_duration_seconds) ?? 300;
+    const elapsedSeconds = entryEpochSeconds === null ? null : time - entryEpochSeconds;
     path.push({
       segments_since_entry: index + 1,
       bar_time_utc: new Date(time * 1000).toISOString(),
       elapsed_seconds: elapsedSeconds,
       bar_duration_seconds: barDurationSeconds,
-      is_partial: bar.is_partial === true,
+      is_partial: isPartial,
       mfe_r: Number(mfeR.toFixed(6)),
       mae_r: Number(maeR.toFixed(6)),
       close_progress_r: Number(closeProgressR.toFixed(6)),
@@ -270,11 +275,11 @@ export function buildGoldForwardPathMetrics({
 
   const at = (segmentCount) => path.find((point) => point.segments_since_entry === segmentCount) || null;
   const atElapsed = (seconds) => path.find((point) => point.elapsed_seconds !== null && point.elapsed_seconds >= seconds) || null;
-  const firstWithin = (count) => path.find((point) =>
+  const firstThresholdPoint = path.find((point) =>
     point.favorable_0_25r_touched || point.adverse_0_50r_touched
-  )?.segments_since_entry <= count
-    ? path.find((point) => point.favorable_0_25r_touched || point.adverse_0_50r_touched).segments_since_entry
-    : null;
+  ) || null;
+  const firstWithin = (count) => firstThresholdPoint && firstThresholdPoint.segments_since_entry <= count
+    ? firstThresholdPoint.segments_since_entry : null;
 
   return {
     ok: true,
