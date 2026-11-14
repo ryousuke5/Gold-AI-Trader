@@ -42,7 +42,7 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
       atr14: numberOrNull(bar?.atr14)
     }))
     .filter((bar) =>
-      bar.time !== null &&
+      bar.time !== null && bar.time > 0 &&
       bar.time % 3600 === 0 &&
       bar.close !== null &&
       bar.ema20 !== null &&
@@ -350,9 +350,9 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
       return { ok: false, error: 'entry_time_must_not_precede_signal_time' };
     }
     const featureBarTime = numberOrNull(features.barTime ?? features.bar_time);
-    if (featureBarTime !== null && featureBarTime > 0 &&
-        (featureBarTime % 300 !== 0 || epochSeconds(signalTime.value) % 300 !== 0 ||
-         Math.abs(epochSeconds(signalTime.value) - (featureBarTime + 300)) > 1)) {
+    if (!(featureBarTime > 0) || featureBarTime % 300 !== 0 ||
+        epochSeconds(signalTime.value) % 300 !== 0 ||
+        Math.abs(epochSeconds(signalTime.value) - (featureBarTime + 300)) > 1) {
       return { ok: false, error: 'signal_time_does_not_match_completed_m5_bar' };
     }
     if (signalReferenceBid === null || !(signalReferenceBid > 0) ||
@@ -455,8 +455,9 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const exitSpread = numberOrNull(payload.exit_spread_price);
     const exitPrice = Number(payload.exit_price);
     if (exitBid === null || exitAsk === null || !(exitBid > 0) || !(exitAsk >= exitBid) ||
-        exitSpread === null || exitSpread < 0 || Math.abs(exitSpread - (exitAsk - exitBid)) > 1e-6) {
-      return { ok: false, error: 'exit_bid_ask_and_consistent_spread_required' };
+        exitSpread === null || exitSpread < 0 || Math.abs(exitSpread - (exitAsk - exitBid)) > 1e-6 ||
+        (side === 'BUY' && exitPrice > exitBid) || (side === 'SELL' && exitPrice < exitAsk)) {
+      return { ok: false, error: 'exit_bid_ask_spread_or_executable_fill_side_invalid' };
     }
     const exitReason = cleanText(payload.exit_reason, 24).toUpperCase();
     if (!['STOP', 'TARGET', 'TIME', 'MANUAL', 'DATA_GAP', 'OTHER'].includes(exitReason)) return { ok: false, error: 'invalid_exit_reason' };
