@@ -1,4 +1,4 @@
-# GOLD Forward/Paper Shadow Telemetry v1
+# GOLD Forward/Paper Shadow Telemetry v2
 
 Status: research-only implementation on `research/gold-forward-loss-telemetry-20261114`.
 
@@ -17,7 +17,7 @@ This is an observation pipeline only. It does not select a strategy, approve ris
 - BUY entries and exits use ASK and BID respectively; SELL entries and exits use BID and ASK respectively.
 - Strategy SL/TP triggers remain BID logical levels for both directions.
 - R is the executable entry-fill to expected executable stop-fill distance. Raw BID stop geometry is recorded separately.
-- The +0.25R / -0.50R early-path labels are fixed in telemetry v1 and are never used to manage a position.
+- The +0.25R / -0.50R early-path labels are fixed in telemetry v2 and are never used to manage a position.
 - If the same candle reaches both thresholds, or both SL and TP, label the sequence ambiguous. Do not guess intrabar order from OHLC alone.
 - DATA_GAP is a separate event and must not be converted to a win or loss.
 
@@ -120,7 +120,7 @@ M5 candle times must be ascending and must not be replaced by repeated candles. 
 
 ### EXIT
 
-Send EXIT once the virtual position is resolved. Net R must include the same cost convention used for the entry; retain gross R separately where available.
+Send EXIT once the virtual position is resolved. `exit_price` is the actual executable close fill: BUY closes on BID; SELL closes on ASK. Submit both exit quotes and a spread matching `exit_ask - exit_bid`; the server records the quote side and reconstructs signed adverse slippage (positive means adverse). Net R must use the ENTRY event's `effective_risk_distance_price` and include the same cost convention, commission and swap; retain gross R separately where available.
 
 ```json
 {
@@ -131,13 +131,16 @@ Send EXIT once the virtual position is resolved. Net R must include the same cos
   "side": "BUY",
   "payload": {
     "exit_time_utc": "2026-11-14T07:35:00.000Z",
-    "exit_price": 2498.30,
+    "exit_price": 2498.28,
+    "exit_bid": 2498.30,
+    "exit_ask": 2498.42,
     "exit_reason": "STOP",
     "gross_r": -1.0,
     "net_r": -1.06,
     "holding_seconds": 2100,
     "exit_spread_price": 0.12,
-    "exit_slippage_price": 0.02,
+    "commission_account_currency": 0,
+    "swap_account_currency": 0,
     "data_gap_seconds": 0
   }
 }
@@ -145,7 +148,7 @@ Send EXIT once the virtual position is resolved. Net R must include the same cos
 
 ## M5 path metric calculation
 
-The pure helper `buildGoldForwardPathMetrics` consumes a chronologically ordered list of completed Bid/Ask OHLC candles, executable virtual entry fill, BID logical stop/target, expected executable stop fill, and effective risk distance. It returns:
+The pure helper `buildGoldForwardPathMetrics` consumes a chronologically ordered list of completed Bid/Ask OHLC candles, executable virtual entry fill, BID logical stop/target, expected executable stop fill, and effective risk distance. Each bar must be explicitly tagged `BID_ASK_TICK_AGGREGATED`; missing ASK bars or unverified one-sided OHLC are rejected. It returns:
 
 - Cumulative MFE_R and MAE_R after every bar.
 - Close progress in R after each bar.
