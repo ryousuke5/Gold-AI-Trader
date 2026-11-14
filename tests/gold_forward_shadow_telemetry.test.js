@@ -38,9 +38,9 @@ test('H1 telemetry uses only completed H1 candles and reports directional trend 
 
   assert.equal(result.quality, 'OK');
   assert.equal(result.completed_h1_bars_used, 5);
-  assert.equal(result.h1_ema20_slope_1bar_atr, 0.1);
-  assert.equal(result.h1_ema20_slope_3bar_atr, 0.3);
-  assert.equal(result.h1_directional_ema20_slope_3bar_atr, 0.3);
+  assert.ok(Math.abs(result.h1_ema20_slope_1bar_atr - 0.1) < 1e-9);
+  assert.ok(Math.abs(result.h1_ema20_slope_3bar_atr - 0.3) < 1e-9);
+  assert.ok(Math.abs(result.h1_directional_ema20_slope_3bar_atr - 0.3) < 1e-9);
   assert.equal(result.h1_ema_alignment_age_bars, 5);
   assert.equal(result.h1_directionally_aligned, true);
   assert.equal(result.latest_completed_h1_open_time_utc, new Date((BASE + 4 * HOUR) * 1000).toISOString());
@@ -49,7 +49,7 @@ test('H1 telemetry uses only completed H1 candles and reports directional trend 
 test('H1 telemetry direction-normalizes SELL and flags gaps in the completed H1 series', () => {
   const falling = h1Series().map((bar) => ({
     ...bar,
-    close: 110 - (bar.time - BASE) / HOUR,
+    close: 106 - (bar.time - BASE) / HOUR,
     ema20: 108 - (bar.time - BASE) / HOUR,
     ema50: 110 - (bar.time - BASE) / HOUR,
     ema200: 113 - (bar.time - BASE) / HOUR
@@ -273,4 +273,19 @@ test('shadow event validation rejects unknown event types and non-GOLD symbols',
     payload: {}
   });
   assert.equal(result.error, 'gold_symbol_required');
+});
+
+
+test('MFE/MAE rejects reverse-ordered bars instead of hiding a timestamp error', () => {
+  const result = buildGoldForwardPathMetrics({
+    side: 'BUY',
+    entryPrice: 100,
+    stopPrice: 98,
+    bars: [
+      { time: BASE + 300, open: 100, high: 101, low: 99, close: 100.5 },
+      { time: BASE, open: 100.5, high: 101, low: 100, close: 100.2 }
+    ]
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'non_ascending_m5_bar_time');
 });
