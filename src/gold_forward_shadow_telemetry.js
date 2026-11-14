@@ -129,8 +129,6 @@ export function buildGoldForwardPathMetrics({
   entryPrice,
   stopPrice,
   bars = [],
-  favorableThresholdR = 0.25,
-  adverseThresholdR = 0.5
 } = {}) {
   const normalizedSide = String(side || '').toUpperCase();
   const entry = numberOrNull(entryPrice);
@@ -141,8 +139,9 @@ export function buildGoldForwardPathMetrics({
   }
   if (!Array.isArray(bars)) return { ok: false, error: 'bars_must_be_array' };
   const direction = normalizedSide === 'BUY' ? 1 : -1;
-  const favorableLevel = Math.max(0, Number(favorableThresholdR) || 0.25);
-  const adverseLevel = Math.max(0, Number(adverseThresholdR) || 0.5);
+  // Fixed thresholds are pre-registered for this telemetry version: +0.25R and -0.50R.
+  const favorableLevel = 0.25;
+  const adverseLevel = 0.5;
   let mfeR = 0;
   let maeR = 0;
   let firstThreshold = null;
@@ -166,8 +165,11 @@ export function buildGoldForwardPathMetrics({
       return { ok: false, error: 'invalid_ohlc_bar', bar_index: index + 1 };
     }
 
+    if (previousTime !== null && time <= previousTime) {
+      return { ok: false, error: 'non_ascending_m5_bar_time', bar_index: index + 1 };
+    }
     if (previousTime !== null && time - previousTime !== 300) {
-      const gap = Math.abs(time - previousTime);
+      const gap = time - previousTime;
       dataGapCount += 1;
       maxGapSeconds = Math.max(maxGapSeconds, gap);
     }
@@ -255,7 +257,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     ? body.payload : {};
   if (!['ENTRY', 'BAR', 'GAP', 'EXIT'].includes(eventType)) return { ok: false, error: 'unsupported_event_type' };
   if (entryId.length < 8) return { ok: false, error: 'entry_id_required' };
-  if (!/^(XAUUSD|GOLD)([.#][A-Z0-9]+)?$/i.test(symbol)) return { ok: false, error: 'gold_symbol_required' };
+  if (!/^(XAUUSD|GOLD)([.#][A-Z0-9]*)?$/i.test(symbol)) return { ok: false, error: 'gold_symbol_required' };
   if (!strategyVersion) return { ok: false, error: 'strategy_version_required' };
   if (!validSide(side)) return { ok: false, error: 'side_must_be_BUY_or_SELL' };
   if (JSON.stringify(payload).length > 16000) return { ok: false, error: 'payload_too_large' };
