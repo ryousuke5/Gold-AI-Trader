@@ -242,6 +242,7 @@ test('ENTRY rejects stop/target geometry that contradicts its direction', () => 
   const result = normalizeGoldForwardShadowEvent({
     event_type: 'ENTRY', entry_id: 'paper-entry-0002', symbol: 'XAUUSD',
     strategy_version: 'test', side: 'BUY',
+    features: { barTime: BASE + 5 * HOUR - 300, recentH1: h1Series() },
     payload: entryPayload({
       signal_reference_bid: 100, stop_price: 101, target_price: 102,
       entry_price: 100.1, entry_bid: 100, entry_ask: 100.1,
@@ -320,6 +321,17 @@ test('BAR, GAP, and EXIT events have stable idempotency keys and validated times
   assert.equal(exit.row.payload.net_r, -1.04);
   assert.equal(exit.row.payload.exit_quote_side, 'ASK');
   assert.ok(Math.abs(exit.row.payload.exit_slippage_price_signed) < 1e-9);
+
+  const badExitSide = normalizeGoldForwardShadowEvent({
+    ...common, event_type: 'EXIT',
+    payload: {
+      exit_time_utc: '2026-11-01T05:40:00Z',
+      exit_price: 98, exit_bid: 98, exit_ask: 98.1, exit_spread_price: 0.1,
+      exit_reason: 'STOP', net_r: -1, holding_seconds: 2400
+    }
+  });
+  assert.equal(badExitSide.ok, false);
+  assert.equal(badExitSide.error, 'exit_bid_ask_spread_or_executable_fill_side_invalid');
 });
 
 test('shadow event validation rejects unknown event types and non-GOLD symbols', () => {
