@@ -44,7 +44,6 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
     }))
     .filter((bar) =>
       bar.time !== null && bar.time > 0 &&
-      bar.time % 3600 === 0 &&
       bar.close !== null &&
       bar.ema20 !== null &&
       bar.ema50 !== null &&
