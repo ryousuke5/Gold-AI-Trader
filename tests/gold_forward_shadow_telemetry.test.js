@@ -287,7 +287,7 @@ test('BAR, GAP, and EXIT events have stable idempotency keys and validated times
     }
   });
   assert.equal(bar.ok, true);
-  assert.equal(bar.row.event_key, 'paper-entry-0003:BAR:2026-11-01T05:05:00.000Z');
+  assert.equal(bar.row.event_key, 'paper-entry-0003:BAR:2026-11-01T05:05:00.000Z:1');
   assert.equal(bar.row.payload.ask_ohlc.close, 99.6);
   assert.equal(bar.row.payload.bar_duration_seconds, 300);
 
@@ -405,4 +405,26 @@ test('EXIT refuses to label quote-only results as fully cost-adjusted without co
   });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'explicit_cost_completeness_required');
+});
+
+
+test('BAR event keys include sequence numbers for same-second partial segments', () => {
+  const common = {
+    entry_id: 'paper-entry-sequence-1',
+    symbol: 'GOLD#',
+    strategy_version: 'gold-m5-h1-v2',
+    side: 'BUY',
+    event_type: 'BAR'
+  };
+  const payload = {
+    bar_time_utc: '2026-11-01T05:05:00Z',
+    is_partial: true,
+    bar_duration_seconds: 1,
+    bid_ohlc: { open: 100, high: 100.1, low: 99.9, close: 100 },
+    ask_ohlc: { open: 100.1, high: 100.2, low: 100, close: 100.1 },
+    tick_data_quality: 'BID_ASK_TICK_AGGREGATED'
+  };
+  const first = normalizeGoldForwardShadowEvent({ ...common, payload: { ...payload, bars_since_entry: 1 } });
+  const second = normalizeGoldForwardShadowEvent({ ...common, payload: { ...payload, bars_since_entry: 2 } });
+  assert.notEqual(first.row.event_key, second.row.event_key);
 });
