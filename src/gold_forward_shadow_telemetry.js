@@ -1,4 +1,4 @@
-const finite = (value) => Number.isFinite(Number(value));
+const finite = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
 const numberOrNull = (value) => finite(value) ? Number(value) : null;
 const epochSeconds = (value) => {
   const parsed = Date.parse(String(value || ''));
