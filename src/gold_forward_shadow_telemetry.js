@@ -158,6 +158,7 @@ export function buildGoldForwardPathMetrics({
   expectedStopFillPrice,
   effectiveRiskDistancePrice,
   rawStopDistanceBid = null,
+  entryTimeUtc = null,
   bars = []
 } = {}) {
   const normalizedSide = String(side || '').toUpperCase();
@@ -167,6 +168,7 @@ export function buildGoldForwardPathMetrics({
   const expectedStopFill = numberOrNull(expectedStopFillPrice);
   const suppliedRiskDistance = numberOrNull(effectiveRiskDistancePrice);
   const rawGeometryDistance = numberOrNull(rawStopDistanceBid);
+  const entryEpochSeconds = epochSeconds(entryTimeUtc);
   if (!validSide(normalizedSide) || !(entry > 0) || !(stopBid > 0) ||
       !(targetBid > 0) || !(expectedStopFill > 0) || !(suppliedRiskDistance > 0)) {
     return { ok: false, error: 'side_entry_bid_stop_target_expected_stop_fill_and_effective_risk_required' };
@@ -210,7 +212,7 @@ export function buildGoldForwardPathMetrics({
     if (previousTime !== null && time <= previousTime) {
       return { ok: false, error: 'non_ascending_m5_bar_time', bar_index: index + 1 };
     }
-    if (previousTime !== null && time - previousTime !== 300) {
+    if (previousTime !== null && time - previousTime > 300) {
       const gap = time - previousTime;
       dataGapCount += 1;
       maxGapSeconds = Math.max(maxGapSeconds, gap);
@@ -251,9 +253,14 @@ export function buildGoldForwardPathMetrics({
       firstExitBarrierTime = new Date(time * 1000).toISOString();
     }
 
+    const elapsedSeconds = entryEpochSeconds === null ? null : Math.max(0, time - entryEpochSeconds);
+    const barDurationSeconds = numberOrNull(bar.bar_duration_seconds) ?? 300;
     path.push({
       bars_since_entry: index + 1,
       bar_time_utc: new Date(time * 1000).toISOString(),
+      elapsed_seconds: elapsedSeconds,
+      bar_duration_seconds: barDurationSeconds,
+      is_partial: bar.is_partial === true,
       mfe_r: Number(mfeR.toFixed(6)),
       mae_r: Number(maeR.toFixed(6)),
       close_progress_r: Number(closeProgressR.toFixed(6)),
@@ -263,6 +270,7 @@ export function buildGoldForwardPathMetrics({
   }
 
   const at = (barCount) => path.find((point) => point.bars_since_entry === barCount) || null;
+  const atElapsed = (seconds) => path.find((point) => point.elapsed_seconds !== null && point.elapsed_seconds >= seconds) || null;
   const firstWithin = (count) => path.find((point) =>
     point.favorable_0_25r_touched || point.adverse_0_50r_touched
   )?.bars_since_entry <= count
@@ -292,6 +300,8 @@ export function buildGoldForwardPathMetrics({
     first_exit_barrier_time_utc: firstExitBarrierTime,
     after_3_bars: at(3),
     after_6_bars: at(6),
+    after_15_minutes: atElapsed(900),
+    after_30_minutes: atElapsed(1800),
     path
   };
 }
@@ -418,9 +428,14 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const bid = normalizeOhlc(payload.bid_ohlc, 'BID');
     const ask = normalizeOhlc(payload.ask_ohlc, 'ASK');
     const tickDataQuality = cleanText(payload.tick_data_quality, 40);
+    const isPartial = payload.is_partial === true;
+    const barDurationSeconds = numberOrNull(payload.bar_duration_seconds);
     const closeSpread = bid && ask ? ask.close - bid.close : null;
     const reportedSpread = numberOrNull(payload.spread_price);
+    const durationValid = barDurationSeconds !== null && barDurationSeconds > 0 && barDurationSeconds <= 300;
+    const timeValid = isPartial || epochSeconds(barTime.value) % 300 === 0;
     if (!Number.isInteger(index) || index < 1 || index > 10000 || !bid || !ask ||
+        !durationValid || !timeValid ||
         tickDataQuality !== 'BID_ASK_TICK_AGGREGATED' || ask.open < bid.open || ask.high < bid.high ||
         ask.low < bid.low || ask.close < bid.close || !(closeSpread >= 0) ||
         (reportedSpread !== null && (reportedSpread < 0 || Math.abs(reportedSpread - closeSpread) > 1e-6))) {
@@ -429,6 +444,8 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     normalizedPayload = {
       bars_since_entry: index,
       bar_time_utc: barTime.value,
+      is_partial: isPartial,
+      bar_duration_seconds: barDurationSeconds,
       bid_ohlc: { open: bid.open, high: bid.high, low: bid.low, close: bid.close },
       ask_ohlc: { open: ask.open, high: ask.high, low: ask.low, close: ask.close },
       spread_price: closeSpread,
