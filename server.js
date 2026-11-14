@@ -9,7 +9,7 @@ import { buildGoldH1M5HalfbackV1Setup } from './src/gold_h1_m5_halfback_v1.js';
 import { buildGoldV2H1TrendDiagnostics } from './src/gold_h1_trend_diagnostics.js';
 import { analyzeWithOpenAI } from './src/ai.js';
 import { evaluateRisk, getRiskLimits, safeDecision } from './src/risk.js';
-import { dbEnabled, getRiskBySignal, getSignalByKey, getState, insertEvent, insertOrder, insertRisk, insertSignal, insertTradeResult, probeGoldDatabase, updateState } from './src/db.js';
+import { dbEnabled, getRiskBySignal, getSignalByKey, getState, insertEvent, insertGoldForwardShadowEvent, insertOrder, insertRisk, insertSignal, insertTradeResult, probeGoldDatabase, updateState } from './src/db.js';
 import { registerEurUsdRoutes } from './src/eurusd.js';
 import { startEurUsdNewsFeedMonitor } from './src/eurusd_news_feed.js';
 import { buildForwardMonitorSnapshot } from './src/forward_monitor.js';
@@ -19,6 +19,7 @@ import { evaluateGoldMarketSafety } from './src/gold_market_safety.js';
 import { recordGoldMarketSafetyHeartbeat } from './src/gold_market_safety_telemetry.js';
 import { recordGoldSignalEvaluated, recordGoldSignalOutcome, recordGoldSignalRequest, recordGoldSignalTimeRejection } from './src/gold_diagnostics.js';
 import { buildGoldPostTrace } from './src/gold_post_trace.js';
+import { normalizeGoldForwardShadowEvent } from './src/gold_forward_shadow_telemetry.js';
 
 const app=express();
 const __filename=fileURLToPath(import.meta.url);
@@ -146,6 +147,28 @@ app.get('/api/forward-monitor',auth,async(req,res)=>{
   } catch(error) {
     console.error('[forward-monitor]',error);
     res.status(500).json({ok:false,error:error.message||'forward monitor failed'});
+  }
+});
+
+app.post('/api/gold/forward-shadow/event',auth,async(req,res)=>{
+  const parsed=normalizeGoldForwardShadowEvent(req.body||{});
+  if(!parsed.ok)return res.status(400).json({ok:false,error:parsed.error});
+  if(!dbEnabled())return res.status(503).json({ok:false,error:'database_not_configured'});
+  try {
+    const saved=await insertGoldForwardShadowEvent(parsed.row);
+    if(!saved?.persisted)return res.status(503).json({ok:false,error:'shadow_event_not_persisted'});
+    res.status(saved.duplicate?200:201).json({
+      ok:true,event_key:parsed.row.event_key,event_type:parsed.row.event_type,
+      persisted:true,duplicate:saved.duplicate===true,orders_executed:false,
+      execution_mode:'MONITOR_ONLY'
+    });
+  } catch(error) {
+    const code=String(error?.code||'');
+    if(code==='PGRST205'||code==='42P01') {
+      return res.status(503).json({ok:false,error:'shadow_telemetry_schema_missing',migration:'supabase/migrations/202611140001_gold_forward_shadow_events.sql'});
+    }
+    console.error('[gold/forward-shadow/event]',error);
+    return res.status(500).json({ok:false,error:'shadow_event_persist_failed'});
   }
 });
 
