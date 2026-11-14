@@ -1147,6 +1147,18 @@ void ResetShadowBar(string sym, datetime tickUtc, double bid, double ask)
    PersistShadowState();
 }
 
+void ResetShadowSegment(string sym, datetime tickUtc, double bid, double ask)
+{
+   int offsetSeconds = 0;
+   if(!GetServerUtcOffsetSeconds(offsetSeconds)) return;
+   g_shadowCurrentBarOpenServer = iTime(sym, PERIOD_M5, 0);
+   g_shadowCurrentBarStartUtc = tickUtc;
+   g_shadowBidOpen = bid; g_shadowBidHigh = bid; g_shadowBidLow = bid; g_shadowBidClose = bid;
+   g_shadowAskOpen = ask; g_shadowAskHigh = ask; g_shadowAskLow = ask; g_shadowAskClose = ask;
+   g_shadowLastTickUtc = tickUtc;
+   PersistShadowState();
+}
+
 void UpdateShadowBarQuotes(datetime tickUtc, double bid, double ask)
 {
    if(g_shadowBidOpen <= 0.0)
@@ -1323,21 +1335,24 @@ void UpdateForwardShadowOnTick()
    }
    else
    {
-      if(g_shadowLastTickUtc > 0 && tickUtc - g_shadowLastTickUtc > 300)
+      if(g_shadowLastTickUtc > 0 &&
+         tickUtc - g_shadowLastTickUtc > MathMax(5, MaxQuoteAgeSeconds))
       {
          int priorDuration = (int)(g_shadowLastTickUtc - g_shadowCurrentBarStartUtc);
          if(priorDuration > 0 && !SendShadowBar(g_shadowLastTickUtc, true, priorDuration)) return;
-         if(!SendShadowGap(g_shadowLastTickUtc, tickUtc, "missing_ticks_or_connection_gap")) return;
-         ResetShadowBar(sym, tickUtc, bid, ask);
+         if(!SendShadowGap(g_shadowLastTickUtc, tickUtc, "stale_quote_or_missing_ticks")) return;
+         ResetShadowSegment(sym, tickUtc, bid, ask);
       }
       else if(currentBarOpen != g_shadowCurrentBarOpenServer)
       {
          int offsetSeconds = 0;
          if(!GetServerUtcOffsetSeconds(offsetSeconds)) return;
          datetime priorCloseUtc = g_shadowCurrentBarOpenServer + 300 - offsetSeconds;
-         if(g_shadowLastTickUtc >= priorCloseUtc - 1)
+         int duration = (int)(priorCloseUtc - g_shadowCurrentBarStartUtc);
+         // A last quote within the configured freshness window is sufficient
+         // to complete the OHLC bar; sparse ticks near the close are not a gap.
+         if(tickUtc - g_shadowLastTickUtc <= MathMax(5, MaxQuoteAgeSeconds))
          {
-            int duration = (int)(priorCloseUtc - g_shadowCurrentBarStartUtc);
             if(!SendShadowBar(priorCloseUtc, duration < 300, duration)) return;
          }
          else
@@ -1349,7 +1364,7 @@ void UpdateForwardShadowOnTick()
             }
             if(g_shadowLastTickUtc > 0 && tickUtc > g_shadowLastTickUtc)
             {
-               if(!SendShadowGap(g_shadowLastTickUtc, tickUtc, "m5_interval_without_complete_tick_path")) return;
+               if(!SendShadowGap(g_shadowLastTickUtc, tickUtc, "m5_interval_without_fresh_quote")) return;
             }
          }
          ResetShadowBar(sym, tickUtc, bid, ask);
