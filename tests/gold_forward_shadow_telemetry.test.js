@@ -12,7 +12,7 @@ const BASE = Date.parse('2026-11-01T00:00:00.000Z') / 1000;
 
 function h1Series(count = 5) {
   return Array.from({ length: count }, (_, index) => ({
-    time: BASE + index * HOUR,
+    time: BASE + (index + 1) * HOUR,
     open: 100 + index, high: 104 + index, low: 99 + index,
     close: 103 + index, ema20: 101 + index, ema50: 99 + index,
     ema200: 96 + index, atr14: 10
@@ -50,7 +50,7 @@ test('H1 telemetry uses only completed H1 candles and reports directional trend 
     ema20: 106, ema50: 104, ema200: 101, atr14: 10
   });
   const result = buildGoldForwardH1Telemetry({
-    barTime: BASE + 5 * HOUR - 300, recentH1
+    barTime: BASE + 5 * HOUR, recentH1
   }, 'BUY');
   assert.equal(result.quality, 'OK');
   assert.equal(result.completed_h1_bars_used, 5);
@@ -61,7 +61,7 @@ test('H1 telemetry uses only completed H1 candles and reports directional trend 
   assert.equal(result.h1_directional_ema20_slope_agreement_count_last3, 3);
   assert.equal(result.h1_directional_ema20_slope_agreement_ratio_last3, 1);
   assert.equal(result.h1_directionally_aligned, true);
-  assert.equal(result.latest_completed_h1_open_time_utc, new Date((BASE + 4 * HOUR) * 1000).toISOString());
+  assert.equal(result.latest_completed_h1_close_time_utc, new Date((BASE + 4 * HOUR) * 1000).toISOString());
 });
 
 test('H1 telemetry direction-normalizes SELL and flags gaps in completed H1 series', () => {
@@ -73,25 +73,25 @@ test('H1 telemetry direction-normalizes SELL and flags gaps in completed H1 seri
     ema200: 113 - (bar.time - BASE) / HOUR
   }));
   const result = buildGoldForwardH1Telemetry({
-    barTime: BASE + 5 * HOUR - 300, recentH1: falling
+    barTime: BASE + 5 * HOUR, recentH1: falling
   }, 'SELL');
   assert.equal(result.quality, 'OK');
   assert.ok(result.h1_directional_ema20_slope_3bar_atr > 0);
   assert.equal(result.h1_directionally_aligned, true);
   const withGap = h1Series().filter((bar) => bar.time !== BASE + 3 * HOUR);
   const gap = buildGoldForwardH1Telemetry({
-    barTime: BASE + 5 * HOUR - 300, recentH1: withGap
+    barTime: BASE + 5 * HOUR, recentH1: withGap
   }, 'BUY');
   assert.equal(gap.quality, 'H1_GAP');
 });
 
 test('H1 telemetry refuses unfinished or incomplete EMA history', () => {
   assert.equal(buildGoldForwardH1Telemetry({
-    barTime: BASE + 5 * HOUR - 300, recentH1: h1Series(3)
+    barTime: BASE + 5 * HOUR, recentH1: h1Series(3)
   }, 'BUY').quality, 'INSUFFICIENT_HISTORY');
   const missing = h1Series().map(({ ema200, ...bar }) => bar);
   assert.equal(buildGoldForwardH1Telemetry({
-    barTime: BASE + 5 * HOUR - 300, recentH1: missing
+    barTime: BASE + 5 * HOUR, recentH1: missing
   }, 'BUY').quality, 'INSUFFICIENT_HISTORY');
 });
 
@@ -206,7 +206,7 @@ test('ENTRY calculates effective risk from executable entry and expected stop fi
   const entry = normalizeGoldForwardShadowEvent({
     event_type: 'ENTRY', entry_id: 'paper-entry-0001', symbol: 'GOLD#',
     strategy_version: 'gold-m5-h1-v2', side: 'BUY',
-    features: { barTime: BASE + 5 * HOUR - 300, recentH1: h1Series() },
+    features: { barTime: BASE + 5 * HOUR, recentH1: h1Series() },
     payload: entryPayload()
   });
   assert.equal(entry.ok, true);
@@ -224,7 +224,7 @@ test('SELL ENTRY calculates spread and stop slippage into its effective risk dis
   const sell = normalizeGoldForwardShadowEvent({
     event_type: 'ENTRY', entry_id: 'paper-entry-sell-1', symbol: 'GOLD#',
     strategy_version: 'gold-m5-h1-v2', side: 'SELL',
-    features: { barTime: BASE + 5 * HOUR - 300, recentH1: h1Series() },
+    features: { barTime: BASE + 5 * HOUR, recentH1: h1Series() },
     payload: entryPayload({
       entry_price: 104.9, signal_reference_bid: 105, stop_price: 107,
       target_price: 101, expected_stop_fill_price: 107.2,
@@ -242,7 +242,7 @@ test('ENTRY rejects stop/target geometry that contradicts its direction', () => 
   const result = normalizeGoldForwardShadowEvent({
     event_type: 'ENTRY', entry_id: 'paper-entry-0002', symbol: 'XAUUSD',
     strategy_version: 'test', side: 'BUY',
-    features: { barTime: BASE + 5 * HOUR - 300, recentH1: h1Series() },
+    features: { barTime: BASE + 5 * HOUR, recentH1: h1Series() },
     payload: entryPayload({
       signal_reference_bid: 100, stop_price: 101, target_price: 102,
       entry_price: 100.1, entry_bid: 100, entry_ask: 100.1,
@@ -263,7 +263,7 @@ test('ENTRY rejects invalid timestamps and signal time mismatch', () => {
   const signalMismatch = normalizeGoldForwardShadowEvent({
     event_type: 'ENTRY', entry_id: 'paper-entry-0006', symbol: 'GOLD#',
     strategy_version: 'gold-m5-h1-v2', side: 'BUY',
-    features: { barTime: BASE + 5 * HOUR - 300, recentH1: h1Series() },
+    features: { barTime: BASE + 5 * HOUR, recentH1: h1Series() },
     payload: entryPayload({ signal_time_utc: '2026-11-01T05:00:20Z' })
   });
   assert.equal(signalMismatch.error, 'signal_time_does_not_match_completed_m5_bar');
