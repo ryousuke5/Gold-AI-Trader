@@ -129,7 +129,7 @@ test('SELL MFE/MAE uses executable ASK exit OHLC while logical barriers use BID'
     rawStopDistanceBid: 2,
     bars: [
       dualBar(BASE, { open: 100, high: 100.4, low: 99.4, close: 99.6 }, 0.1),
-      dualBar(BASE + 300, { open: 99.6, high: 101.1, low: 98.8, close: 99.1 }, 0.1)
+      dualBar(BASE + 300, { open: 99.6, high: 100.8, low: 98.8, close: 99.1 }, 0.1)
     ]
   });
   assert.equal(sell.ok, true);
@@ -137,7 +137,7 @@ test('SELL MFE/MAE uses executable ASK exit OHLC while logical barriers use BID'
   assert.equal(sell.expected_stop_fill_quote_side, 'ASK');
   assert.equal(sell.first_threshold, 'FAVORABLE_0_25R');
   assert.equal(sell.after_3_bars, null);
-  assert.ok(Math.abs(sell.path[1].mae_r - (101.2 - 100) / 2.15) < 1e-6);
+  assert.ok(Math.abs(sell.path[1].mae_r - (100.9 - 100) / 2.15) < 1e-6);
 });
 
 test('MFE/MAE marks same-bar favorable/adverse threshold touches ambiguous', () => {
