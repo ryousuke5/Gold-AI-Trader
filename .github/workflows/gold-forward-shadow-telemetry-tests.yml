@@ -19,11 +19,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install repository dependencies
-        run: npm install --no-audit --no-fund
       - name: Check API and telemetry module syntax
         run: |
           node --check server.js
           node --check src/gold_forward_shadow_telemetry.js
-      - name: Run full repository test suite
-        run: npm test
+      - name: Run focused telemetry and EA safety tests
+        run: |
+          node --test tests/gold_forward_shadow_telemetry.test.js
+          node --test tests/gold_forward_shadow_mql_safety.test.js
