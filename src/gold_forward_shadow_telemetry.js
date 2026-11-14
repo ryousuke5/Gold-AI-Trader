@@ -129,27 +129,56 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
 }
 
 /**
- * Calculates MFE/MAE and early-path labels from completed M5 candles.
- * These are descriptive labels only. They must never be used to alter an
- * open position, signal eligibility, stop, target, or order permission.
+ * Calculates MFE/MAE in executable quote space from completed Bid/Ask M5 bars.
+ * Strategy stop/target barriers remain BID logical levels for both directions.
+ * R is normalized by entry fill to expected executable stop fill, not by raw
+ * distance to a BID technical stop.
  */
+function normalizeOhlc(value, name) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const result = {
+    open: numberOrNull(value.open),
+    high: numberOrNull(value.high),
+    low: numberOrNull(value.low),
+    close: numberOrNull(value.close)
+  };
+  if (Object.values(result).some((n) => n === null) ||
+      !(result.high >= result.low && result.high >= result.open && result.high >= result.close &&
+        result.low <= result.open && result.low <= result.close)) return null;
+  return { ...result, source: name };
+}
+
 export function buildGoldForwardPathMetrics({
   side,
   entryPrice,
   stopPrice,
-  targetPrice = null,
-  bars = [],
+  targetPrice,
+  expectedStopFillPrice,
+  effectiveRiskDistancePrice,
+  bars = []
 } = {}) {
   const normalizedSide = String(side || '').toUpperCase();
   const entry = numberOrNull(entryPrice);
-  const stop = numberOrNull(stopPrice);
-  const riskDistance = entry !== null && stop !== null ? Math.abs(entry - stop) : 0;
-  if (!validSide(normalizedSide) || !(entry > 0) || !(stop > 0) || !(riskDistance > 0)) {
-    return { ok: false, error: 'valid_side_entry_price_and_stop_price_required' };
+  const stopBid = numberOrNull(stopPrice);
+  const targetBid = numberOrNull(targetPrice);
+  const expectedStopFill = numberOrNull(expectedStopFillPrice);
+  const suppliedRiskDistance = numberOrNull(effectiveRiskDistancePrice);
+  if (!validSide(normalizedSide) || !(entry > 0) || !(stopBid > 0) ||
+      !(targetBid > 0) || !(expectedStopFill > 0) || !(suppliedRiskDistance > 0)) {
+    return { ok: false, error: 'side_entry_bid_stop_target_expected_stop_fill_and_effective_risk_required' };
+  }
+  if (normalizedSide === 'BUY'
+    ? !(stopBid < entry && targetBid > entry && expectedStopFill < entry)
+    : !(targetBid < entry && stopBid > entry && expectedStopFill > entry)) {
+    return { ok: false, error: 'entry_stop_target_geometry_mismatch' };
+  }
+  const calculatedRiskDistance = Math.abs(entry - expectedStopFill);
+  if (Math.abs(calculatedRiskDistance - suppliedRiskDistance) > 1e-8) {
+    return { ok: false, error: 'effective_risk_distance_mismatch' };
   }
   if (!Array.isArray(bars)) return { ok: false, error: 'bars_must_be_array' };
   const direction = normalizedSide === 'BUY' ? 1 : -1;
-  // Fixed thresholds are pre-registered for this telemetry version: +0.25R and -0.50R.
+  // Fixed thresholds are pre-registered for telemetry v1: +0.25R and -0.50R.
   const favorableLevel = 0.25;
   const adverseLevel = 0.5;
   let mfeR = 0;
@@ -166,13 +195,12 @@ export function buildGoldForwardPathMetrics({
   for (let index = 0; index < bars.length; index++) {
     const bar = bars[index] || {};
     const time = numberOrNull(bar.time ?? bar.bar_time_epoch);
-    const open = numberOrNull(bar.open);
-    const high = numberOrNull(bar.high);
-    const low = numberOrNull(bar.low);
-    const close = numberOrNull(bar.close);
-    if (time === null || open === null || high === null || low === null || close === null ||
-        !(high >= low && high >= open && high >= close && low <= open && low <= close)) {
-      return { ok: false, error: 'invalid_ohlc_bar', bar_index: index + 1 };
+    const bid = normalizeOhlc(bar.bid_ohlc, 'BID');
+    const ask = normalizeOhlc(bar.ask_ohlc, 'ASK');
+    if (time === null || !bid || !ask ||
+        ask.open < bid.open || ask.high < bid.high ||
+        ask.low < bid.low || ask.close < bid.close) {
+      return { ok: false, error: 'invalid_or_missing_bid_ask_ohlc', bar_index: index + 1 };
     }
 
     if (previousTime !== null && time <= previousTime) {
@@ -185,15 +213,23 @@ export function buildGoldForwardPathMetrics({
     }
     previousTime = time;
 
-    const favorableMove = direction * (direction > 0 ? high - entry : low - entry);
-    const adverseMove = -direction * (direction > 0 ? low - entry : high - entry);
-    const closeMove = direction * (close - entry);
-    mfeR = Math.max(mfeR, favorableMove / riskDistance, 0);
-    maeR = Math.max(maeR, adverseMove / riskDistance, 0);
-    const closeProgressR = closeMove / riskDistance;
+    // Positions are liquidated on BID for BUY and ASK for SELL.
+    const executableExit = normalizedSide === 'BUY' ? bid : ask;
+    const favorableMove = normalizedSide === 'BUY'
+      ? executableExit.high - entry
+      : entry - executableExit.low;
+    const adverseMove = normalizedSide === 'BUY'
+      ? entry - executableExit.low
+      : executableExit.high - entry;
+    const closeMove = normalizedSide === 'BUY'
+      ? executableExit.close - entry
+      : entry - executableExit.close;
+    mfeR = Math.max(mfeR, favorableMove / suppliedRiskDistance, 0);
+    maeR = Math.max(maeR, adverseMove / suppliedRiskDistance, 0);
+    const closeProgressR = closeMove / suppliedRiskDistance;
 
-    const favorableHit = favorableMove >= favorableLevel * riskDistance;
-    const adverseHit = adverseMove >= adverseLevel * riskDistance;
+    const favorableHit = favorableMove >= favorableLevel * suppliedRiskDistance;
+    const adverseHit = adverseMove >= adverseLevel * suppliedRiskDistance;
     if (firstThreshold === null && (favorableHit || adverseHit)) {
       firstThreshold = favorableHit && adverseHit
         ? 'AMBIGUOUS_SAME_BAR'
@@ -201,11 +237,9 @@ export function buildGoldForwardPathMetrics({
       firstThresholdTime = new Date(time * 1000).toISOString();
     }
 
-    const stopHit = direction > 0 ? low <= stop : high >= stop;
-    const target = numberOrNull(bar.targetPrice ?? bar.target_price ?? targetPrice);
-    const targetHit = target !== null && target > 0
-      ? (direction > 0 ? high >= target : low <= target)
-      : false;
+    // Both BUY and SELL logical stop/target triggers are tested on BID OHLC.
+    const stopHit = normalizedSide === 'BUY' ? bid.low <= stopBid : bid.high >= stopBid;
+    const targetHit = normalizedSide === 'BUY' ? bid.high >= targetBid : bid.low <= targetBid;
     if (firstExitBarrier === null && (stopHit || targetHit)) {
       firstExitBarrier = stopHit && targetHit
         ? 'AMBIGUOUS_STOP_AND_TARGET_SAME_BAR'
@@ -225,19 +259,32 @@ export function buildGoldForwardPathMetrics({
   }
 
   const at = (barCount) => path.find((point) => point.bars_since_entry === barCount) || null;
+  const firstWithin = (count) => path.find((point) =>
+    point.favorable_0_25r_touched || point.adverse_0_50r_touched
+  )?.bars_since_entry <= count
+    ? path.find((point) => point.favorable_0_25r_touched || point.adverse_0_50r_touched).bars_since_entry
+    : null;
+
   return {
     ok: true,
-    schema_version: 1,
+    schema_version: 2,
     side: normalizedSide,
-    entry_price: entry,
-    stop_price: stop,
-    risk_distance_price: riskDistance,
+    entry_price_executable: entry,
+    entry_quote_side: normalizedSide === 'BUY' ? 'ASK' : 'BID',
+    stop_price_bid: stopBid,
+    target_price_bid: targetBid,
+    expected_stop_fill_price_executable: expectedStopFill,
+    expected_stop_fill_quote_side: normalizedSide === 'BUY' ? 'BID' : 'ASK',
+    raw_stop_distance_bid: null,
+    effective_risk_distance_price: suppliedRiskDistance,
     bars_observed: path.length,
     data_gap_count: dataGapCount,
     max_gap_seconds: maxGapSeconds,
-    first_threshold,
+    first_threshold: firstThreshold,
     first_threshold_time_utc: firstThresholdTime,
-    first_exit_barrier,
+    first_threshold_within_3_bars: firstWithin(3),
+    first_threshold_within_6_bars: firstWithin(6),
+    first_exit_barrier: firstExitBarrier,
     first_exit_barrier_time_utc: firstExitBarrierTime,
     after_3_bars: at(3),
     after_6_bars: at(6),
@@ -286,6 +333,11 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const entry = Number(payload.entry_price);
     const stop = Number(payload.stop_price);
     const target = Number(payload.target_price);
+    const expectedStopFill = numberOrNull(payload.expected_stop_fill_price);
+    const entryBid = numberOrNull(payload.entry_bid);
+    const entryAsk = numberOrNull(payload.entry_ask);
+    const spreadPrice = numberOrNull(payload.spread_price);
+    const costModelVersion = cleanText(payload.cost_model_version, 80);
     if (Date.parse(entryTime.value) < Date.parse(signalTime.value)) {
       return { ok: false, error: 'entry_time_must_not_precede_signal_time' };
     }
@@ -294,24 +346,41 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
         Math.abs(epochSeconds(signalTime.value) - (featureBarTime + 300)) > 1) {
       return { ok: false, error: 'signal_time_does_not_match_completed_m5_bar' };
     }
-    if (side === 'BUY' ? !(stop < entry && target > entry) : !(target < entry && stop > entry)) {
-      return { ok: false, error: 'entry_stop_target_direction_mismatch' };
+    if (entryBid === null || entryAsk === null || !(entryAsk >= entryBid) ||
+        spreadPrice === null || spreadPrice < 0 ||
+        !costModelVersion || expectedStopFill === null || !(expectedStopFill > 0)) {
+      return { ok: false, error: 'entry_bid_ask_spread_cost_model_and_expected_stop_fill_required' };
     }
-    const riskDistance = Math.abs(entry - stop);
-    const features = body.features && typeof body.features === 'object' ? body.features : {};
-    const h1Telemetry = buildGoldForwardH1Telemetry(features, side);
+    if (side === 'BUY' ? !(stop < entryBid && target > entryBid && expectedStopFill < entry)
+                       : !(target < entryBid && stop > entryBid && expectedStopFill > entry)) {
+      return { ok: false, error: 'entry_stop_target_or_expected_fill_direction_mismatch' };
+    }
+    const effectiveRiskDistance = Math.abs(entry - expectedStopFill);
+    if (!(effectiveRiskDistance > 0)) {
+      return { ok: false, error: 'effective_risk_distance_must_be_positive' };
+    }
+    const rawStopDistanceBid = Math.abs(entryBid - stop);
+    const featuresForH1 = body.features && typeof body.features === 'object' ? body.features : {};
+    const h1Telemetry = buildGoldForwardH1Telemetry(featuresForH1, side);
     normalizedPayload = {
       signal_time_utc: signalTime.value,
       entry_time_utc: entryTime.value,
       entry_price: entry,
-      stop_price: stop,
-      target_price: target,
-      risk_distance_price: riskDistance,
+      entry_quote_side: side === 'BUY' ? 'ASK' : 'BID',
+      entry_bid: entryBid,
+      entry_ask: entryAsk,
+      entry_spread_price: spreadPrice,
+      stop_price_bid: stop,
+      target_price_bid: target,
+      expected_stop_fill_price: expectedStopFill,
+      expected_stop_fill_quote_side: side === 'BUY' ? 'BID' : 'ASK',
+      raw_stop_distance_bid: rawStopDistanceBid,
+      effective_risk_distance_price: effectiveRiskDistance,
+      risk_basis: 'ENTRY_FILL_TO_EXPECTED_STOP_FILL',
+      cost_model_version: costModelVersion,
       expected_entry_price: validPrice(payload.expected_entry_price) ? Number(payload.expected_entry_price) : null,
-      entry_bid: validPrice(payload.entry_bid) ? Number(payload.entry_bid) : null,
-      entry_ask: validPrice(payload.entry_ask) ? Number(payload.entry_ask) : null,
-      spread_price: finite(payload.spread_price) && Number(payload.spread_price) >= 0 ? Number(payload.spread_price) : null,
       entry_slippage_price: finite(payload.entry_slippage_price) ? Number(payload.entry_slippage_price) : null,
+      expected_stop_slippage_price: finite(payload.expected_stop_slippage_price) ? Number(payload.expected_stop_slippage_price) : null,
       quote_age_seconds: finite(payload.quote_age_seconds) && Number(payload.quote_age_seconds) >= 0 ? Number(payload.quote_age_seconds) : null,
       setup_diagnostics: payload.setup_diagnostics && typeof payload.setup_diagnostics === 'object' ? payload.setup_diagnostics : {},
       market_safety: payload.market_safety && typeof payload.market_safety === 'object' ? payload.market_safety : {},
@@ -322,19 +391,21 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const barTime = requireIso(payload.bar_time_utc, 'bar_time_utc');
     if (barTime.error) return { ok: false, error: barTime.error };
     const index = Number(payload.bars_since_entry);
-    const ohlc = ['open', 'high', 'low', 'close'].map((key) => Number(payload[key]));
-    if (!Number.isInteger(index) || index < 1 || index > 10000 ||
-        !ohlc.every(Number.isFinite) || !(ohlc[1] >= ohlc[2] && ohlc[1] >= ohlc[0] &&
-        ohlc[1] >= ohlc[3] && ohlc[2] <= ohlc[0] && ohlc[2] <= ohlc[3])) {
-      return { ok: false, error: 'invalid_bar_index_or_ohlc' };
+    const bid = normalizeOhlc(payload.bid_ohlc, 'BID');
+    const ask = normalizeOhlc(payload.ask_ohlc, 'ASK');
+    if (!Number.isInteger(index) || index < 1 || index > 10000 || !bid || !ask ||
+        ask.open < bid.open || ask.high < bid.high ||
+        ask.low < bid.low || ask.close < bid.close) {
+      return { ok: false, error: 'invalid_or_missing_bid_ask_ohlc' };
     }
     normalizedPayload = {
       bars_since_entry: index,
       bar_time_utc: barTime.value,
-      open: ohlc[0], high: ohlc[1], low: ohlc[2], close: ohlc[3],
+      bid_ohlc: { open: bid.open, high: bid.high, low: bid.low, close: bid.close },
+      ask_ohlc: { open: ask.open, high: ask.high, low: ask.low, close: ask.close },
       spread_price: finite(payload.spread_price) && Number(payload.spread_price) >= 0 ? Number(payload.spread_price) : null,
       quote_age_seconds: finite(payload.quote_age_seconds) && Number(payload.quote_age_seconds) >= 0 ? Number(payload.quote_age_seconds) : null,
-      tick_data_quality: cleanText(payload.tick_data_quality || 'BAR_OHLC_ONLY', 40)
+      tick_data_quality: cleanText(payload.tick_data_quality || 'BID_ASK_OHLC', 40)
     };
     eventTime = barTime.value;
   } else if (eventType === 'GAP') {
