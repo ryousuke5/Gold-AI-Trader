@@ -289,6 +289,11 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     if (Date.parse(entryTime.value) < Date.parse(signalTime.value)) {
       return { ok: false, error: 'entry_time_must_not_precede_signal_time' };
     }
+    const featureBarTime = numberOrNull(features.barTime ?? features.bar_time);
+    if (featureBarTime !== null && featureBarTime > 0 &&
+        Math.abs(epochSeconds(signalTime.value) - (featureBarTime + 300)) > 1) {
+      return { ok: false, error: 'signal_time_does_not_match_completed_m5_bar' };
+    }
     if (side === 'BUY' ? !(stop < entry && target > entry) : !(target < entry && stop > entry)) {
       return { ok: false, error: 'entry_stop_target_direction_mismatch' };
     }
