@@ -13,7 +13,7 @@ input bool   AllowAutoOrders = false;
 input bool   EnableForwardShadowTelemetry = false;
 input string ForwardShadowApiBaseUrl = "";
 input double ForwardShadowExpectedStopSlippagePrice = 0.05;
-input string ForwardShadowCostModelVersion = "XM_KIWAMI_ENTRY_SPREAD_PROXY_STOP_SLIP_005_V1";
+input string ForwardShadowCostModelVersion = "XM_KIWAMI_ENTRY_SPREAD_PROXY_CONFIGURED_SLIP_V1";
 input int    TimerSeconds = 1;
 input int    MagicNumber = 26092801;
 input double MaxSpreadPrice = 0.50;
@@ -1162,7 +1162,7 @@ void UpdateShadowBarQuotes(datetime tickUtc, double bid, double ask)
 
 bool StartForwardShadowFromSignal(string signalPayload, string signalResponse)
 {
-   if(!EnableForwardShadowTelemetry || !g_shadowActive == false) return false;
+   if(!EnableForwardShadowTelemetry || g_shadowActive) return false;
    if(g_shadowActive || AllowAutoOrders || !g_marketSafetyAllowed) return false;
    if(TrimText(ForwardShadowApiBaseUrl) == "" ||
       StringFind(TrimText(ForwardShadowApiBaseUrl), "https://") != 0 ||
@@ -1195,13 +1195,19 @@ bool StartForwardShadowFromSignal(string signalPayload, string signalResponse)
 
    datetime signalTimeUtc = (datetime)signalBarTimeNumber;
    datetime entryTimeUtc = CurrentQuoteTimeUtc(TradeSymbol());
-   if(signalTimeUtc <= 0 || entryTimeUtc < signalTimeUtc) return false;
+   if(signalTimeUtc <= 0 || entryTimeUtc < signalTimeUtc ||
+      entryTimeUtc - signalTimeUtc > MaxQuoteAgeSeconds) return false;
    RefreshRates();
    string sym = TradeSymbol();
    double bid = MarketInfo(sym, MODE_BID);
    double ask = MarketInfo(sym, MODE_ASK);
    double spread = ask - bid;
-   double signalBid = iClose(sym, PERIOD_M5, 1);
+   int signalOffsetSeconds = 0;
+   if(!GetServerUtcOffsetSeconds(signalOffsetSeconds)) return false;
+   datetime signalBarOpenServer = signalTimeUtc + signalOffsetSeconds - 300;
+   int signalBarShift = iBarShift(sym, PERIOD_M5, signalBarOpenServer, true);
+   if(signalBarShift < 1) return false;
+   double signalBid = iClose(sym, PERIOD_M5, signalBarShift);
    if(bid <= 0.0 || ask < bid || spread > MathMin(0.50, MaxSpreadPrice) || signalBid <= 0.0) return false;
 
    double entryFill = (side > 0 ? ask : bid);
@@ -1220,8 +1226,11 @@ bool StartForwardShadowFromSignal(string signalPayload, string signalResponse)
    double effectiveRisk = MathAbs(entryFill - expectedStopFill);
    if(effectiveRisk <= 0.0) return false;
 
+   string idSymbol = sym;
+   StringReplace(idSymbol, "#", "_");
+   StringReplace(idSymbol, ".", "_");
    string entryId = "shadow-" + IntegerToString(AccountNumber()) + "-" +
-                    StringSubstr(sym, 0, 10) + "-" +
+                    StringSubstr(idSymbol, 0, 10) + "-" +
                     IntegerToString((int)signalTimeUtc) + "-" + candidate;
    int digits = (int)MarketInfo(sym, MODE_DIGITS);
    int quoteAge = (int)MathMax(0, TimeGMT() - entryTimeUtc);
@@ -1599,6 +1608,9 @@ void OnTimer()
       g_signalFlowReason = "api_signal_request_accepted";
       g_lastClosedM5Bar = closedBar;
       Print("GoldAITrader: signal response = ", response);
+      // Optional shadow recorder only: no order path and no effect on signal/risk decisions.
+      if(EnableForwardShadowTelemetry)
+         StartForwardShadowFromSignal(payload, response);
 
       if(AllowAutoOrders)
       {
@@ -1639,6 +1651,27 @@ int OnInit()
 
    g_apiConfigReady = IsValidApiConfiguration();
 
+   if(EnableForwardShadowTelemetry)
+   {
+      if(AllowAutoOrders)
+      {
+         Print("[GOLD SHADOW] initialization refused: AllowAutoOrders must remain false.");
+         return INIT_FAILED;
+      }
+      string shadowBase = TrimText(ForwardShadowApiBaseUrl);
+      if(StringFind(shadowBase, "https://") != 0 || shadowBase == TrimText(ApiBaseUrl))
+      {
+         Print("[GOLD SHADOW] initialization refused: configure a separate HTTPS research endpoint, not ApiBaseUrl.");
+         return INIT_FAILED;
+      }
+      if(ForwardShadowExpectedStopSlippagePrice < 0.0 ||
+         TrimText(ForwardShadowCostModelVersion) == "")
+      {
+         Print("[GOLD SHADOW] initialization refused: expected stop slippage or cost model version invalid.");
+         return INIT_FAILED;
+      }
+   }
+
    if(!g_apiConfigReady)
    {
       Print("GoldAITrader: API configuration is incomplete. EA will stay attached, but signal requests are paused.");
@@ -1660,6 +1693,7 @@ int OnInit()
    }
 
    LoadMarketSafetyState();
+   LoadShadowState();
    Print("[GOLD MARKET SAFETY] state_loaded last_tick_utc=",
          TimeToString(g_lastObservedTickUtc, TIME_DATE|TIME_SECONDS),
          " last_mid=", DoubleToString(g_lastAcceptedMid, 2),
@@ -1715,4 +1749,5 @@ void OnDeinit(const int reason)
 
 void OnTick()
 {
+   UpdateForwardShadowOnTick();
 }
