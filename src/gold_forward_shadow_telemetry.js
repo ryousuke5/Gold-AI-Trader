@@ -413,6 +413,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const index = Number(payload.bars_since_entry);
     const bid = normalizeOhlc(payload.bid_ohlc, 'BID');
     const ask = normalizeOhlc(payload.ask_ohlc, 'ASK');
+    const tickDataQuality = cleanText(payload.tick_data_quality, 40);
     if (!Number.isInteger(index) || index < 1 || index > 10000 || !bid || !ask ||
         tickDataQuality !== 'BID_ASK_TICK_AGGREGATED' || ask.open < bid.open || ask.high < bid.high ||
         ask.low < bid.low || ask.close < bid.close) {
