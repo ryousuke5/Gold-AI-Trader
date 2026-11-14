@@ -43,6 +43,7 @@ export function buildGoldForwardH1Telemetry(features = {}, side = 'BUY') {
     }))
     .filter((bar) =>
       bar.time !== null &&
+      bar.time % 3600 === 0 &&
       bar.close !== null &&
       bar.ema20 !== null &&
       bar.ema50 !== null &&
@@ -142,7 +143,7 @@ function normalizeOhlc(value, name) {
     low: numberOrNull(value.low),
     close: numberOrNull(value.close)
   };
-  if (Object.values(result).some((n) => n === null) ||
+  if (Object.values(result).some((n) => n === null || !(n > 0)) ||
       !(result.high >= result.low && result.high >= result.open && result.high >= result.close &&
         result.low <= result.open && result.low <= result.close)) return null;
   return result;
@@ -350,7 +351,8 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     }
     const featureBarTime = numberOrNull(features.barTime ?? features.bar_time);
     if (featureBarTime !== null && featureBarTime > 0 &&
-        Math.abs(epochSeconds(signalTime.value) - (featureBarTime + 300)) > 1) {
+        (featureBarTime % 300 !== 0 || epochSeconds(signalTime.value) % 300 !== 0 ||
+         Math.abs(epochSeconds(signalTime.value) - (featureBarTime + 300)) > 1)) {
       return { ok: false, error: 'signal_time_does_not_match_completed_m5_bar' };
     }
     if (signalReferenceBid === null || !(signalReferenceBid > 0) ||
@@ -410,6 +412,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
   } else if (eventType === 'BAR') {
     const barTime = requireIso(payload.bar_time_utc, 'bar_time_utc');
     if (barTime.error) return { ok: false, error: barTime.error };
+    if (epochSeconds(barTime.value) % 300 !== 0) return { ok: false, error: 'bar_time_must_align_to_m5_utc_boundary' };
     const index = Number(payload.bars_since_entry);
     const bid = normalizeOhlc(payload.bid_ohlc, 'BID');
     const ask = normalizeOhlc(payload.ask_ohlc, 'ASK');
@@ -434,8 +437,13 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const to = requireIso(payload.to_time_utc, 'to_time_utc');
     if (from.error) return { ok: false, error: from.error };
     if (to.error) return { ok: false, error: to.error };
+    const fromSeconds = epochSeconds(from.value);
+    const toSeconds = epochSeconds(to.value);
     const gapSeconds = Number(payload.gap_seconds);
-    if (!Number.isFinite(gapSeconds) || gapSeconds < 0 || gapSeconds > 86400) return { ok: false, error: 'gap_seconds_out_of_range' };
+    if (!Number.isFinite(gapSeconds) || gapSeconds <= 0 || gapSeconds > 86400 ||
+        toSeconds <= fromSeconds || Math.abs((toSeconds - fromSeconds) - gapSeconds) > 1) {
+      return { ok: false, error: 'gap_interval_and_gap_seconds_must_match' };
+    }
     normalizedPayload = { from_time_utc: from.value, to_time_utc: to.value, gap_seconds: gapSeconds, reason: cleanText(payload.reason || 'missing_m5_bar', 80) };
     eventTime = to.value;
   } else {
