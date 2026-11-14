@@ -19,5 +19,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Run shadow telemetry unit tests
-        run: node --test tests/gold_forward_shadow_telemetry.test.js tests/gold_forward_shadow_mql_safety.test.js
+      - name: Check API and telemetry module syntax
+        run: |
+          node --check server.js
+          node --check src/gold_forward_shadow_telemetry.js
+      - name: Run full repository test suite
+        run: npm test
