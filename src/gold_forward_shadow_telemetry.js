@@ -255,7 +255,7 @@ export function buildGoldForwardPathMetrics({
     const elapsedSeconds = entryEpochSeconds === null ? null : Math.max(0, time - entryEpochSeconds);
     const barDurationSeconds = numberOrNull(bar.bar_duration_seconds) ?? 300;
     path.push({
-      bars_since_entry: index + 1,
+      segments_since_entry: index + 1,
       bar_time_utc: new Date(time * 1000).toISOString(),
       elapsed_seconds: elapsedSeconds,
       bar_duration_seconds: barDurationSeconds,
@@ -268,12 +268,12 @@ export function buildGoldForwardPathMetrics({
     });
   }
 
-  const at = (barCount) => path.find((point) => point.bars_since_entry === barCount) || null;
+  const at = (segmentCount) => path.find((point) => point.segments_since_entry === segmentCount) || null;
   const atElapsed = (seconds) => path.find((point) => point.elapsed_seconds !== null && point.elapsed_seconds >= seconds) || null;
   const firstWithin = (count) => path.find((point) =>
     point.favorable_0_25r_touched || point.adverse_0_50r_touched
-  )?.bars_since_entry <= count
-    ? path.find((point) => point.favorable_0_25r_touched || point.adverse_0_50r_touched).bars_since_entry
+  )?.segments_since_entry <= count
+    ? path.find((point) => point.favorable_0_25r_touched || point.adverse_0_50r_touched).segments_since_entry
     : null;
 
   return {
@@ -288,17 +288,17 @@ export function buildGoldForwardPathMetrics({
     expected_stop_fill_quote_side: normalizedSide === 'BUY' ? 'BID' : 'ASK',
     raw_stop_distance_bid: rawGeometryDistance,
     effective_risk_distance_price: suppliedRiskDistance,
-    bars_observed: path.length,
+    segments_observed: path.length,
     data_gap_count: dataGapCount,
     max_gap_seconds: maxGapSeconds,
     first_threshold: firstThreshold,
     first_threshold_time_utc: firstThresholdTime,
-    first_threshold_within_3_bars: firstWithin(3),
-    first_threshold_within_6_bars: firstWithin(6),
+    first_threshold_within_3_segments: firstWithin(3),
+    first_threshold_within_6_segments: firstWithin(6),
     first_exit_barrier: firstExitBarrier,
     first_exit_barrier_time_utc: firstExitBarrierTime,
-    after_3_bars: at(3),
-    after_6_bars: at(6),
+    after_3_segments: at(3),
+    after_6_segments: at(6),
     after_15_minutes: atElapsed(900),
     after_30_minutes: atElapsed(1800),
     path
@@ -423,7 +423,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const barTime = requireIso(payload.bar_time_utc, 'bar_time_utc');
     if (barTime.error) return { ok: false, error: barTime.error };
     if (epochSeconds(barTime.value) % 300 !== 0) return { ok: false, error: 'bar_time_must_align_to_m5_utc_boundary' };
-    const index = Number(payload.bars_since_entry);
+    const index = Number(payload.segments_since_entry);
     const bid = normalizeOhlc(payload.bid_ohlc, 'BID');
     const ask = normalizeOhlc(payload.ask_ohlc, 'ASK');
     const tickDataQuality = cleanText(payload.tick_data_quality, 40);
@@ -441,7 +441,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
       return { ok: false, error: 'invalid_or_missing_bid_ask_ohlc' };
     }
     normalizedPayload = {
-      bars_since_entry: index,
+      segments_since_entry: index,
       bar_time_utc: barTime.value,
       is_partial: isPartial,
       bar_duration_seconds: barDurationSeconds,
@@ -515,7 +515,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
   const timeKey = eventType === 'ENTRY' ? 'ENTRY'
     : eventType === 'EXIT' ? 'EXIT'
       : eventType === 'BAR'
-        ? eventTime + ':' + normalizedPayload.bars_since_entry
+        ? eventTime + ':' + normalizedPayload.segments_since_entry
         : eventTime;
   const eventKey = [entryId, eventType, timeKey].join(':');
   return {
