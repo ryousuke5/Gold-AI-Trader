@@ -20,4 +20,4 @@ jobs:
         with:
           node-version: 24
       - name: Run shadow telemetry unit tests
-        run: node --test tests/gold_forward_shadow_telemetry.test.js
+        run: node --test tests/gold_forward_shadow_telemetry.test.js tests/gold_forward_shadow_mql_safety.test.js
