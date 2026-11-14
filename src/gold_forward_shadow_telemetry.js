@@ -482,8 +482,16 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     }
     const exitReason = cleanText(payload.exit_reason, 24).toUpperCase();
     if (!['STOP', 'TARGET', 'TIME', 'MANUAL', 'DATA_GAP', 'OTHER'].includes(exitReason)) return { ok: false, error: 'invalid_exit_reason' };
+    const costCompleteness = cleanText(payload.cost_completeness, 64).toUpperCase();
+    if (!['QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP', 'FULL_COMMISSION_SWAP_INCLUDED', 'PARTIAL_COSTS'].includes(costCompleteness)) {
+      return { ok: false, error: 'explicit_cost_completeness_required' };
+    }
     if (!finite(payload.net_r) || !finite(payload.holding_seconds) || Number(payload.holding_seconds) < 0) {
       return { ok: false, error: 'net_r_and_nonnegative_holding_seconds_required' };
+    }
+    if (costCompleteness === 'FULL_COMMISSION_SWAP_INCLUDED' &&
+        (!finite(payload.commission_account_currency) || !finite(payload.swap_account_currency))) {
+      return { ok: false, error: 'full_cost_status_requires_commission_and_swap' };
     }
     normalizedPayload = {
       exit_time_utc: exitTime.value,
@@ -492,6 +500,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
       exit_bid: exitBid,
       exit_ask: exitAsk,
       exit_reason: exitReason,
+      cost_completeness: costCompleteness,
       gross_r: finite(payload.gross_r) ? Number(payload.gross_r) : null,
       net_r: Number(payload.net_r),
       holding_seconds: Math.floor(Number(payload.holding_seconds)),
