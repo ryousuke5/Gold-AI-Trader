@@ -342,6 +342,8 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const entryBid = numberOrNull(payload.entry_bid);
     const entryAsk = numberOrNull(payload.entry_ask);
     const spreadPrice = numberOrNull(payload.spread_price);
+    const expectedStopSpread = numberOrNull(payload.expected_stop_spread_price);
+    const expectedStopSlippage = numberOrNull(payload.expected_stop_slippage_price);
     const costModelVersion = cleanText(payload.cost_model_version, 80);
     if (Date.parse(entryTime.value) < Date.parse(signalTime.value)) {
       return { ok: false, error: 'entry_time_must_not_precede_signal_time' };
@@ -354,14 +356,23 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     if (signalReferenceBid === null || !(signalReferenceBid > 0) ||
         entryBid === null || entryAsk === null || !(entryAsk >= entryBid) ||
         spreadPrice === null || spreadPrice < 0 ||
+        Math.abs(spreadPrice - (entryAsk - entryBid)) > 1e-6 ||
+        expectedStopSpread === null || expectedStopSpread < 0 ||
+        expectedStopSlippage === null || expectedStopSlippage < 0 ||
         !costModelVersion || expectedStopFill === null || !(expectedStopFill > 0)) {
-      return { ok: false, error: 'entry_bid_ask_spread_cost_model_and_expected_stop_fill_required' };
+      return { ok: false, error: 'entry_quote_and_stop_cost_model_fields_required_or_inconsistent' };
     }
     if (side === 'BUY' ? !(stop < signalReferenceBid && target > signalReferenceBid && target > entry && expectedStopFill < entry)
                        : !(target < signalReferenceBid && stop > signalReferenceBid && target < entry && expectedStopFill > entry)) {
       return { ok: false, error: 'entry_stop_target_or_expected_fill_direction_mismatch' };
     }
-    const effectiveRiskDistance = Math.abs(entry - expectedStopFill);
+    const calculatedExpectedStopFill = side === 'BUY'
+      ? stop - expectedStopSlippage
+      : stop + expectedStopSpread + expectedStopSlippage;
+    if (Math.abs(calculatedExpectedStopFill - expectedStopFill) > 1e-6) {
+      return { ok: false, error: 'expected_stop_fill_does_not_match_cost_model' };
+    }
+    const effectiveRiskDistance = Math.abs(entry - calculatedExpectedStopFill);
     if (!(effectiveRiskDistance > 0)) {
       return { ok: false, error: 'effective_risk_distance_must_be_positive' };
     }
@@ -385,8 +396,9 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
       risk_basis: 'ENTRY_FILL_TO_EXPECTED_STOP_FILL',
       cost_model_version: costModelVersion,
       expected_entry_price: validPrice(payload.expected_entry_price) ? Number(payload.expected_entry_price) : null,
-      entry_slippage_price: finite(payload.entry_slippage_price) ? Number(payload.entry_slippage_price) : null,
-      expected_stop_slippage_price: finite(payload.expected_stop_slippage_price) ? Number(payload.expected_stop_slippage_price) : null,
+      entry_slippage_price_signed: side === 'BUY' ? entry - entryAsk : entryBid - entry,
+      expected_stop_spread_price: expectedStopSpread,
+      expected_stop_slippage_price: expectedStopSlippage,
       quote_age_seconds: finite(payload.quote_age_seconds) && Number(payload.quote_age_seconds) >= 0 ? Number(payload.quote_age_seconds) : null,
       setup_diagnostics: payload.setup_diagnostics && typeof payload.setup_diagnostics === 'object' ? payload.setup_diagnostics : {},
       market_safety: payload.market_safety && typeof payload.market_safety === 'object' ? payload.market_safety : {},
