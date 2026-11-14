@@ -27,7 +27,7 @@ Apply `supabase/migrations/202611140001_gold_forward_shadow_events.sql` to the i
 
 `POST /api/gold/forward-shadow/event`
 
-It uses the existing `x-gold-api-key` authentication middleware. Persisted rows are append-only observations keyed by `event_key`; repeated ENTRY, BAR, GAP, or EXIT posts with the same key are idempotent no-ops.
+It uses the existing `x-gold-api-key` authentication middleware. The MT4 research EA has `EnableForwardShadowTelemetry=false` by default and requires a separate HTTPS research host (`ForwardShadowApiBaseUrl`) and a separate key (`ForwardShadowApiKey`). Its initialization guard refuses to use the same host or key as the production signal API. The production endpoint must not be used for this branch. Persisted rows are append-only observations keyed by `event_key`; repeated ENTRY, BAR, GAP, or EXIT posts with the same key are idempotent no-ops.
 
 ### ENTRY
 
@@ -172,9 +172,9 @@ The repository copy used for this branch contains the Node.js API and research s
 Before any Forward/Paper observation starts, the EA integration must:
 1. Generate a stable `entry_id` per virtual setup and submit ENTRY once.
 2. Include only completed H1 bars in `recent_h1`, with EMA20/50/200 and ATR14 calculated at each bar close.
-3. Submit every completed M5 candle as BAR, preserving UTC candle-close time and independently tick-aggregated Bid OHLC and Ask OHLC.
-4. Submit GAP on disconnect or missing history and EXIT when the virtual position resolves.
-5. Record actual XM Bid/Ask, virtual executable entry fill, expected stop spread/slippage, actual entry spread, and a frozen `cost_model_version`. Calculate R from the actual entry fill to expected executable stop fill; also store raw BID stop geometry.
+3. Submit every completed M5 candle as BAR, preserving UTC candle-close time and independently tick-aggregated Bid OHLC and Ask OHLC. Mark the initial and exit-truncated intervals as partial.
+4. Submit GAP on disconnect, EA restart, stale quote, or missing history and EXIT when the virtual position resolves. GAP events preserve the full interval up to 31 days (including weekend closures).
+5. Record actual XM Bid/Ask, virtual executable entry fill, expected stop spread/slippage, actual entry spread, and a frozen `cost_model_version`. The current EA default expected stop slippage is a configured 0.05 price-unit estimate, not a claim of measured stop slippage; every ENTRY stores the exact value and formula version. Calculate R from the actual entry fill to expected executable stop fill; also store raw BID stop geometry.
 6. Never call OrderSend from this telemetry path and never use the telemetry response to authorize orders.
 
 ## Validation and activation order
