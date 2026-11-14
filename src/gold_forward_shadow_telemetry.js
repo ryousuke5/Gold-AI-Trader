@@ -514,7 +514,9 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
 
   const timeKey = eventType === 'ENTRY' ? 'ENTRY'
     : eventType === 'EXIT' ? 'EXIT'
-      : eventTime;
+      : eventType === 'BAR'
+        ? eventTime + ':' + normalizedPayload.bars_since_entry
+        : eventTime;
   const eventKey = [entryId, eventType, timeKey].join(':');
   return {
     ok: true,
