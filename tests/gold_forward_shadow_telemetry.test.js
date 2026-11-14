@@ -311,13 +311,15 @@ test('BAR, GAP, and EXIT events have stable idempotency keys and validated times
     ...common, event_type: 'EXIT',
     payload: {
       exit_time_utc: '2026-11-01T05:35:00Z',
-      exit_price: 98, exit_reason: 'STOP',
-      net_r: -1.04, holding_seconds: 2100
+      exit_price: 98.1, exit_bid: 98, exit_ask: 98.1, exit_spread_price: 0.1,
+      exit_reason: 'STOP', net_r: -1.04, holding_seconds: 2100
     }
   });
   assert.equal(exit.ok, true);
   assert.equal(exit.row.event_key, 'paper-entry-0003:EXIT:EXIT');
   assert.equal(exit.row.payload.net_r, -1.04);
+  assert.equal(exit.row.payload.exit_quote_side, 'ASK');
+  assert.ok(Math.abs(exit.row.payload.exit_slippage_price_signed) < 1e-9);
 });
 
 test('shadow event validation rejects unknown event types and non-GOLD symbols', () => {
