@@ -12,6 +12,7 @@ input bool   AllowAutoOrders = false;
 // Research-only virtual position recorder. Off by default; never sends trade orders.
 input bool   EnableForwardShadowTelemetry = false;
 input string ForwardShadowApiBaseUrl = "";
+input string ForwardShadowApiKey = "";
 input double ForwardShadowExpectedStopSlippagePrice = 0.05;
 input string ForwardShadowCostModelVersion = "XM_KIWAMI_ENTRY_SPREAD_PROXY_CONFIGURED_SLIP_V1";
 input int    TimerSeconds = 1;
@@ -995,7 +996,10 @@ bool PostForwardShadowJson(string json, string &response)
 {
    response = "";
    string baseUrl = TrimText(ForwardShadowApiBaseUrl);
-   if(StringFind(baseUrl, "https://") != 0 || baseUrl == TrimText(ApiBaseUrl))
+   if(StringFind(baseUrl, "https://") != 0 || baseUrl == TrimText(ApiBaseUrl) ||
+      StringLen(TrimText(ForwardShadowApiKey)) < 16 ||
+      TrimText(ForwardShadowApiKey) == "CHANGE_ME" ||
+      TrimText(ForwardShadowApiKey) == TrimText(ApiKey))
    {
       Print("[GOLD SHADOW] rejected_send: research endpoint is missing or equals production ApiBaseUrl");
       return false;
@@ -1006,7 +1010,7 @@ bool PostForwardShadowJson(string json, string &response)
 
    string url = baseUrl + "/api/gold/forward-shadow/event";
    string headers = "Content-Type: application/json\r\n";
-   headers += "X-Gold-API-Key: " + TrimText(ApiKey) + "\r\n";
+   headers += "X-Gold-API-Key: " + TrimText(ForwardShadowApiKey) + "\r\n";
    headers += "X-Request-Id: shadow-" + IntegerToString((int)GetTickCount()) + "\r\n";
    uchar postData[];
    uchar result[];
@@ -1659,7 +1663,9 @@ int OnInit()
          return INIT_FAILED;
       }
       string shadowBase = TrimText(ForwardShadowApiBaseUrl);
-      if(StringFind(shadowBase, "https://") != 0 || shadowBase == TrimText(ApiBaseUrl))
+      string shadowKey = TrimText(ForwardShadowApiKey);
+      if(StringFind(shadowBase, "https://") != 0 || shadowBase == TrimText(ApiBaseUrl) ||
+         StringLen(shadowKey) < 16 || shadowKey == "CHANGE_ME" || shadowKey == TrimText(ApiKey))
       {
          Print("[GOLD SHADOW] initialization refused: configure a separate HTTPS research endpoint, not ApiBaseUrl.");
          return INIT_FAILED;
