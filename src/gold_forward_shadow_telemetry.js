@@ -384,7 +384,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
         entryBid === null || entryAsk === null || !(entryAsk >= entryBid) ||
         spreadPrice === null || spreadPrice < 0 ||
         (side === 'BUY' && Math.abs(expectedStopSpread ?? -1) > 1e-6) ||
-        (side === 'BUY' && entry < entryBid) || (side === 'SELL' && entry > entryAsk) ||
+        (side === 'BUY' && entry < entryAsk) || (side === 'SELL' && entry > entryBid) ||
         Math.abs(spreadPrice - (entryAsk - entryBid)) > 1e-6 ||
         expectedStopSpread === null || expectedStopSpread < 0 ||
         expectedStopSlippage === null || expectedStopSlippage < 0 ||
