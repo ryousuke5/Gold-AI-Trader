@@ -145,7 +145,7 @@ function normalizeOhlc(value, name) {
   if (Object.values(result).some((n) => n === null) ||
       !(result.high >= result.low && result.high >= result.open && result.high >= result.close &&
         result.low <= result.open && result.low <= result.close)) return null;
-  return { ...result, source: name };
+  return result;
 }
 
 export function buildGoldForwardPathMetrics({
@@ -196,10 +196,10 @@ export function buildGoldForwardPathMetrics({
 
   for (let index = 0; index < bars.length; index++) {
     const bar = bars[index] || {};
-    const time = numberOrNull(bar.time ?? bar.bar_time_epoch);
+    const time = numberOrNull(bar.time ?? bar.bar_time_epoch) ?? epochSeconds(bar.bar_time_utc);
     const bid = normalizeOhlc(bar.bid_ohlc, 'BID');
     const ask = normalizeOhlc(bar.ask_ohlc, 'ASK');
-    if (time === null || !bid || !ask ||
+    if (time === null || !bid || !ask || bar.tick_data_quality !== 'BID_ASK_TICK_AGGREGATED' ||
         ask.open < bid.open || ask.high < bid.high ||
         ask.low < bid.low || ask.close < bid.close) {
       return { ok: false, error: 'invalid_or_missing_bid_ask_ohlc', bar_index: index + 1 };
@@ -356,6 +356,8 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     if (signalReferenceBid === null || !(signalReferenceBid > 0) ||
         entryBid === null || entryAsk === null || !(entryAsk >= entryBid) ||
         spreadPrice === null || spreadPrice < 0 ||
+        (side === 'BUY' && Math.abs(expectedStopSpread ?? -1) > 1e-6) ||
+        (side === 'BUY' && entry < entryBid) || (side === 'SELL' && entry > entryAsk) ||
         Math.abs(spreadPrice - (entryAsk - entryBid)) > 1e-6 ||
         expectedStopSpread === null || expectedStopSpread < 0 ||
         expectedStopSlippage === null || expectedStopSlippage < 0 ||
@@ -412,7 +414,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const bid = normalizeOhlc(payload.bid_ohlc, 'BID');
     const ask = normalizeOhlc(payload.ask_ohlc, 'ASK');
     if (!Number.isInteger(index) || index < 1 || index > 10000 || !bid || !ask ||
-        ask.open < bid.open || ask.high < bid.high ||
+        tickDataQuality !== 'BID_ASK_TICK_AGGREGATED' || ask.open < bid.open || ask.high < bid.high ||
         ask.low < bid.low || ask.close < bid.close) {
       return { ok: false, error: 'invalid_or_missing_bid_ask_ohlc' };
     }
@@ -423,7 +425,7 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
       ask_ohlc: { open: ask.open, high: ask.high, low: ask.low, close: ask.close },
       spread_price: finite(payload.spread_price) && Number(payload.spread_price) >= 0 ? Number(payload.spread_price) : null,
       quote_age_seconds: finite(payload.quote_age_seconds) && Number(payload.quote_age_seconds) >= 0 ? Number(payload.quote_age_seconds) : null,
-      tick_data_quality: cleanText(payload.tick_data_quality || 'BID_ASK_OHLC', 40)
+      tick_data_quality: tickDataQuality
     };
     eventTime = barTime.value;
   } else if (eventType === 'GAP') {
