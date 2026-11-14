@@ -1081,7 +1081,7 @@ bool SendShadowBar(datetime eventTimeUtc, bool isPartial, int durationSeconds)
    json += "\"strategy_version\":\"gold-m5-h1-v2\",";
    json += "\"side\":\"" + (g_shadowSide > 0 ? "BUY" : "SELL") + "\",";
    json += "\"payload\":{";
-   json += "\"bars_since_entry\":" + IntegerToString(nextIndex) + ",";
+   json += "\"segments_since_entry\":" + IntegerToString(nextIndex) + ",";
    json += "\"bar_time_utc\":\"" + UtcIsoFromEpoch(eventTimeUtc) + "\",";
    json += "\"is_partial\":" + (isPartial ? "true" : "false") + ",";
    json += "\"bar_duration_seconds\":" + IntegerToString(duration) + ",";
