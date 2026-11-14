@@ -79,7 +79,7 @@ If there are fewer than four contiguous completed H1 bars, telemetry records an 
 
 ### BAR
 
-Send one BAR event for each completed M5 candle after the virtual entry. Include all bars, not only the 3rd and 6th. The stored sequence is later used to reconstruct cumulative MFE/MAE, close progress in R, first +0.25R / -0.50R threshold, and 3-bar/6-bar snapshots.
+Send one BAR event for each completed M5 candle after the virtual entry. Include all bars, not only the 3rd and 6th. The first interval after entry may be shorter than five minutes; mark it `is_partial: true` and report the observed `bar_duration_seconds`. A final intra-candle stop/target exit is also sent as a partial BAR before EXIT. Normal completed bars use `is_partial: false` and 300 seconds. The stored sequence is later used to reconstruct cumulative MFE/MAE, close progress in R, first +0.25R / -0.50R threshold, 3-/6-event snapshots, and the first observations at or after 15/30 elapsed minutes.
 
 ```json
 {
@@ -91,6 +91,8 @@ Send one BAR event for each completed M5 candle after the virtual entry. Include
   "payload": {
     "bars_since_entry": 1,
     "bar_time_utc": "2026-11-14T07:05:00.000Z",
+    "is_partial": true,
+    "bar_duration_seconds": 297,
     "bid_ohlc": { "open": 2500.30, "high": 2501.10, "low": 2499.80, "close": 2500.90 },
     "ask_ohlc": { "open": 2500.40, "high": 2501.25, "low": 2499.90, "close": 2501.02 },
     "spread_price": 0.12,
@@ -100,7 +102,7 @@ Send one BAR event for each completed M5 candle after the virtual entry. Include
 }
 ```
 
-M5 candle times must be ascending and must not be replaced by repeated candles. Both `bid_ohlc` and `ask_ohlc` are mandatory; the server rejects one-sided bars. They must be independently aggregated from Bid and Ask tick streams. Do not synthesize Ask OHLC by adding one fixed spread to Bid OHLC: the spread varies and Bid/Ask extrema may occur at different ticks. BUY MFE/MAE uses BID exit OHLC; SELL MFE/MAE uses ASK exit OHLC. Logical stop/target touches use BID OHLC for both sides. A gap in timestamps is measured in the analysis layer and must also be sent as GAP when the disconnect / missing-data interval is known.
+V19 sends candle-close timestamps in UTC (`bar_time` and each recent bar `time`), not candle-open timestamps. `signal_time_utc` must match the completed M5 `features.bar_time`. M5 candle times must be ascending and must not be replaced by repeated candles. Both `bid_ohlc` and `ask_ohlc` are mandatory; the server rejects one-sided bars. They must be independently aggregated from Bid and Ask tick streams. Do not synthesize Ask OHLC by adding one fixed spread to Bid OHLC: the spread varies and Bid/Ask extrema may occur at different ticks. BUY MFE/MAE uses BID exit OHLC; SELL MFE/MAE uses ASK exit OHLC. Logical stop/target touches use BID OHLC for both sides. A gap in timestamps is measured in the analysis layer and must also be sent as GAP when the disconnect / missing-data interval is known.
 
 ### GAP
 
@@ -122,7 +124,7 @@ M5 candle times must be ascending and must not be replaced by repeated candles. 
 
 ### EXIT
 
-Send EXIT once the virtual position is resolved. `exit_price` is the actual executable close fill: BUY closes on BID; SELL closes on ASK. Submit both exit quotes and a spread matching `exit_ask - exit_bid`; the server records the quote side and reconstructs signed adverse slippage (positive means adverse). Net R must use the ENTRY event's `effective_risk_distance_price` and include the same cost convention, commission and swap; retain gross R separately where available.
+Send EXIT once the virtual position is resolved. `cost_completeness` must explicitly distinguish quote-side-only R from a result that includes commission and swap. The shadow EA initially reports `QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP`; do not present that as fully cost-adjusted expectancy. `exit_price` is the actual executable close fill: BUY closes on BID; SELL closes on ASK. Submit both exit quotes and a spread matching `exit_ask - exit_bid`; the server records the quote side and reconstructs signed adverse slippage (positive means adverse). Net R must use the ENTRY event's `effective_risk_distance_price` and include the same cost convention, commission and swap; retain gross R separately where available.
 
 ```json
 {
@@ -137,6 +139,7 @@ Send EXIT once the virtual position is resolved. `exit_price` is the actual exec
     "exit_bid": 2498.30,
     "exit_ask": 2498.42,
     "exit_reason": "STOP",
+    "cost_completeness": "QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP",
     "gross_r": -1.0,
     "net_r": -1.06,
     "holding_seconds": 2100,
@@ -150,13 +153,13 @@ Send EXIT once the virtual position is resolved. `exit_price` is the actual exec
 
 ## M5 path metric calculation
 
-The pure helper `buildGoldForwardPathMetrics` consumes a chronologically ordered list of completed Bid/Ask OHLC candles, executable virtual entry fill, BID logical stop/target, expected executable stop fill, and effective risk distance. Each bar must be explicitly tagged `BID_ASK_TICK_AGGREGATED`; missing ASK bars or unverified one-sided OHLC are rejected. It returns:
+The pure helper `buildGoldForwardPathMetrics` consumes a chronologically ordered list of completed Bid/Ask OHLC candles, executable virtual entry fill, BID logical stop/target, expected executable stop fill, effective risk distance, and ENTRY UTC timestamp. It calculates elapsed seconds and snapshots at/after 15 and 30 minutes in addition to bar-count snapshots. Each bar must be explicitly tagged `BID_ASK_TICK_AGGREGATED`; missing ASK bars or unverified one-sided OHLC are rejected. It returns:
 
 - Cumulative MFE_R and MAE_R after every bar.
 - Close progress in R after each bar.
 - The first observed +0.25R favourable or -0.50R adverse threshold.
 - An explicit `AMBIGUOUS_SAME_BAR` label when both thresholds occur within one candle.
-- 3-bar (15-minute) and 6-bar (30-minute) snapshots.
+- 3-event and 6-event snapshots, plus the first recorded observations at/after 15 and 30 elapsed minutes.
 - Missing-bar count and maximum gap duration.
 - An ambiguous SL/TP label when both barriers fall inside the same OHLC candle.
 
