@@ -183,7 +183,7 @@ export function buildGoldForwardPathMetrics({
   }
   if (!Array.isArray(bars)) return { ok: false, error: 'bars_must_be_array' };
   const direction = normalizedSide === 'BUY' ? 1 : -1;
-  // Fixed thresholds are pre-registered for telemetry v1: +0.25R and -0.50R.
+  // Fixed thresholds are pre-registered for telemetry v2: +0.25R and -0.50R.
   const favorableLevel = 0.25;
   const adverseLevel = 0.5;
   let mfeR = 0;
