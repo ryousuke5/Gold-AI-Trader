@@ -1049,7 +1049,7 @@ bool SendShadowGap(datetime fromUtc, datetime toUtc, string reason)
 {
    if(!g_shadowActive || fromUtc <= 0 || toUtc <= fromUtc) return true;
    int seconds = (int)(toUtc - fromUtc);
-   if(seconds > 86400) seconds = 86400;
+   if(seconds > 2678400) return false;
    string json = "{";
    json += "\"event_type\":\"GAP\",";
    json += "\"entry_id\":\"" + JsonEscape(g_shadowEntryId) + "\",";
@@ -1289,7 +1289,7 @@ bool StartForwardShadowFromSignal(string signalPayload, string signalResponse)
    json += "\"entry_ask\":" + JsonNumber(ask, digits) + ",";
    json += "\"spread_price\":" + JsonNumber(spread, digits) + ",";
    json += "\"quote_age_seconds\":" + IntegerToString(quoteAge) + ",";
-   json += "\"setup_diagnostics\":{},";
+   json += "\"setup_diagnostics\":{\"source_signal_id\":\"" + JsonEscape(signalId) + "\"},";
    json += "\"market_safety\":{\"allowed\":true,\"reason\":\"" + JsonEscape(g_marketSafetyReason) + "\"}";
    json += "}}";
 
