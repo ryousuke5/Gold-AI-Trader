@@ -60,7 +60,7 @@ Send one ENTRY event when a research strategy creates a virtual entry. Define vi
     "expected_stop_fill_price": 2498.25,
     "expected_stop_spread_price": 0.00,
     "expected_stop_slippage_price": 0.05,
-    "cost_model_version": "XM_KIWAMI_BID_ASK_SLIPPAGE_V1",
+    "cost_model_version": "XM_KIWAMI_ENTRY_SPREAD_PROXY_CONFIGURED_SLIP_V1",
     "entry_bid": 2500.20,
     "entry_ask": 2500.30,
     "spread_price": 0.10,
@@ -124,7 +124,7 @@ V19 sends candle-close timestamps in UTC (`bar_time` and each recent bar `time`)
 
 ### EXIT
 
-Send EXIT once the virtual position is resolved. `cost_completeness` must explicitly distinguish quote-side-only R from a result that includes commission and swap. The shadow EA initially reports `QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP`; do not present that as fully cost-adjusted expectancy. `exit_price` is the actual executable close fill: BUY closes on BID; SELL closes on ASK. Submit both exit quotes and a spread matching `exit_ask - exit_bid`; the server records the quote side and reconstructs signed adverse slippage (positive means adverse). Net R must use the ENTRY event's `effective_risk_distance_price` and include the same cost convention, commission and swap; retain gross R separately where available.
+Send EXIT once the virtual position is resolved. `cost_completeness` must explicitly distinguish quote-side-only R from a result that includes commission and swap. The shadow EA reports `QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP`; do not present that as fully cost-adjusted expectancy. `exit_price` is the actual executable close fill: BUY closes on BID; SELL closes on ASK. Submit both exit quotes and a spread matching `exit_ask - exit_bid`; the server records the quote side and reconstructs signed adverse slippage (positive means adverse). `net_r` uses the ENTRY event's `effective_risk_distance_price`. In the initial EA integration it is quote-side R based on executable entry and exit fills, with commission and swap excluded; only report fully cost-adjusted expectancy when those costs are actually supplied and `cost_completeness` is `FULL_COMMISSION_SWAP_INCLUDED`.
 
 ```json
 {
@@ -140,12 +140,9 @@ Send EXIT once the virtual position is resolved. `cost_completeness` must explic
     "exit_ask": 2498.42,
     "exit_reason": "STOP",
     "cost_completeness": "QUOTE_SIDE_ONLY_EXCLUDES_COMMISSION_SWAP",
-    "gross_r": -1.0,
     "net_r": -1.06,
     "holding_seconds": 2100,
     "exit_spread_price": 0.12,
-    "commission_account_currency": 0,
-    "swap_account_currency": 0,
     "data_gap_seconds": 0
   }
 }
