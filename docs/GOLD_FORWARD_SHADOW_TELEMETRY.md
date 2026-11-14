@@ -79,7 +79,7 @@ If there are fewer than four contiguous completed H1 bars, telemetry records an 
 
 ### BAR
 
-Send one BAR event for each completed M5 candle after the virtual entry. Include all bars, not only the 3rd and 6th. The first interval after entry may be shorter than five minutes; mark it `is_partial: true` and report the observed `bar_duration_seconds`. A final intra-candle stop/target exit is also sent as a partial BAR before EXIT. Normal completed bars use `is_partial: false` and 300 seconds. The stored sequence is later used to reconstruct cumulative MFE/MAE, close progress in R, first +0.25R / -0.50R threshold, 3-/6-event snapshots, and the first observations at or after 15/30 elapsed minutes.
+Send one BAR event for each completed M5 candle after the virtual entry. Include all bars, not only the 3rd and 6th. The first interval after entry may be shorter than five minutes; mark it `is_partial: true` and report the observed `bar_duration_seconds`. A final intra-candle stop/target exit is also sent as a partial BAR before EXIT. Normal completed bars use `is_partial: false` and 300 seconds. The stored sequence is later used to reconstruct cumulative MFE/MAE, close progress in R, first +0.25R / -0.50R threshold, 3-/6-segment snapshots, and the first observations at or after 15/30 elapsed minutes.
 
 ```json
 {
@@ -89,7 +89,7 @@ Send one BAR event for each completed M5 candle after the virtual entry. Include
   "strategy_version": "gold-m5-h1-v2",
   "side": "BUY",
   "payload": {
-    "bars_since_entry": 1,
+    "segments_since_entry": 1,
     "bar_time_utc": "2026-11-14T07:05:00.000Z",
     "is_partial": true,
     "bar_duration_seconds": 297,
@@ -159,7 +159,7 @@ The pure helper `buildGoldForwardPathMetrics` consumes a chronologically ordered
 - Close progress in R after each bar.
 - The first observed +0.25R favourable or -0.50R adverse threshold.
 - An explicit `AMBIGUOUS_SAME_BAR` label when both thresholds occur within one candle.
-- 3-event and 6-event snapshots, plus the first recorded observations at/after 15 and 30 elapsed minutes.
+- 3-segment and 6-segment snapshots, plus the first recorded observations at/after 15 and 30 elapsed minutes.
 - Missing-bar count and maximum gap duration.
 - An ambiguous SL/TP label when both barriers fall inside the same OHLC candle.
 
