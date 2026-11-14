@@ -52,3 +52,12 @@ test('the 30-minute horizon ends only the research observation, not a broker pos
   assert.match(ea, /SendShadowExit\(tickUtc, bid, ask, "TIME"\)/);
   assert.match(ea, /observation_horizon_complete/);
 });
+
+
+test('the fixed 30-minute end is a shadow-only observation cutoff', () => {
+  assert.match(ea, /#define\s+SHADOW_OBSERVATION_HORIZON_SECONDS\s+1800/);
+  assert.match(ea, /tickUtc\s*-\s*g_shadowEntryTimeUtc\s*>=\s*SHADOW_OBSERVATION_HORIZON_SECONDS/);
+  assert.match(ea, /SendShadowExit\(tickUtc, bid, ask, "TIME"\)/);
+  assert.match(ea, /observation_horizon_complete/);
+  assert.equal(/OrderSend\s*\(/.test(ea), false);
+});
