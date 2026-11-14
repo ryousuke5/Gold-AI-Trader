@@ -445,7 +445,8 @@ export function normalizeGoldForwardShadowEvent(body = {}) {
     const barDurationSeconds = numberOrNull(payload.bar_duration_seconds);
     const closeSpread = bid && ask ? ask.close - bid.close : null;
     const reportedSpread = numberOrNull(payload.spread_price);
-    const durationValid = barDurationSeconds !== null && barDurationSeconds > 0 && barDurationSeconds <= 300;
+    const durationValid = barDurationSeconds !== null && barDurationSeconds > 0 && barDurationSeconds <= 300 &&
+      (isPartial || barDurationSeconds === 300);
     const timeValid = isPartial || epochSeconds(barTime.value) % 300 === 0;
     if (!Number.isInteger(index) || index < 1 || index > 10000 || !bid || !ask ||
         !durationValid || !timeValid ||
