@@ -38,24 +38,18 @@ Send one ENTRY event when a research strategy creates a virtual entry. Define vi
   "strategy_version": "gold-m5-h1-v2",
   "side": "BUY",
   "features": {
-    "bar_time": 1794639600,
+    "bar_time": 1794639300,
     "recent_h1": [
-      {
-        "time": 1794628800,
-        "open": 2500.0,
-        "high": 2505.0,
-        "low": 2498.0,
-        "close": 2504.0,
-        "ema20": 2501.0,
-        "ema50": 2499.0,
-        "ema200": 2495.0,
-        "atr14": 8.0
-      }
+      { "time": 1794625200, "open": 2495.0, "high": 2500.0, "low": 2493.0, "close": 2499.0, "ema20": 2497.0, "ema50": 2496.0, "ema200": 2494.0, "atr14": 8.0 },
+      { "time": 1794628800, "open": 2499.0, "high": 2504.0, "low": 2497.0, "close": 2503.0, "ema20": 2499.0, "ema50": 2497.0, "ema200": 2494.5, "atr14": 8.0 },
+      { "time": 1794632400, "open": 2503.0, "high": 2506.0, "low": 2500.0, "close": 2505.0, "ema20": 2501.0, "ema50": 2498.0, "ema200": 2495.0, "atr14": 8.0 },
+      { "time": 1794636000, "open": 2505.0, "high": 2508.0, "low": 2502.0, "close": 2507.0, "ema20": 2503.0, "ema50": 2499.0, "ema200": 2495.5, "atr14": 8.0 }
     ]
   },
   "payload": {
     "signal_time_utc": "2026-11-14T07:00:00.000Z",
     "entry_time_utc": "2026-11-14T07:00:03.000Z",
+    "expected_entry_price": 2500.28,
     "entry_price": 2500.30,
     "stop_price": 2498.30,
     "target_price": 2504.30,
