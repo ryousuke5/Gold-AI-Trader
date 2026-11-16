@@ -1,9 +1,10 @@
 #property strict
-#property version   "1.9"
-#property description "XAUUSD AI Trader V1.9 - XM MT4 analysis bridge with market safety gate. Auto trading is intentionally disabled."
+#property version   "1.91"
+#property description "XAUUSD AI Trader V1.91 - XM MT4 analysis bridge with local credential file. Auto trading is intentionally disabled."
 
 input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
-input string ApiKey = "CHANGE_ME";
+// Credentials are loaded from MQL4\\Files\\gold_v19_secrets.txt; never expose them as EA inputs.
+string ApiKey = "";
 input string SymbolName = "";
 input bool   RequireGoldSymbol = true;
 input bool   EnableSignalRequests = true;
@@ -12,7 +13,7 @@ input bool   AllowAutoOrders = false;
 // Research-only virtual position recorder. Off by default; never sends trade orders.
 input bool   EnableForwardShadowTelemetry = false;
 input string ForwardShadowApiBaseUrl = "";
-input string ForwardShadowApiKey = "";
+string ForwardShadowApiKey = "";
 input double ForwardShadowExpectedStopSlippagePrice = 0.05;
 input double ForwardShadowExpectedExitSlippagePrice = 0.05;
 input string ForwardShadowCostModelVersion = "XM_KIWAMI_ENTRY_SPREAD_AND_CONFIGURED_EXIT_SLIPPAGE_V1";
@@ -86,6 +87,44 @@ string TrimText(string value)
    value = StringTrimLeft(value);
    value = StringTrimRight(value);
    return value;
+}
+
+bool LoadApiSecretsFromFile()
+{
+   string fileName = "gold_v19_secrets.txt";
+   ResetLastError();
+   int handle = FileOpen(fileName, FILE_READ | FILE_TXT | FILE_ANSI);
+   if(handle == INVALID_HANDLE)
+   {
+      Print("[GOLD CONFIG] credential file unavailable in active terminal MQL4\\Files. error=", GetLastError());
+      return false;
+   }
+
+   string productionKey = "";
+   string researchKey = "";
+
+   if(!FileIsEnding(handle))
+      productionKey = TrimText(FileReadString(handle));
+   if(!FileIsEnding(handle))
+      researchKey = TrimText(FileReadString(handle));
+
+   FileClose(handle);
+
+   ApiKey = productionKey;
+   ForwardShadowApiKey = researchKey;
+
+   bool productionOk = (StringLen(ApiKey) >= 16 && ApiKey != "CHANGE_ME");
+   bool researchOk = (!EnableForwardShadowTelemetry ||
+                      (StringLen(ForwardShadowApiKey) >= 16 &&
+                       ForwardShadowApiKey != "CHANGE_ME" &&
+                       ForwardShadowApiKey != ApiKey));
+
+   if(!productionOk)
+      Print("[GOLD CONFIG] production API key missing or invalid in credential file.");
+   if(EnableForwardShadowTelemetry && !researchOk)
+      Print("[GOLD CONFIG] separate research API key missing or invalid in credential file.");
+
+   return (productionOk && researchOk);
 }
 
 string TradeSymbol()
@@ -1710,7 +1749,8 @@ int OnInit()
          " signalRequests=", (EnableSignalRequests ? "true" : "false"),
          " autoOrders=", (AllowAutoOrders ? "requested-but-disabled" : "off"));
 
-   g_apiConfigReady = IsValidApiConfiguration();
+   bool secretsReady = LoadApiSecretsFromFile();
+   g_apiConfigReady = (secretsReady && IsValidApiConfiguration());
 
    if(EnableForwardShadowTelemetry)
    {
