@@ -11,7 +11,19 @@ test('research V19 keeps both order switches disabled by default', () => {
   assert.match(ea, /input bool\s+AllowAutoOrders\s*=\s*false\s*;/);
   assert.match(ea, /input bool\s+EnableForwardShadowTelemetry\s*=\s*false\s*;/);
   assert.match(ea, /input string\s+ForwardShadowApiBaseUrl\s*=\s*""\s*;/);
-  assert.match(ea, /input string\s+ForwardShadowApiKey\s*=\s*""\s*;/);
+  assert.match(ea, /string\s+ForwardShadowApiKey\s*=\s*""\s*;/);
+  assert.doesNotMatch(ea, /input string\s+ApiKey\s*=/);
+  assert.doesNotMatch(ea, /input string\s+ForwardShadowApiKey\s*=/);
+});
+
+test('research V19 loads API secrets from a local file instead of exposing them as Inputs', () => {
+  assert.match(ea, /FileOpen\(fileName, FILE_READ \| FILE_TXT \| FILE_ANSI\)/);
+  assert.match(ea, /ApiKey = productionKey/);
+  assert.match(ea, /ForwardShadowApiKey = researchKey/);
+  assert.match(ea, /LoadApiSecretsFromFile\(\)/);
+  assert.match(ea, /bool secretsReady = LoadApiSecretsFromFile\(\)/);
+  assert.doesNotMatch(ea, /input string\s+ApiKey\s*=/);
+  assert.doesNotMatch(ea, /input string\s+ForwardShadowApiKey\s*=/);
 });
 
 test('research V19 contains no MT4 trade submission path', () => {
