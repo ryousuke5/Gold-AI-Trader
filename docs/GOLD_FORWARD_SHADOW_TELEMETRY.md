@@ -169,11 +169,24 @@ The research-only MT4 implementation is present in `mt4/GoldAITraderV19.mq4` on 
 ### EA controls and entry eligibility
 
 - `EnableForwardShadowTelemetry=false` by default.
-- `ForwardShadowApiBaseUrl=""` and `ForwardShadowApiKey=""` by default.
+- `ForwardShadowApiBaseUrl=""` by default. The production and research API keys are deliberately not EA Inputs: both are read from the local credential file described below.
 - The EA refuses initialization if telemetry is enabled while `AllowAutoOrders=true`, if the shadow URL is not HTTPS, if the shadow host matches `ApiBaseUrl`, or if the shadow key is missing / reused from `ApiKey`.
 - A virtual ENTRY is considered only when the API candidate and deterministic decision agree on BUY/SELL, risk is approved, market safety is allowed, remote mode is exactly `ANALYSIS`, remote `auto_trading_enabled=false`, and `order_allowed=false`.
 - The existing signal request is still sent to `ApiBaseUrl`; only the research ENTRY/BAR/GAP/EXIT event stream is posted to the distinct `ForwardShadowApiBaseUrl` with `ForwardShadowApiKey`. Keep the signal endpoint in ANALYSIS mode with automatic trading disabled.
 - The EA contains no `OrderSend`, `OrderClose`, or `OrderModify` calls. The shadow state is a virtual observation and cannot submit, close, or modify a broker order.
+
+### Local API credential file
+
+The MT4 terminal automatically writes EA `input` parameter values into its Experts log when an EA initializes. Therefore, do not declare API keys as `input` parameters.
+
+The research EA reads two newline-separated values from this file in the active terminal's data folder:
+
+`MQL4\\Files\\gold_v19_secrets.txt`
+
+- Line 1: the production Render `GOLD_API_KEY`, used by `ApiBaseUrl` for the normal signal and market-safety API.
+- Line 2: the separate research Render `GOLD_API_KEY`, used only by `ForwardShadowApiBaseUrl` for shadow events.
+
+The file must be plain ANSI/ASCII text, with no labels, quotes, spaces, or blank lines. It is not part of the repository. Store it only in the active MT4 terminal's own data folder, restrict access using Windows file permissions, and do not place it in OneDrive or another cloud-synced folder. This avoids automatic MT4 Inputs logging; it does not encrypt the file or protect it from someone who can read the Windows account's files.
 
 ### Data collection behavior
 
@@ -203,4 +216,4 @@ The research-only MT4 implementation is present in `mt4/GoldAITraderV19.mq4` on 
 - The expected stop-slippage input and SELL stop-spread proxy are model assumptions. A later comparison should separate observed entry spread, assumed stop spread, assumed stop slippage, actual virtual exit quote, and any commission/swap not included.
 - One virtual position at a time and the fixed 30-minute observation horizon create selection / holding-period differences versus historical backtests. Report ignored overlapping candidates and distinguish `TIME` observation-window ends from strategy STOP/TARGET outcomes.
 - An MT4 terminal restart creates an explicit GAP; data across that interval is incomplete and must not be treated as a complete price path.
-- No research service has been deployed and no SQL migration has been applied as part of this branch work. Forward/Paper collection has therefore not started.
+- The dedicated research Render service and research Supabase event table are provisioned. The service must remain pinned to this branch, and a successful MT4 shadow-event POST plus persisted-row verification are still required before Forward/Paper collection can be considered started.
