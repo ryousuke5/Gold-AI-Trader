@@ -6,7 +6,6 @@ import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
 import { isolateIsWindow } from '../src/gold_backtest_split.js';
-import { uploadGoldBacktestSummary } from '../src/gold_backtest_summary.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
@@ -817,16 +816,6 @@ async function main() {
   }
   console.log('=== GOLD BACKTEST ===');
   for(const [name,r] of Object.entries(results)) console.log(name, 'mode='+r.evaluation_mode,'trades='+r.summary.trades,'PF='+r.summary.profit_factor,'expectancy_R='+r.summary.expectancy_R,'return='+r.summary.return_pct+'%','maxDD='+r.summary.max_drawdown_pct+'%','recent365_trades='+(r.recent365?.trades ?? 'NOT_REPORTED'),'recent365_PF='+(r.recent365?.profit_factor ?? 'NOT_REPORTED'),'positiveYears='+r.positiveYears,'QUALITY_GATE='+r.qualityGate.passed);
-
-  if (String(process.env.GOLD_BACKTEST_AUTO_UPLOAD || '').toLowerCase() === 'true') {
-    const upload = await uploadGoldBacktestSummary(report, {
-      baseUrl: process.env.GOLD_BACKTEST_API_URL,
-      apiKey: process.env.GOLD_API_KEY
-    });
-    console.log('[GOLD BACKTEST UPLOAD] '+JSON.stringify(upload));
-  } else {
-    console.log('[GOLD BACKTEST UPLOAD] skipped; set GOLD_BACKTEST_AUTO_UPLOAD=true to enable summary-only upload');
-  }
 }
 
 if(import.meta.url===`file://${process.argv[1]}`) main();
