@@ -16,7 +16,7 @@ The upload does **not** contain OHLCV bars, bid/ask time series, individual trad
 
 ## Enable automatic upload
 
-The automatic upload is opt-in and remains disabled unless the following environment variables are set in the environment that runs `scripts/backtest-gold-v2.mjs`:
+The automatic upload is opt-in and remains disabled unless the following environment variables are set in the environment that runs `npm run backtest:gold:v2:sync`:
 
 - `GOLD_BACKTEST_AUTO_UPLOAD=true`
 - `GOLD_BACKTEST_API_URL=https://gold-ai-trader-1.onrender.com`
@@ -24,7 +24,7 @@ The automatic upload is opt-in and remains disabled unless the following environ
 
 Keep the key in a local environment variable or an approved secret store. Do not put it in source code, command history, screenshots, or committed `.env` files.
 
-Run the existing backtest as usual. It writes the full report and trade CSVs locally; only the compact, whitelisted summary is sent to:
+Run the new wrapper so the existing backtest engine remains unchanged and the aggregate upload runs afterwards:\n\n`npm run backtest:gold:v2:sync`\n\nThe wrapper executes `scripts/backtest-gold-v2.mjs`, waits for the local report, then sends only the compact, whitelisted summary to:
 
 `POST /api/gold/backtest-summary`
 
