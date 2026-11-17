@@ -818,4 +818,4 @@ async function main() {
   for(const [name,r] of Object.entries(results)) console.log(name, 'mode='+r.evaluation_mode,'trades='+r.summary.trades,'PF='+r.summary.profit_factor,'expectancy_R='+r.summary.expectancy_R,'return='+r.summary.return_pct+'%','maxDD='+r.summary.max_drawdown_pct+'%','recent365_trades='+(r.recent365?.trades ?? 'NOT_REPORTED'),'recent365_PF='+(r.recent365?.profit_factor ?? 'NOT_REPORTED'),'positiveYears='+r.positiveYears,'QUALITY_GATE='+r.qualityGate.passed);
 }
 
-if(import.meta.url===`file://${process.argv[1]}`) main();
+if (process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1])) main();
