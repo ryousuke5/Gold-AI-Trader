@@ -17,6 +17,7 @@ jobs:
       - run: npm test
       - run: node --check scripts/backtest-gold-v2.mjs
       - run: node --check src/gold_backtest_summary.js
+      - run: node --check scripts/backtest-gold-v2-sync.mjs
       - run: npm run test:mt4
       - run: npm run test:mt4:live
       - run: node --check scripts/backtest-gold-v4.mjs
