@@ -57,7 +57,7 @@ function metricSummary(value) {
     losses: integerOrNull(row.losses),
     win_rate_pct: numberOrNull(row.win_rate_pct),
     profit_factor: numberOrNull(row.profit_factor),
-    profit_factor_unbounded: row.profit_factor === Infinity,
+    profit_factor_unbounded: row.profit_factor_unbounded === true || row.profit_factor === Infinity,
     expectancy_R: numberOrNull(row.expectancy_R),
     total_R: numberOrNull(row.total_R),
     net_profit: numberOrNull(row.net_profit),
@@ -79,20 +79,25 @@ function scenarioSummary(value) {
     recent365: row.recent365 ? metricSummary(row.recent365) : null,
     is1095: row.is1095 ? metricSummary(row.is1095) : null,
     oos730: row.oos730 ? metricSummary(row.oos730) : null,
-    positive_years: integerOrNull(row.positiveYears),
-    positive_years_with_sample: integerOrNull(row.positiveYearsWithSample),
-    quality_gate_passed: typeof row.qualityGate?.passed === 'boolean' ? row.qualityGate.passed : null,
-    diagnostics: {
-      signals_evaluated: integerOrNull(row.signals_evaluated),
-      candidates: integerOrNull(row.candidates),
-      candidates_buy: integerOrNull(row.candidates_buy),
-      candidates_sell: integerOrNull(row.candidates_sell),
-      setup_wait_reasons: countMap(row.setup_wait_reasons),
-      risk_gate_blocks: countMap(row.risk_gate_blocks),
-      rejected_next_bar_gap: integerOrNull(row.rejected_next_bar_gap),
-      rejected_entry_gap: integerOrNull(row.rejected_entry_gap),
-      rejected_direction_filter: integerOrNull(row.rejected_direction_filter)
-    },
+    positive_years: integerOrNull(row.positiveYears ?? row.positive_years),
+    positive_years_with_sample: integerOrNull(row.positiveYearsWithSample ?? row.positive_years_with_sample),
+    quality_gate_passed: typeof row.quality_gate_passed === 'boolean'
+      ? row.quality_gate_passed
+      : (typeof row.qualityGate?.passed === 'boolean' ? row.qualityGate.passed : null),
+    diagnostics: (() => {
+      const diagnostics = row.diagnostics && typeof row.diagnostics === 'object' ? row.diagnostics : row;
+      return {
+        signals_evaluated: integerOrNull(diagnostics.signals_evaluated),
+        candidates: integerOrNull(diagnostics.candidates),
+        candidates_buy: integerOrNull(diagnostics.candidates_buy),
+        candidates_sell: integerOrNull(diagnostics.candidates_sell),
+        setup_wait_reasons: countMap(diagnostics.setup_wait_reasons),
+        risk_gate_blocks: countMap(diagnostics.risk_gate_blocks),
+        rejected_next_bar_gap: integerOrNull(diagnostics.rejected_next_bar_gap),
+        rejected_entry_gap: integerOrNull(diagnostics.rejected_entry_gap),
+        rejected_direction_filter: integerOrNull(diagnostics.rejected_direction_filter)
+      };
+    })(),
     post_drawdown_shadow: row.post_drawdown_shadow ? {
       trade_count: integerOrNull(shadow.trade_count),
       summary: shadow.summary ? metricSummary(shadow.summary) : null
