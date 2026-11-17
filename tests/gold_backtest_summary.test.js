@@ -151,3 +151,30 @@ test('refuses non-HTTPS destinations and missing credentials', async () => {
     baseUrl: 'https://example.com', apiKey: '', fetchImpl: async () => {}
   }), /required/);
 });
+
+test('server persistence whitelist drops unexpected raw bars and trade rows', () => {
+  const payload = buildGoldBacktestSummary(sampleReport());
+  const tainted = {
+    ...payload,
+    raw_m5: [{ time: 1, open: 2, high: 3, low: 1, close: 2, volume: 10 }],
+    trades: [{ entry: 2, exit: 3, net_pnl: 1 }],
+    summary: {
+      ...payload.summary,
+      raw_bars: [{ open: 1, high: 2, low: 1, close: 2 }],
+      scenarios: {
+        ...payload.summary.scenarios,
+        baseline: {
+          ...payload.summary.scenarios.baseline,
+          trades: [{ entry: 2, exit: 3, net_pnl: 1 }]
+        }
+      }
+    }
+  };
+  const accepted = validateGoldBacktestSummaryPayload(tainted);
+  assert.equal(accepted.ok, true);
+  const persistedJson = JSON.stringify(accepted.row);
+  assert.equal(persistedJson.includes('"raw_m5"'), false);
+  assert.equal(persistedJson.includes('"raw_bars"'), false);
+  assert.equal(persistedJson.includes('"net_pnl"'), false);
+  assert.equal(persistedJson.includes('"entry"'), false);
+});
