@@ -9,7 +9,7 @@ import { buildGoldH1M5HalfbackV1Setup } from './src/gold_h1_m5_halfback_v1.js';
 import { buildGoldV2H1TrendDiagnostics } from './src/gold_h1_trend_diagnostics.js';
 import { analyzeWithOpenAI } from './src/ai.js';
 import { evaluateRisk, getRiskLimits, safeDecision } from './src/risk.js';
-import { dbEnabled, getRiskBySignal, getSignalByKey, getState, insertEvent, insertOrder, insertRisk, insertSignal, insertTradeResult, probeGoldDatabase, updateState } from './src/db.js';
+import { dbEnabled, getRiskBySignal, getSignalByKey, getState, insertEvent, insertOrder, insertRisk, insertSignal, insertTradeResult, probeGoldDatabase, updateState, upsertGoldBacktestRun } from './src/db.js';
 import { registerEurUsdRoutes } from './src/eurusd.js';
 import { startEurUsdNewsFeedMonitor } from './src/eurusd_news_feed.js';
 import { buildForwardMonitorSnapshot } from './src/forward_monitor.js';
@@ -19,6 +19,7 @@ import { evaluateGoldMarketSafety } from './src/gold_market_safety.js';
 import { recordGoldMarketSafetyHeartbeat } from './src/gold_market_safety_telemetry.js';
 import { recordGoldSignalEvaluated, recordGoldSignalOutcome, recordGoldSignalRequest, recordGoldSignalTimeRejection } from './src/gold_diagnostics.js';
 import { buildGoldPostTrace } from './src/gold_post_trace.js';
+import { validateGoldBacktestSummaryPayload } from './src/gold_backtest_summary.js';
 
 const app=express();
 const __filename=fileURLToPath(import.meta.url);
@@ -135,6 +136,26 @@ app.post('/api/gold/market-safety',auth,(req,res)=>{
     res.json(result);
   } catch(error) {
     res.status(400).json({ok:false,error:error.message||'market_safety_heartbeat_invalid'});
+  }
+});
+
+
+app.post('/api/gold/backtest-summary',auth,async(req,res)=>{
+  const parsed=validateGoldBacktestSummaryPayload(req.body||{});
+  if(!parsed.ok)return res.status(400).json({ok:false,error:parsed.error});
+  if(!dbEnabled())return res.status(503).json({ok:false,error:'database_not_configured'});
+  try {
+    const saved=await upsertGoldBacktestRun(parsed.row);
+    if(!saved?.persisted)return res.status(503).json({ok:false,error:'backtest_summary_not_persisted'});
+    return res.status(200).json({
+      ok:true,
+      persisted:true,
+      duplicate:saved.duplicate===true,
+      run_key:parsed.row.run_key
+    });
+  } catch(error) {
+    console.error('[gold/backtest-summary]',parsed.row.run_key,error?.message||error);
+    return res.status(500).json({ok:false,error:'backtest_summary_persist_failed'});
   }
 });
 
