@@ -243,3 +243,22 @@ export async function updateEurUsdForwardTrade(id,row){
 
   return{row:mapForwardOrder(data),persisted:true};
 }
+
+export async function upsertGoldBacktestRun(row) {
+  if (!supabase) return { row, persisted: false, duplicate: false };
+  const { data, error } = await supabase
+    .from('gold_backtest_runs')
+    .upsert(row, { onConflict: 'run_key', ignoreDuplicates: true })
+    .select('run_key,source,symbol,timeframe,strategy_version,evaluation_mode,period_start,period_end,summary,created_at')
+    .maybeSingle();
+  if (error) throw error;
+  if (data) return { row: data, persisted: true, duplicate: false };
+
+  const existing = await supabase
+    .from('gold_backtest_runs')
+    .select('run_key,source,symbol,timeframe,strategy_version,evaluation_mode,period_start,period_end,summary,created_at')
+    .eq('run_key', row.run_key)
+    .single();
+  if (existing.error) throw existing.error;
+  return { row: existing.data, persisted: true, duplicate: true };
+}
