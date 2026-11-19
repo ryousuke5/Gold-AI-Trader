@@ -163,13 +163,18 @@ test('valid safety heartbeat passes the shared MT4/MT5 contract', () => {
   assert.deepEqual(result, { ok: true, errors: [] });
 });
 
-test('safety heartbeat rejects an enabled order flag or malformed safety state only when the field type is invalid', () => {
-  const payload = makeHeartbeatPayload();
-  payload.ea_runtime.allow_auto_orders = 'false';
-  payload.market_safety.anomaly_active = 'false';
+test('safety heartbeat rejects order execution and malformed safety state', () => {
+  const enabledOrders = makeHeartbeatPayload();
+  enabledOrders.ea_runtime.allow_auto_orders = true;
+  const enabledResult = validateGoldSafetyHeartbeatPayload(enabledOrders);
+  assert.equal(enabledResult.ok, false);
+  assert.ok(enabledResult.errors.includes('ea_runtime.allow_auto_orders: must_be_false_in_monitor_only_contract'));
 
-  const result = validateGoldSafetyHeartbeatPayload(payload);
-  assert.equal(result.ok, false);
-  assert.ok(result.errors.includes('ea_runtime.allow_auto_orders: expected_boolean'));
-  assert.ok(result.errors.includes('market_safety.anomaly_active: expected_boolean'));
+  const malformed = makeHeartbeatPayload();
+  malformed.ea_runtime.allow_auto_orders = 'false';
+  malformed.market_safety.anomaly_active = 'false';
+  const malformedResult = validateGoldSafetyHeartbeatPayload(malformed);
+  assert.equal(malformedResult.ok, false);
+  assert.ok(malformedResult.errors.includes('ea_runtime.allow_auto_orders: expected_boolean'));
+  assert.ok(malformedResult.errors.includes('market_safety.anomaly_active: expected_boolean'));
 });
