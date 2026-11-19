@@ -1,8 +1,9 @@
 #ifndef GOLD_V19_TIME_MQH
 #define GOLD_V19_TIME_MQH
 
-// Extracted verbatim from mt4/GoldAITraderV19.mq4 at baseline 5461cb91ff339acc99af54caa63764aca835aa7f.
-// Keep this module behavior-identical until parity and compiler checks pass.
+// Extracted verbatim from the user-provided V19 source snapshot.
+// Source Git blob SHA: a65972bf15041d7ae34a001f6b079dcb8465b6ce (historical commit 676ef7edfe7fc342cb9c8681ad8c6bec6ecf9379).
+// Preserve behavior until MQL4 compile and demo parity tests pass.
 
 bool GetServerUtcOffsetSeconds(int &offsetSeconds)
 {
