@@ -136,8 +136,8 @@ test('signal payload rejects missing safety and account fields', () => {
 
 test('signal payload rejects out-of-order bars and invalid OHLC values', () => {
   const payload = makeSignalPayload();
-  payload.recent_m5[5].time = payload.recent_m5[4].time;
-  payload.recent_h1[3].high = payload.recent_h1[3].low - 1;
+  payload.features.recent_m5[5].time = payload.features.recent_m5[4].time;
+  payload.features.recent_h1[3].high = payload.features.recent_h1[3].low - 1;
 
   const result = validateGoldSignalPayload(payload);
   assert.equal(result.ok, false);
