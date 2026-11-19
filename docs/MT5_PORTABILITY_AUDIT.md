@@ -9,10 +9,12 @@ Audited file:
 
 - `mt4/GoldAITraderV19.mq4`
 - MQL4 source, version property `1.9`, 1,071 lines
-- Git blob SHA: `5461cb91ff339acc99af54caa63764aca835aa7f`
-- The latest commit touching this file on `main` is `ee43a468b294a3121ab7e933d213905b1d16bbca` (2026-11-03).
+- Main-branch Git blob SHA: `5461cb91ff339acc99af54caa63764aca835aa7f`
+- User-supplied source baseline: `mt4/source-baselines/GoldAITraderV19_UserProvided_2026-11-20.mq4`
+- Supplied-source Git blob SHA: `a65972bf15041d7ae34a001f6b079dcb8465b6ce`
+- Historical revision: `676ef7edfe7fc342cb9c8681ad8c6bec6ecf9379` (2026-11-03).
 
-The repository's `main` branch has newer commits than the V19 source file, but the V19 file itself has not changed since 2026-11-03. Conversation evidence contains V19 runtime logs from 2026-11-18. Therefore, this repository copy must **not** be assumed to be byte-for-byte identical to the latest local MetaEditor source. Before changing EA code, import/push the latest local `.mq4` and compare it with this baseline.
+The supplied source corresponds to the earlier V19 behavior before the startup closed-bar skip was added in a later revision. The shadow build has been regenerated from this earlier source to preserve the pasted code's behavior. The active MT4 Experts-folder file has not been independently hashed by this session, so the user should still compare it with the preserved baseline before installation. Runtime logs from 2026-11-18 do not by themselves prove file identity.
 
 ## 2. What V19 actually does
 
@@ -113,9 +115,9 @@ The MT5 adapter must preserve these semantics unless a separately reviewed API c
 
 ## 8. Implementation sequence
 
-1. Synchronize and checksum the latest local V19 source; record the exact baseline.
-2. Add payload fixtures and tests before moving code.
-3. Extract MT4 functions into include modules with no intended behavior change; update static tests in the same commit.
+1. Verify the active MT4 Experts-folder source byte-for-byte against the preserved user-supplied baseline.
+2. Keep the baseline as the source of truth for this refactor; do not silently add the later startup-bar skip or alter other flow behavior.
+3. Complete MT4 shadow compilation and demo A/B checks.
 4. Build the MT5 read-only adapter against the exact same payload contract.
 5. Compile both platforms and compare payload/telemetry parity.
 6. Run MT5 demo forward verification. Only consider a separately scoped execution project after independent IS/OOS and forward evidence.
