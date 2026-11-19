@@ -1,6 +1,6 @@
 # MT4 V19 Portable Shadow Build
 
-Status: regenerated from the V19 source supplied in chat; source-parity CI pending; MetaEditor compile/runtime validation pending.  
+Status: regenerated from the V19 source supplied in chat; source-parity and repository CI PASS; MetaEditor compile/runtime validation pending.  
 Branch: `refactor/v19-mt5-portability-foundation`
 
 ## Purpose
