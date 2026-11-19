@@ -1,6 +1,6 @@
 #property strict
 #property version   "1.9"
-#property description "GOLD V19 portable research shadow build - based on repository baseline; no order execution."
+#property description "GOLD V19 portable research shadow build - derived from supplied XM MT4 source; no order execution."
 
 input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
 input string ApiKey = "CHANGE_ME";
@@ -51,7 +51,7 @@ string g_lastMarketSafetyLog = "";
 // String helpers
 //---------------------------------------------------------
 
-// Shadow modular build: do not replace the active EA until local source parity and compiler tests pass.
+// Shadow modular build: derived from the supplied source snapshot; do not install over the active EA.
 #include "include/GoldV19_Common.mqh"
 #include "include/GoldV19_MarketData.mqh"
 #include "include/GoldV19_Time.mqh"
