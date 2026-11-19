@@ -51,7 +51,7 @@ function functionBody(source, name) {
     'm'
   );
   const match = signature.exec(source);
-  assert.ok(match, \`missing function definition: \${name}\`);
+  assert.ok(match, 'missing function definition: ' + name);
   const open = match.index + match[0].lastIndexOf('{');
   return source.slice(match.index, findFunctionEnd(source, open)).trim();
 }
@@ -78,9 +78,9 @@ test('portable shadow entrypoint includes all modules in dependency order', () =
   ];
   let previousIndex = -1;
   for (const file of includes) {
-    const marker = \`#include "include/\${file}"\`;
+    const marker = '#include "include/' + file + '"';
     const currentIndex = entry.indexOf(marker);
-    assert.ok(currentIndex > previousIndex, \`include missing or out of order: \${file}\`);
+    assert.ok(currentIndex > previousIndex, 'include missing or out of order: ' + file);
     previousIndex = currentIndex;
   }
   assert.match(entry, /AllowAutoOrders\s*=\s*false/);
@@ -90,7 +90,7 @@ test('portable shadow entrypoint includes all modules in dependency order', () =
 test('all 24 original V19 functions are preserved verbatim exactly once', () => {
   for (const name of expectedFunctions) {
     const body = functionBody(baseline, name);
-    assert.equal(portable.split(body).length - 1, 1, \`function changed or duplicated: \${name}\`);
+    assert.equal(portable.split(body).length - 1, 1, 'function changed or duplicated: ' + name);
   }
 });
 
