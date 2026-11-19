@@ -1,8 +1,9 @@
 #ifndef GOLD_V19_FLOW_MQH
 #define GOLD_V19_FLOW_MQH
 
-// Extracted verbatim from mt4/GoldAITraderV19.mq4 at baseline 5461cb91ff339acc99af54caa63764aca835aa7f.
-// Keep this module behavior-identical until parity and compiler checks pass.
+// Extracted verbatim from the user-provided V19 source snapshot.
+// Source Git blob SHA: a65972bf15041d7ae34a001f6b079dcb8465b6ce (historical commit 676ef7edfe7fc342cb9c8681ad8c6bec6ecf9379).
+// Preserve behavior until MQL4 compile and demo parity tests pass.
 
 bool IsStaleBarTimeRejection(string response)
 {
@@ -71,19 +72,6 @@ void OnTimer()
    {
       g_signalFlowStatus = "WAITING_FOR_M5_BAR";
       g_signalFlowReason = "completed_M5_bar_not_available";
-      return;
-   }
-
-   // A freshly attached EA must not submit the candle that was already closed
-   // before initialization. It may be older than the server's 90-second freshness
-   // window, so mark it handled and wait for the next completed M5 candle.
-   if(g_lastClosedM5Bar <= 0)
-   {
-      g_lastClosedM5Bar = closedBar;
-      g_signalFlowStatus = "WAITING_FOR_NEW_M5_BAR";
-      g_signalFlowReason = "startup_current_completed_M5_bar_skipped";
-      Print("GoldAITrader: startup completed M5 bar skipped; waiting for next completed bar. bar_open=",
-            TimeToString(closedBar, TIME_DATE|TIME_MINUTES));
       return;
    }
 
