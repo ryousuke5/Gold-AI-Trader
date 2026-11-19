@@ -181,6 +181,10 @@ export function validateGoldSafetyHeartbeatPayload(payload) {
   for (const field of ['enable_signal_requests', 'run_ai_test_once', 'allow_auto_orders']) {
     if (typeof runtime[field] !== 'boolean') errors.push(`ea_runtime.${field}: expected_boolean`);
   }
+  // This contract describes the monitor-only V19 bridge. Order execution is a separate project.
+  if (runtime.allow_auto_orders === true) {
+    errors.push('ea_runtime.allow_auto_orders: must_be_false_in_monitor_only_contract');
+  }
   for (const field of [
     'timer_seconds', 'safety_heartbeat_seconds', 'current_closed_m5_bar_open_utc',
     'last_handled_m5_bar_open_utc', 'last_attempted_m5_bar_open_utc', 'last_attempt_at_utc'
