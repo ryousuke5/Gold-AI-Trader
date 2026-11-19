@@ -63,10 +63,10 @@ function makeSignalPayload() {
         ema200: 3788.0,
         rsi14: 61,
         atr14: 5.4
-      }
+      },
+      recent_m5: makeBars(24, 300),
+      recent_h1: makeBars(24, 3600)
     },
-    recent_m5: makeBars(24, 300),
-    recent_h1: makeBars(24, 3600),
     account: {
       equity: 10000,
       balance: 10000,
