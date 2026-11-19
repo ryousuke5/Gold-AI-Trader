@@ -155,8 +155,9 @@ export function validateGoldSignalPayload(payload) {
 
   validateMarketSafety(payload.market_safety, errors);
   validateQuoteFeatures(payload.features, 'features', errors, { requireSignalFeatures: true });
-  validateBars(payload.recent_m5, 'recent_m5', errors);
-  validateBars(payload.recent_h1, 'recent_h1', errors);
+  // V19 nests both history arrays inside the features object, not at the top level.
+  validateBars(payload.features?.recent_m5, 'features.recent_m5', errors);
+  validateBars(payload.features?.recent_h1, 'features.recent_h1', errors);
   validateSignalAccount(payload.account, errors);
 
   return { ok: errors.length === 0, errors };
