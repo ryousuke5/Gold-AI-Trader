@@ -40,6 +40,10 @@ npm test
 
 Automated result: `V19 Portable Shadow Parity` workflow passed (run `44617804192`), and the full repository test workflow passed on commit `bd6b5431b83908e5dabe7f20d4e3448d0d2ff0e7` (run `44618194473`). These results prove source-text parity and repository tests only. They do not prove MetaEditor compilation, MT4 runtime equivalence, or MT5 correctness.
 
+## Known behavior to review separately
+
+The supplied source does not include the startup guard `startup_current_completed_M5_bar_skipped`. A later repository revision added that guard in commit `ee43a468b294a3121ab7e933d213905b1d16bbca` to avoid submitting the already-closed M5 candle immediately after EA attachment. The modular shadow intentionally preserves the supplied source behavior for parity; it does **not** imply that the older startup behavior is preferred. Review this guard as a separate, explicitly tested behavior change after the clean modular compile, rather than mixing it into the extraction.
+
 ## Next required steps
 
 1. The source pasted in chat is now preserved as a named baseline; verify byte-for-byte against the active MT4 Experts-folder copy when convenient.
