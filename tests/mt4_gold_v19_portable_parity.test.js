@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const baseline = fs.readFileSync(new URL('../mt4/GoldAITraderV19.mq4', import.meta.url), 'utf8');
+const baseline = fs.readFileSync(new URL('../mt4/source-baselines/GoldAITraderV19_UserProvided_2026-11-20.mq4', import.meta.url), 'utf8');
 const entry = fs.readFileSync(new URL('../mt4/portable/GoldAITraderV19_Portable.mq4', import.meta.url), 'utf8');
 const modulePaths = [
   '../mt4/portable/include/GoldV19_Common.mqh',
@@ -85,6 +85,12 @@ test('portable shadow entrypoint includes all modules in dependency order', () =
   }
   assert.match(entry, /AllowAutoOrders\s*=\s*false/);
   assert.match(entry, /portable research shadow build/);
+});
+
+test('supplied V19 baseline preserves the original startup-bar handling', () => {
+  assert.doesNotMatch(baseline, /startup_current_completed_M5_bar_skipped/);
+  assert.doesNotMatch(entry, /startup_current_completed_M5_bar_skipped/);
+  assert.match(baseline, /if\(closedBar == g_lastClosedM5Bar\)/);
 });
 
 test('all 24 original V19 functions are preserved verbatim exactly once', () => {
