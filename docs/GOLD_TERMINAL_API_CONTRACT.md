@@ -26,9 +26,9 @@ Top level:
 - timeframe: M5
 - market_safety: local safety-gate snapshot
 - features: quote, UTC conversion, M5 and H1 indicator data
-- recent_m5: completed M5 bars, oldest-to-newest
-- recent_h1: completed H1 bars, oldest-to-newest
 - account: account / instrument capability snapshot
+
+The recent_m5 and recent_h1 arrays are nested inside features, alongside the quote, M5 and H1 fields.
 
 market_safety fields:
 - allowed: boolean
@@ -46,6 +46,8 @@ features fields:
 - bar_time: completed M5 close time in UTC epoch seconds
 - m5: ema20, ema50, rsi14, atr14, high20, low20
 - h1: close, ema20, ema50, ema200, rsi14, atr14
+- recent_m5: completed M5 bars, oldest-to-newest
+- recent_h1: completed H1 bars, oldest-to-newest
 
 Each recent bar contains:
 - time: completed candle close time in UTC epoch seconds
