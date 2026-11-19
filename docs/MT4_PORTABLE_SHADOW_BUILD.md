@@ -1,15 +1,15 @@
 # MT4 V19 Portable Shadow Build
 
-Status: initial extraction complete; automated source-parity CI PASS; MetaEditor compile/runtime validation pending.  
+Status: regenerated from the V19 source supplied in chat; source-parity CI pending; MetaEditor compile/runtime validation pending.  
 Branch: `refactor/v19-mt5-portability-foundation`
 
 ## Purpose
 
-This folder contains a modular, **research-only shadow copy** of the V19 EA. The existing `mt4/GoldAITraderV19.mq4` is untouched. The shadow build was extracted verbatim from the repository baseline whose source blob SHA is:
+This folder contains a modular, **research-only shadow copy** of the V19 EA. The existing `mt4/GoldAITraderV19.mq4` is untouched. The shadow build was regenerated from the pre-startup-bar-skip V19 version matching the source pasted in chat. Its preserved baseline is `mt4/source-baselines/GoldAITraderV19_UserProvided_2026-11-20.mq4`, Git blob SHA:
 
-`5461cb91ff339acc99af54caa63764aca835aa7f`
+`a65972bf15041d7ae34a001f6b079dcb8465b6ce`
 
-That source file was last changed on 2026-11-03. The local MetaEditor source used for V19 runtime logs on 2026-11-18 has not yet been synchronized and verified against this baseline. Do not compile for live use, install over the active EA, merge to main, or deploy based solely on this shadow build.
+The corresponding historical revision is commit `676ef7edfe7fc342cb9c8681ad8c6bec6ecf9379` (2026-11-03). This baseline does not contain the later `startup_current_completed_M5_bar_skipped` guard. The shadow code deliberately preserves that behavior rather than silently adding a logic change. Do not install over the active EA, merge to main, or deploy based solely on this shadow build.
 
 ## Files
 
@@ -22,7 +22,7 @@ That source file was last changed on 2026-11-03. The local MetaEditor source use
 - `include/GoldV19_Http.mqh`: authenticated HTTP POST.
 - `include/GoldV19_Flow.mqh`: stale-bar rejection and timer signal flow.
 
-All 24 function definitions were extracted verbatim. Only the EA description string was changed to identify the shadow build. The inputs and globals remain copied from the repository V19 file.
+All 24 function definitions were extracted verbatim from the supplied-source baseline. Only the EA description string was changed to identify the shadow build. The inputs and globals remain copied from that baseline.
 
 ## Verification
 
@@ -42,12 +42,10 @@ Automated result: `V19 Portable Shadow Parity` workflow passed (run `44617804192
 
 ## Next required steps
 
-1. Obtain the latest local `GoldAITraderV19.mq4` from MetaEditor / the active MT4 Experts folder.
-2. Compare its SHA-256 and source diff to the repository baseline and the shadow build.
-3. If the local source contains newer safety or telemetry changes, regenerate the shadow modules from that exact source and update parity tests.
-4. Compile the shadow EA in MetaEditor with no order permission and record compiler output.
-5. Run demo-only A/B forward tests against the unmodified EA before considering any MT5 port.
-6. Build the MQL5 adapter independently against the unchanged Render JSON/API contract.
+1. The source pasted in chat is now preserved as a named baseline; verify byte-for-byte against the active MT4 Experts-folder copy when convenient.
+2. Compile the shadow EA in MetaEditor with no order permission and record compiler output.
+3. Run demo-only A/B forward tests against the unmodified EA before considering any MT5 port.
+4. Build the MQL5 adapter independently against the unchanged Render JSON/API contract.
 
 ## Safety invariants
 
