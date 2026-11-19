@@ -1,6 +1,6 @@
 # MT4 V19 Portable Shadow Build
 
-Status: initial extraction complete; compile/parity validation pending.  
+Status: initial extraction complete; automated source-parity CI PASS; MetaEditor compile/runtime validation pending.  
 Branch: `refactor/v19-mt5-portability-foundation`
 
 ## Purpose
@@ -38,7 +38,7 @@ Run:
 npm test
 ```
 
-This Node test proves source-text parity only. It does not prove MetaEditor compilation, MT4 runtime equivalence, or MT5 correctness.
+Automated result: `V19 Portable Shadow Parity` workflow passed (run `44617804192`), and the full repository test workflow passed on commit `bd6b5431b83908e5dabe7f20d4e3448d0d2ff0e7` (run `44618194473`). These results prove source-text parity and repository tests only. They do not prove MetaEditor compilation, MT4 runtime equivalence, or MT5 correctness.
 
 ## Next required steps
 
