@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const baseline = fs.readFileSync(new URL('../GoldAITraderV19.mq4', new URL('../mt4/', import.meta.url)), 'utf8');
+const baseline = fs.readFileSync(new URL('../mt4/GoldAITraderV19.mq4', import.meta.url), 'utf8');
 const entry = fs.readFileSync(new URL('../mt4/portable/GoldAITraderV19_Portable.mq4', import.meta.url), 'utf8');
 const modulePaths = [
   '../mt4/portable/include/GoldV19_Common.mqh',
@@ -25,11 +25,11 @@ function findFunctionEnd(source, openIndex) {
     const next = source[i + 1];
     if (state === 'string' || state === 'char') {
       if (escaped) { escaped = false; continue; }
-      if (char === '\\\\') { escaped = true; continue; }
+      if (char === '\\') { escaped = true; continue; }
       if ((state === 'string' && char === '"') || (state === 'char' && char === "'")) state = 'code';
       continue;
     }
-    if (state === 'line') { if (char === '\\n') state = 'code'; continue; }
+    if (state === 'line') { if (char === '\n') state = 'code'; continue; }
     if (state === 'block') { if (char === '*' && next === '/') { state = 'code'; i++; } continue; }
     if (char === '/' && next === '/') { state = 'line'; i++; continue; }
     if (char === '/' && next === '*') { state = 'block'; i++; continue; }
@@ -45,9 +45,13 @@ function findFunctionEnd(source, openIndex) {
 }
 
 function functionBody(source, name) {
-  const signature = new RegExp('^(?:string|bool|int|double|void|datetime|long|uint|ulong)\\\\s+' + name + '\\\\s*\\\\([^;]*?\\\\)\\\\s*\\\\{', 'm');
+  const signature = new RegExp(
+    '^(?:string|bool|int|double|void|datetime|long|uint|ulong)\\s+' +
+    name + '\\s*\\([^;]*?\\)\\s*\\{',
+    'm'
+  );
   const match = signature.exec(source);
-  assert.ok(match, `missing function definition: ${name}`);
+  assert.ok(match, \`missing function definition: \${name}\`);
   const open = match.index + match[0].lastIndexOf('{');
   return source.slice(match.index, findFunctionEnd(source, open)).trim();
 }
@@ -74,26 +78,26 @@ test('portable shadow entrypoint includes all modules in dependency order', () =
   ];
   let previousIndex = -1;
   for (const file of includes) {
-    const marker = `#include "include/${file}"`;
+    const marker = \`#include "include/\${file}"\`;
     const currentIndex = entry.indexOf(marker);
-    assert.ok(currentIndex > previousIndex, `include missing or out of order: ${file}`);
+    assert.ok(currentIndex > previousIndex, \`include missing or out of order: \${file}\`);
     previousIndex = currentIndex;
   }
-  assert.match(entry, /AllowAutoOrders\\s*=\\s*false/);
+  assert.match(entry, /AllowAutoOrders\s*=\s*false/);
   assert.match(entry, /portable research shadow build/);
 });
 
 test('all 24 original V19 functions are preserved verbatim exactly once', () => {
   for (const name of expectedFunctions) {
     const body = functionBody(baseline, name);
-    assert.equal(portable.split(body).length - 1, 1, `function changed or duplicated: ${name}`);
+    assert.equal(portable.split(body).length - 1, 1, \`function changed or duplicated: \${name}\`);
   }
 });
 
 test('portable shadow build remains monitor-only with no order execution', () => {
-  assert.doesNotMatch(portable, /\\bOrderSend\\s*\\(/);
-  assert.doesNotMatch(portable, /\\bOrderClose\\s*\\(/);
-  assert.doesNotMatch(portable, /\\bOrderModify\\s*\\(/);
-  assert.doesNotMatch(portable, /\\bCTrade\\b/);
-  assert.match(entry, /input bool\\s+AllowAutoOrders\\s*=\\s*false;/);
+  assert.doesNotMatch(portable, /\bOrderSend\s*\(/);
+  assert.doesNotMatch(portable, /\bOrderClose\s*\(/);
+  assert.doesNotMatch(portable, /\bOrderModify\s*\(/);
+  assert.doesNotMatch(portable, /\bCTrade\b/);
+  assert.match(entry, /input bool\s+AllowAutoOrders\s*=\s*false;/);
 });
