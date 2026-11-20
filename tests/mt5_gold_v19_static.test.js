@@ -6,6 +6,7 @@ const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 const entry = read('../mt5/GoldAITraderV19_MT5_Research.mq5');
 const common = read('../mt5/include/GoldV19MT5_Common.mqh');
 const marketSafety = read('../mt5/include/GoldV19MT5_MarketSafety.mqh');
+const flow = read('../mt5/include/GoldV19MT5_Flow.mqh');
 const modules = [
   '../mt5/include/GoldV19MT5_Common.mqh',
   '../mt5/include/GoldV19MT5_Time.mqh',
@@ -53,6 +54,19 @@ test('MT5 adapter avoids reserved symbol names and MQL4-only time functions', ()
   assert.match(marketSafety, /nowUtcParts\.hour\s*>=\s*20/);
   assert.match(marketSafety, /nowUtcParts\.hour\s*<=\s*23/);
   assert.doesNotMatch(marketSafety, /\bTimeDayOfWeek\s*\(|\bTimeHour\s*\(/);
+});
+
+test('missing API credentials allow local safety monitoring but block every network route', () => {
+  const updateIndex = flow.indexOf('UpdateMarketSafety(sym);');
+  const heartbeatIndex = flow.indexOf('if(g_apiConfigReady &&');
+  const signalDisabledIndex = flow.indexOf('if(!EnableSignalRequests)');
+  const apiGuardIndex = flow.indexOf('if(!g_apiConfigReady)', signalDisabledIndex);
+  assert.ok(updateIndex >= 0 && heartbeatIndex > updateIndex);
+  assert.ok(signalDisabledIndex > heartbeatIndex);
+  assert.ok(apiGuardIndex > signalDisabledIndex);
+  assert.match(flow, /g_signalFlowStatus\s*=\s*\(!g_apiConfigReady\s*\?\s*"LOCAL_ONLY"\s*:\s*"DISABLED"\)/);
+  assert.match(flow, /if\(g_apiConfigReady\s*&&\s*EnableSafetyHeartbeat/);
+  assert.match(flow, /g_signalFlowStatus\s*=\s*"API_CONFIG_INVALID"/);
 });
 
 test('MT5 adapter contains no order-execution APIs', () => {
