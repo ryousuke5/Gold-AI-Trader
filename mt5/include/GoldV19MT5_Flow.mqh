@@ -38,7 +38,7 @@ void OnTimer()
 
    UpdateMarketSafety(sym);
 
-   int heartbeatSeconds = MathMax(5, MathMin(60, SafetyHeartbeatSeconds));
+   int heartbeatSeconds = (int)MathMax(5, MathMin(60, SafetyHeartbeatSeconds));
    datetime heartbeatNowUtc = TimeGMT();
    if(EnableSafetyHeartbeat &&
       heartbeatNowUtc > 0 &&

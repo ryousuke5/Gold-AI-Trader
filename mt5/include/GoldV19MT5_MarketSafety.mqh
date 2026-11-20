@@ -69,13 +69,13 @@ void UpdateMarketSafety(string sym)
       tickUtc = tick.time - offsetSeconds;
 
    int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
-   int reopenGapSeconds = MathMax(1800, MathMin(7200, MarketReopenGapSeconds));
-   int reopenLockMinutes = MathMax(30, MarketReopenLockMinutes);
+   int reopenGapSeconds = (int)MathMax(1800, MathMin(7200, MarketReopenGapSeconds));
+   int reopenLockMinutes = (int)MathMax(30, MarketReopenLockMinutes);
    double maxSpreadPrice = MathMin(0.50, MathMax(0.0, MaxSpreadPrice));
    double maxTickJumpPrice = MathMin(3.00, MathMax(0.01, MaxTickJumpPrice));
    double recoveryBandPrice = MathMin(0.50, MathMax(0.01, TickRecoveryBandPrice));
-   int recoverySamplesRequired = MathMax(3, TickRecoverySamples);
-   int maxQuoteAgeSeconds = MathMin(30, MathMax(1, MaxQuoteAgeSeconds));
+   int recoverySamplesRequired = (int)MathMax(3, TickRecoverySamples);
+   int maxQuoteAgeSeconds = (int)MathMin(30, MathMax(1, MaxQuoteAgeSeconds));
 
    g_marketSafetyBid = tick.bid;
    g_marketSafetyAsk = tick.ask;
