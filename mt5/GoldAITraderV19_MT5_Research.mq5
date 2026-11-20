@@ -4,7 +4,7 @@
 
 input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
 input string ApiKey = "CHANGE_ME";
-input string SymbolName = "";
+input string InpSymbol = "";
 input bool   RequireGoldSymbol = true;
 input bool   EnableSignalRequests = false;
 input bool   RunAITestOnce = false;
