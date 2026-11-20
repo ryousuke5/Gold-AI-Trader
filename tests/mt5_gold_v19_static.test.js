@@ -4,6 +4,8 @@ import fs from 'node:fs';
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 const entry = read('../mt5/GoldAITraderV19_MT5_Research.mq5');
+const common = read('../mt5/include/GoldV19MT5_Common.mqh');
+const marketSafety = read('../mt5/include/GoldV19MT5_MarketSafety.mqh');
 const modules = [
   '../mt5/include/GoldV19MT5_Common.mqh',
   '../mt5/include/GoldV19MT5_Time.mqh',
@@ -39,6 +41,18 @@ test('MT5 research adapter is network-disabled by default and has no order switc
   assert.match(entry, /input string ApiKey\s*=\s*"CHANGE_ME";/);
   assert.doesNotMatch(entry, /input bool\s+AllowAutoOrders/);
   assert.match(source, /allow_auto_orders\\":false/);
+});
+
+test('MT5 adapter avoids reserved symbol names and MQL4-only time functions', () => {
+  assert.match(entry, /input string\s+InpSymbol\s*=/);
+  assert.doesNotMatch(entry, /input string\s+SymbolName\s*=/);
+  assert.match(common, /TrimText\(InpSymbol\)/);
+  assert.match(marketSafety, /MqlDateTime\s+nowUtcParts/);
+  assert.match(marketSafety, /TimeToStruct\(nowUtc,\s*nowUtcParts\)/);
+  assert.match(marketSafety, /nowUtcParts\.day_of_week\s*==\s*0/);
+  assert.match(marketSafety, /nowUtcParts\.hour\s*>=\s*20/);
+  assert.match(marketSafety, /nowUtcParts\.hour\s*<=\s*23/);
+  assert.doesNotMatch(marketSafety, /\bTimeDayOfWeek\s*\(|\bTimeHour\s*\(/);
 });
 
 test('MT5 adapter contains no order-execution APIs', () => {
