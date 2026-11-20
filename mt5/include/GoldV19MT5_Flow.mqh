@@ -9,18 +9,6 @@ bool IsStaleBarTimeRejection(string response)
 
 void OnTimer()
 {
-   if(!g_apiConfigReady)
-   {
-      g_signalFlowStatus = "API_CONFIG_INVALID";
-      g_signalFlowReason = "ApiBaseUrl_or_ApiKey_invalid";
-      if(!g_apiConfigWarningLogged)
-      {
-         Print("GoldAITrader MT5: API configuration incomplete; network requests are paused.");
-         g_apiConfigWarningLogged = true;
-      }
-      return;
-   }
-
    string sym = TradeSymbol();
    if(!IsGoldSymbol(sym))
    {
@@ -36,11 +24,21 @@ void OnTimer()
       return;
    }
 
+   // Local market-safety monitoring remains available without API credentials.
+   // No network request is made unless the corresponding enable flag is true
+   // and the API configuration is valid.
    UpdateMarketSafety(sym);
+
+   if(!g_apiConfigReady && !g_apiConfigWarningLogged)
+   {
+      Print("GoldAITrader MT5: API configuration incomplete; local safety monitoring continues and network requests are paused.");
+      g_apiConfigWarningLogged = true;
+   }
 
    int heartbeatSeconds = (int)MathMax(5, MathMin(60, SafetyHeartbeatSeconds));
    datetime heartbeatNowUtc = TimeGMT();
-   if(EnableSafetyHeartbeat &&
+   if(g_apiConfigReady &&
+      EnableSafetyHeartbeat &&
       heartbeatNowUtc > 0 &&
       (g_lastSafetyHeartbeatAttemptUtc <= 0 ||
        heartbeatNowUtc - g_lastSafetyHeartbeatAttemptUtc >= heartbeatSeconds))
@@ -54,8 +52,17 @@ void OnTimer()
 
    if(!EnableSignalRequests)
    {
-      g_signalFlowStatus = "DISABLED";
-      g_signalFlowReason = "EnableSignalRequests=false";
+      g_signalFlowStatus = (!g_apiConfigReady ? "LOCAL_ONLY" : "DISABLED");
+      g_signalFlowReason = (!g_apiConfigReady
+                            ? "ApiBaseUrl_or_ApiKey_invalid; network_requests_paused"
+                            : "EnableSignalRequests=false");
+      return;
+   }
+
+   if(!g_apiConfigReady)
+   {
+      g_signalFlowStatus = "API_CONFIG_INVALID";
+      g_signalFlowReason = "ApiBaseUrl_or_ApiKey_invalid";
       return;
    }
 
