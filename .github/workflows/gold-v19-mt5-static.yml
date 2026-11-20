@@ -1,0 +1,29 @@
+name: GOLD V19 MT5 Static Adapter Checks
+
+on:
+  push:
+    branches:
+      - refactor/v19-mt5-portability-foundation
+    paths:
+      - "mt5/**"
+      - "tests/mt5_gold_v19_static.test.js"
+      - "docs/MT5_V19_PORT_STATUS.md"
+      - ".github/workflows/gold-v19-mt5-static.yml"
+  pull_request:
+    paths:
+      - "mt5/**"
+      - "tests/mt5_gold_v19_static.test.js"
+      - "docs/MT5_V19_PORT_STATUS.md"
+      - ".github/workflows/gold-v19-mt5-static.yml"
+
+jobs:
+  mt5-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: node --test tests/mt5_gold_v19_static.test.js
+      - run: npm test

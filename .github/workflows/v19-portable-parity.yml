@@ -1,0 +1,23 @@
+name: V19 Portable Shadow Parity
+on:
+  push:
+    branches:
+      - refactor/v19-mt5-portability-foundation
+    paths:
+      - "mt4/GoldAITraderV19.mq4"
+      - "mt4/portable/**"
+      - "tests/mt4_gold_v19_portable_parity.test.js"
+      - ".github/workflows/v19-portable-parity.yml"
+  workflow_dispatch:
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run portable source parity tests
+        run: node --test tests/mt4_gold_v19_portable_parity.test.js
