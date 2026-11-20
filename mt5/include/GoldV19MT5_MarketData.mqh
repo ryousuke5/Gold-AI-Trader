@@ -168,7 +168,9 @@ bool SymbolTradeAllowed(string sym)
    long tradeMode = SymbolInfoInteger(sym, SYMBOL_TRADE_MODE);
    bool terminalAllowed = (TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) != 0);
    bool expertAllowed = (MQLInfoInteger(MQL_TRADE_ALLOWED) != 0);
-   return (tradeMode != SYMBOL_TRADE_MODE_DISABLED && terminalAllowed && expertAllowed);
+   bool accountAllowed = (AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) != 0);
+   return (tradeMode != SYMBOL_TRADE_MODE_DISABLED &&
+           terminalAllowed && expertAllowed && accountAllowed);
 }
 
 #endif // GOLD_V19_MT5_MARKETDATA_MQH
