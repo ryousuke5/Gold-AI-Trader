@@ -56,6 +56,8 @@ void UpdateMarketSafety(string sym)
    int offsetSeconds = 0;
    bool offsetOk = GetServerUtcOffsetSeconds(offsetSeconds);
    datetime nowUtc = TimeGMT();
+   MqlDateTime nowUtcParts = {};
+   bool nowUtcPartsValid = TimeToStruct(nowUtc, nowUtcParts);
 
    if(!SymbolInfoTick(sym, tick))
    {
@@ -116,9 +118,10 @@ void UpdateMarketSafety(string sym)
                   " duration_minutes=", reopenLockMinutes);
          }
          else if(g_lastObservedTickUtc <= 0 &&
-                 TimeDayOfWeek(nowUtc) == 0 &&
-                 TimeHour(nowUtc) >= 20 &&
-                 TimeHour(nowUtc) <= 23)
+                 nowUtcPartsValid &&
+                 nowUtcParts.day_of_week == 0 &&
+                 nowUtcParts.hour >= 20 &&
+                 nowUtcParts.hour <= 23)
          {
             g_reopenLockUntilUtc = nowUtc + reopenLockMinutes * 60;
             Print("[GOLD MARKET SAFETY MT5] first_observation_sunday_reopen_lock_started");
