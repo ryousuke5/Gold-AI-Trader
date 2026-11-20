@@ -38,7 +38,7 @@ test('MT5 research adapter is network-disabled by default and has no order switc
   assert.match(entry, /input bool\s+EnableSafetyHeartbeat\s*=\s*false;/);
   assert.match(entry, /input string ApiKey\s*=\s*"CHANGE_ME";/);
   assert.doesNotMatch(entry, /input bool\s+AllowAutoOrders/);
-  assert.match(source, /"allow_auto_orders":false/);
+  assert.match(source, /allow_auto_orders\\":false/);
 });
 
 test('MT5 adapter contains no order-execution APIs', () => {
@@ -65,10 +65,11 @@ test('MT5 adapter uses native handles, CopyBuffer, CopyRates and SymbolInfoTick'
 
 test('MT5 adapter preserves the existing API payload and endpoints', () => {
   for (const field of [
-    '"symbol"', '"timeframe"', '"market_safety"', '"features"',
-    '"recent_m5"', '"recent_h1"', '"account"', '"ea_runtime"',
-    '"allow_auto_orders":false'
+    'symbol', 'timeframe', 'market_safety', 'features',
+    'recent_m5', 'recent_h1', 'account', 'ea_runtime',
+    'allow_auto_orders'
   ]) assert.ok(source.includes(field), 'missing payload field: ' + field);
+  assert.match(source, /allow_auto_orders\\":false/);
 
   assert.ok(source.includes('/api/gold/market-safety'));
   assert.ok(source.includes('/api/gold/signal'));
