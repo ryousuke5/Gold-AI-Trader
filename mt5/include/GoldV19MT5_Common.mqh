@@ -10,7 +10,7 @@ string TrimText(string value)
 
 string TradeSymbol()
 {
-   string configured = TrimText(SymbolName);
+   string configured = TrimText(InpSymbol);
    if(StringLen(configured) > 0)
       return configured;
    return _Symbol;
