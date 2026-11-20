@@ -76,6 +76,14 @@ test('MT5 adapter preserves the existing API payload and endpoints', () => {
   assert.ok(source.includes('WebRequest('));
 });
 
+test('signal payload reuses the market-safety quote snapshot', () => {
+  const payload = read('../mt5/include/GoldV19MT5_Payload.mqh');
+  assert.match(payload, /double bid = g_marketSafetyBid;/);
+  assert.match(payload, /double ask = g_marketSafetyAsk;/);
+  assert.match(payload, /double spread = g_marketSafetySpread;/);
+  assert.doesNotMatch(payload, /JsonNumber\(tick\.(bid|ask),/);
+});
+
 test('MT5 bar-copy routine requires 24 completed bars and keeps chronological JSON', () => {
   assert.match(source, /CopyRates\(sym,\s*PERIOD_M5,\s*1,\s*24,\s*m5Bars\)\s*!=\s*24/);
   assert.match(source, /CopyRates\(sym,\s*PERIOD_H1,\s*1,\s*24,\s*h1Bars\)\s*!=\s*24/);

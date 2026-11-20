@@ -39,8 +39,12 @@ bool BuildSignalPayload(string &payload)
    if(digits < 0 || point <= 0.0)
       return false;
 
-   MqlTick tick = {};
-   if(!SymbolInfoTick(sym, tick))
+   // Reuse the exact quote snapshot evaluated by UpdateMarketSafety().
+   // This keeps features.bid/ask/spread consistent with market_safety.
+   double bid = g_marketSafetyBid;
+   double ask = g_marketSafetyAsk;
+   double spread = g_marketSafetySpread;
+   if(bid <= 0.0 || ask < bid || spread < 0.0)
       return false;
 
    MqlRates m5Bars[];
@@ -97,7 +101,6 @@ bool BuildSignalPayload(string &payload)
       (equity > 0.0 && point > 0.0 && tickSize > 0.0 && tickValue > 0.0 &&
        minLot > 0.0 && maxLot >= minLot && lotStep > 0.0);
 
-   double spread = tick.ask - tick.bid;
    double spreadPoints = (point > 0.0 ? spread / point : 0.0);
    datetime closedM5Open = m5Bars[23].time;
    datetime closedM5CloseUtc = closedM5Open + 300 - serverUtcOffsetSeconds;
@@ -116,8 +119,8 @@ bool BuildSignalPayload(string &payload)
    json += "\"reopen_lock_until_utc\":" + IntegerToString((int)g_reopenLockUntilUtc);
    json += "},";
    json += "\"features\":{";
-   json += "\"bid\":" + JsonNumber(tick.bid, digits) + ",";
-   json += "\"ask\":" + JsonNumber(tick.ask, digits) + ",";
+   json += "\"bid\":" + JsonNumber(bid, digits) + ",";
+   json += "\"ask\":" + JsonNumber(ask, digits) + ",";
    json += "\"point\":" + JsonNumber(point, digits) + ",";
    json += "\"spread\":" + JsonNumber(spread, digits) + ",";
    json += "\"spread_points\":" + JsonNumber(spreadPoints, 2) + ",";
