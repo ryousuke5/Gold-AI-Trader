@@ -15,6 +15,12 @@ bool GetServerUtcOffsetSeconds(int &offsetSeconds)
       MathAbs(roundedOffset) > 14 * 3600)
       return false;
 
+   // FXTF MT5 chart time is expected to be GMT+2 in winter or GMT+3 in summer.
+   // This deliberately rejects zero/unknown offsets, including an unvalidated
+   // Strategy Tester clock. It does not infer the seasonal transition date.
+   if(roundedOffset != 7200 && roundedOffset != 10800)
+      return false;
+
    offsetSeconds = roundedOffset;
    return true;
 }
@@ -24,6 +30,7 @@ string ServerTimeUtcEpochJson(datetime serverTime)
    int offsetSeconds = 0;
    if(serverTime <= 0 || !GetServerUtcOffsetSeconds(offsetSeconds))
       return "null";
+
    return IntegerToString((int)(serverTime - offsetSeconds));
 }
 
