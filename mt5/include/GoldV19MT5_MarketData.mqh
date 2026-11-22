@@ -66,6 +66,7 @@ bool ReadIndicatorValue(int handle, int shift, double &value)
             " shift=", shift, " error=", GetLastError());
       return false;
    }
+
    if(!MathIsValidNumber(buffer[0]) || buffer[0] == EMPTY_VALUE)
       return false;
 
@@ -87,6 +88,7 @@ bool SymbolReady(string sym)
       return false;
    if(CopyRates(sym, PERIOD_H1, 1, 2, h1) != 2)
       return false;
+
    return (m5[1].time > 0 && h1[1].time > 0);
 }
 
@@ -112,42 +114,49 @@ int OpenPositions(string sym)
 
 double DailyRealizedPnl(string sym)
 {
-   datetime now = TimeCurrent();
+   // Use trade-server time for the broker-day boundary, not TimeCurrent(),
+   // which can remain frozen at the last quote over weekends/market closures.
+   datetime now = TimeTradeServer();
+   if(now <= 0)
+      return 0.0;
+
    datetime dayStart = StringToTime(TimeToString(now, TIME_DATE));
    if(dayStart <= 0 || !HistorySelect(dayStart, now))
       return 0.0;
 
    double realized = 0.0;
    int total = HistoryDealsTotal();
+
    for(int i = 0; i < total; i++)
    {
       ulong ticket = HistoryDealGetTicket(i);
       if(ticket == 0)
          continue;
+
       if(HistoryDealGetString(ticket, DEAL_SYMBOL) != sym)
          continue;
       if((long)HistoryDealGetInteger(ticket, DEAL_MAGIC) != (long)MagicNumber)
          continue;
 
-      ENUM_DEAL_TYPE type = (ENUM_DEAL_TYPE)HistoryDealGetInteger(ticket, DEAL_TYPE);
-      if(type != DEAL_TYPE_BUY && type != DEAL_TYPE_SELL)
-         continue;
-
-      ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY);
-      if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_OUT_BY && entry != DEAL_ENTRY_INOUT)
-         continue;
-
-      realized += HistoryDealGetDouble(ticket, DEAL_PROFIT) +
-                  HistoryDealGetDouble(ticket, DEAL_SWAP) +
-                  HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+      // IMPORTANT FXTF accounting:
+      // FXTF charges its position-linked fee on the opening-side deal.
+      // Do not filter only DEAL_ENTRY_OUT/OUT_BY/INOUT. Sum cash components
+      // on every matching symbol+magic deal so entry-side commissions/fees
+      // are not omitted from the daily P/L snapshot.
+      realized += HistoryDealGetDouble(ticket, DEAL_PROFIT);
+      realized += HistoryDealGetDouble(ticket, DEAL_SWAP);
+      realized += HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+      realized += HistoryDealGetDouble(ticket, DEAL_FEE);
    }
+
    return realized;
 }
 
 double PeakEquity()
 {
-   string key = "GoldAITrader:PeakEquity";
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   string key = ScopedGlobalKey("RISK", "PEAK_EQUITY");
+
    if(!GlobalVariableCheck(key))
    {
       GlobalVariableSet(key, equity);
@@ -169,6 +178,7 @@ bool SymbolTradeAllowed(string sym)
    bool terminalAllowed = (TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) != 0);
    bool expertAllowed = (MQLInfoInteger(MQL_TRADE_ALLOWED) != 0);
    bool accountAllowed = (AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) != 0);
+
    return (tradeMode != SYMBOL_TRADE_MODE_DISABLED &&
            terminalAllowed && expertAllowed && accountAllowed);
 }
