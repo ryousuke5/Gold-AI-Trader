@@ -168,6 +168,7 @@ test('FXTF profile allows read-only startup when the dynamic JPY tick value is u
 
 test('FXTF real-account forward logger writes one local CSV row per completed M5 bar', () => {
   const payload = read('../mt5/include/GoldV19MT5_Payload.mqh');
+  const marketData = read('../mt5/include/GoldV19MT5_MarketData.mqh');
   assert.match(entry, /input bool\s+EnableLocalForwardLogging\s*=\s*true;/);
   assert.match(entry, /LoadForwardLogState\(\);/);
   assert.match(marketData, /GoldAITrader_FXTF_XAUUSD_M5_Forward\.csv/);
