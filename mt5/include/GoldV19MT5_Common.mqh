@@ -116,10 +116,18 @@ bool ValidateFXTFGoldSpecification(string sym, string &reason)
       reason = "unexpected_volume_step:" + DoubleToString(volumeStep, 8);
       return false;
    }
+   // Tick value is a live account-currency conversion value, not a fixed
+   // contract-specification field. FXTF XAUUSD is quoted in USD while this
+   // account is denominated in JPY, so the terminal may temporarily return
+   // zero/unavailable while conversion quotes or market data are unavailable.
+   // Keep the strict static profile checks above, but do not prevent the
+   // read-only market monitor from starting. Risk readiness remains separately
+   // gated by a positive tick value in the payload.
    if(!MathIsValidNumber(tickValue) || tickValue <= 0.0)
    {
-      reason = "tick_value_invalid";
-      return false;
+      Print("[FXTF PROFILE] WARNING: tick value unavailable at initialization; ",
+            "static XAUUSD profile accepted for READ_ONLY monitoring only. ",
+            "Risk data remains not ready until a valid tick value is available.");
    }
 
    reason = "ok";
