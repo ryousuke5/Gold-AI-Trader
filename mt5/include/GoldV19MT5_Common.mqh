@@ -145,7 +145,7 @@ string ScopedGlobalKey(string scope, string suffix)
    StringReplace(sym, "/", "_");
 
    long login = AccountInfoInteger(ACCOUNT_LOGIN);
-   return "GV19:" + server + ":" + IntegerToString((int)login) + ":" +
+   return "GV19:" + server + ":" + IntegerToString(login) + ":" +
           StringSubstr(sym, 0, 8) + ":" + scope + ":" + suffix;
 }
 
