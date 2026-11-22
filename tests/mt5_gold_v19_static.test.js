@@ -150,3 +150,9 @@ test('FXTF server UTC conversion accepts only GMT+2 or GMT+3', () => {
   assert.match(timeModule, /roundedOffset != 7200/);
   assert.match(timeModule, /roundedOffset != 10800/);
 });
+
+test('FXTF terminal state keys are scoped to broker, full login and symbol', () => {
+  assert.match(common, /ACCOUNT_SERVER/);
+  assert.match(common, /IntegerToString\(login\)/);
+  assert.match(common, /StringSubstr\(sym, 0, 8\)/);
+});
