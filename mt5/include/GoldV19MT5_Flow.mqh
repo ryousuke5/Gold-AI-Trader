@@ -27,6 +27,9 @@ void OnTimer()
 
    UpdateMarketSafety(sym);
 
+   // Local CSV capture is allowed on REAL accounts; it never makes network requests.
+   LogForwardM5Snapshot(sym);
+
    if(!g_apiConfigReady && !g_apiConfigWarningLogged)
    {
       Print("GoldAITrader MT5: API configuration incomplete; local safety monitoring continues and network requests are paused.");
