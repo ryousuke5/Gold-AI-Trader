@@ -9,7 +9,25 @@ bool IsStaleBarTimeRejection(string response)
 
 void OnTimer()
 {
+   static datetime lastTimerDiagLocal = 0;
+   static datetime lastNotReadyDiagLocal = 0;
+   static bool symbolReadyPreviously = false;
+
+   datetime nowLocal = TimeLocal();
    string sym = TradeSymbol();
+
+   if(lastTimerDiagLocal <= 0 || nowLocal - lastTimerDiagLocal >= 60)
+   {
+      Print("[FXTF TIMER DIAG] OnTimer_active",
+            " symbol=", sym,
+            " logging_enabled=", (EnableLocalForwardLogging ? "true" : "false"),
+            " last_logged_m5_bar=",
+            (g_lastForwardLoggedBar > 0
+             ? TimeToString(g_lastForwardLoggedBar, TIME_DATE|TIME_MINUTES)
+             : "none"),
+            " data_path=", TerminalInfoString(TERMINAL_DATA_PATH));
+      lastTimerDiagLocal = nowLocal;
+   }
 
    if(!IsGoldSymbol(sym))
    {
@@ -22,13 +40,47 @@ void OnTimer()
    {
       g_signalFlowStatus = "SYMBOL_NOT_READY";
       g_signalFlowReason = "M5_H1_history_or_symbol_quote_not_ready";
+
+      if(lastNotReadyDiagLocal <= 0 ||
+         nowLocal - lastNotReadyDiagLocal >= 30)
+      {
+         Print("[FXTF DATA DIAG] SymbolReady=false",
+               " symbol=", sym,
+               " m5_bars=", Bars(sym, PERIOD_M5),
+               " h1_bars=", Bars(sym, PERIOD_H1),
+               " m5_bar_1=",
+               (iTime(sym, PERIOD_M5, 1) > 0
+                ? TimeToString(iTime(sym, PERIOD_M5, 1), TIME_DATE|TIME_MINUTES)
+                : "none"),
+               " h1_bar_1=",
+               (iTime(sym, PERIOD_H1, 1) > 0
+                ? TimeToString(iTime(sym, PERIOD_H1, 1), TIME_DATE|TIME_MINUTES)
+                : "none"),
+               " last_error=", GetLastError(),
+               " data_path=", TerminalInfoString(TERMINAL_DATA_PATH));
+         lastNotReadyDiagLocal = nowLocal;
+      }
+
+      symbolReadyPreviously = false;
       return;
+   }
+
+   if(!symbolReadyPreviously)
+   {
+      Print("[FXTF DATA DIAG] SymbolReady=true",
+            " symbol=", sym,
+            " m5_bars=", Bars(sym, PERIOD_M5),
+            " h1_bars=", Bars(sym, PERIOD_H1));
+      symbolReadyPreviously = true;
    }
 
    UpdateMarketSafety(sym);
 
    // Local CSV capture is allowed on REAL accounts; it never makes network requests.
-   LogForwardM5Snapshot(sym);
+   // This diagnostic result is local only and does not make any network request.
+   bool forwardLogCallOk = LogForwardM5Snapshot(sym);
+   if(!forwardLogCallOk)
+      g_signalFlowReason = "local_forward_csv_capture_attempt_failed_check_FXTF_FORWARD_LOG";
 
    if(!g_apiConfigReady && !g_apiConfigWarningLogged)
    {
