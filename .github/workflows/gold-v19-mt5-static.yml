@@ -1,19 +1,24 @@
-name: GOLD V19 MT5 Static Adapter Checks
+name: GOLD V19 MT5 and FXTF GOLD Static Checks
 
 on:
   push:
     branches:
       - refactor/v19-mt5-portability-foundation
+      - feat/fxtf-mt5-gold-migration
     paths:
       - "mt5/**"
       - "tests/mt5_gold_v19_static.test.js"
+      - "tests/fxtf_mt5_environment_probe.test.js"
       - "docs/MT5_V19_PORT_STATUS.md"
+      - "docs/FXTF_MT5_GOLD_MIGRATION_RUNBOOK.md"
       - ".github/workflows/gold-v19-mt5-static.yml"
   pull_request:
     paths:
       - "mt5/**"
       - "tests/mt5_gold_v19_static.test.js"
+      - "tests/fxtf_mt5_environment_probe.test.js"
       - "docs/MT5_V19_PORT_STATUS.md"
+      - "docs/FXTF_MT5_GOLD_MIGRATION_RUNBOOK.md"
       - ".github/workflows/gold-v19-mt5-static.yml"
 
 jobs:
@@ -25,5 +30,5 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
-      - run: node --test tests/mt5_gold_v19_static.test.js
+      - run: node --test tests/mt5_gold_v19_static.test.js tests/fxtf_mt5_environment_probe.test.js
       - run: npm test
