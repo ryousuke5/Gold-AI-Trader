@@ -129,18 +129,79 @@ void LoadForwardLogState()
 
 bool LogForwardM5Snapshot(string sym)
 {
+   static datetime lastDisabledNoticeLocal = 0;
+   static datetime lastNoBarNoticeLocal = 0;
+   static datetime lastCopyFailureNoticeLocal = 0;
+   static datetime lastDuplicateNoticeBar = 0;
+
+   datetime nowLocal = TimeLocal();
+
    if(!EnableLocalForwardLogging)
+   {
+      if(lastDisabledNoticeLocal <= 0 ||
+         nowLocal - lastDisabledNoticeLocal >= 300)
+      {
+         Print("[FXTF FORWARD DIAG] logging_disabled EnableLocalForwardLogging=false");
+         lastDisabledNoticeLocal = nowLocal;
+      }
       return true;
+   }
 
    datetime closedM5Bar = iTime(sym, PERIOD_M5, 1);
-   if(closedM5Bar <= 0 || closedM5Bar == g_lastForwardLoggedBar)
+   if(closedM5Bar <= 0)
+   {
+      if(lastNoBarNoticeLocal <= 0 ||
+         nowLocal - lastNoBarNoticeLocal >= 30)
+      {
+         Print("[FXTF FORWARD DIAG] no_closed_m5_bar",
+               " m5_bars=", Bars(sym, PERIOD_M5),
+               " h1_bars=", Bars(sym, PERIOD_H1),
+               " last_error=", GetLastError(),
+               " data_path=", TerminalInfoString(TERMINAL_DATA_PATH));
+         lastNoBarNoticeLocal = nowLocal;
+      }
+      return false;
+   }
+
+   if(closedM5Bar == g_lastForwardLoggedBar)
+   {
+      if(lastDuplicateNoticeBar != closedM5Bar)
+      {
+         Print("[FXTF FORWARD DIAG] duplicate_bar_skipped",
+               " closed_m5_bar=", TimeToString(closedM5Bar, TIME_DATE|TIME_MINUTES),
+               " last_logged_bar=", TimeToString(g_lastForwardLoggedBar, TIME_DATE|TIME_MINUTES));
+         lastDuplicateNoticeBar = closedM5Bar;
+      }
       return true;
+   }
 
    MqlRates m5[1];
    MqlRates h1[1];
-   if(CopyRates(sym, PERIOD_M5, 1, 1, m5) != 1 ||
-      CopyRates(sym, PERIOD_H1, 1, 1, h1) != 1)
+
+   ResetLastError();
+   int m5Copied = CopyRates(sym, PERIOD_M5, 1, 1, m5);
+   int m5CopyError = GetLastError();
+
+   ResetLastError();
+   int h1Copied = CopyRates(sym, PERIOD_H1, 1, 1, h1);
+   int h1CopyError = GetLastError();
+
+   if(m5Copied != 1 || h1Copied != 1)
+   {
+      if(lastCopyFailureNoticeLocal <= 0 ||
+         nowLocal - lastCopyFailureNoticeLocal >= 30)
+      {
+         Print("[FXTF FORWARD DIAG] history_copy_failed",
+               " m5_copied=", m5Copied,
+               " m5_error=", m5CopyError,
+               " h1_copied=", h1Copied,
+               " h1_error=", h1CopyError,
+               " m5_bars=", Bars(sym, PERIOD_M5),
+               " h1_bars=", Bars(sym, PERIOD_H1));
+         lastCopyFailureNoticeLocal = nowLocal;
+      }
       return false;
+   }
 
    int offsetSeconds = 0;
    bool offsetReady = GetServerUtcOffsetSeconds(offsetSeconds);
@@ -186,8 +247,11 @@ bool LogForwardM5Snapshot(string sym)
    {
       if(!g_forwardLogWarningLogged)
       {
-         Print("[FXTF FORWARD LOG] FileOpen failed. error=", GetLastError(),
-               " file=", fileName);
+         int fileOpenError = GetLastError();
+         Print("[FXTF FORWARD LOG] FileOpen failed. error=", fileOpenError,
+               " file=", fileName,
+               " data_path=", TerminalInfoString(TERMINAL_DATA_PATH),
+               " files_folder=", TerminalInfoString(TERMINAL_DATA_PATH), "\\MQL5\\Files");
          g_forwardLogWarningLogged = true;
       }
       return false;
@@ -264,6 +328,8 @@ bool LogForwardM5Snapshot(string sym)
       (indicatorsReady ? "true" : "false"));
 
    FileFlush(file);
+   ulong fileSizeAfterWrite = FileSize(file);
+   int fileWriteError = GetLastError();
    FileClose(file);
 
    if(bytesWritten == 0)
@@ -271,7 +337,8 @@ bool LogForwardM5Snapshot(string sym)
       if(!g_forwardLogWarningLogged)
       {
          Print("[FXTF FORWARD LOG] FileWrite failed. file=", fileName,
-               " error=", GetLastError());
+               " error=", fileWriteError,
+               " data_path=", TerminalInfoString(TERMINAL_DATA_PATH));
          g_forwardLogWarningLogged = true;
       }
       return false;
@@ -282,6 +349,8 @@ bool LogForwardM5Snapshot(string sym)
    g_forwardLogWarningLogged = false;
 
    Print("[FXTF FORWARD LOG] M5_BAR saved file=", fileName,
+         " file_size_bytes=", fileSizeAfterWrite,
+         " data_path=", TerminalInfoString(TERMINAL_DATA_PATH),
          " bar=", TimeToString(closedM5Bar, TIME_DATE|TIME_MINUTES),
          " safety=", (g_marketSafetyAllowed ? "allowed" : "blocked"),
          " reason=", g_marketSafetyReason,
