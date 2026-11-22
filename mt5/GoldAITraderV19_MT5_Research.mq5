@@ -128,7 +128,11 @@ int OnInit()
          " min_volume=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_VOLUME_MIN), 4),
          " volume_step=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_VOLUME_STEP), 4),
          " tick_size=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_SIZE), 8),
-         " tick_value_account_currency=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_VALUE), 8));
+         " tick_value_account_currency=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_VALUE), 8),
+         " tick_value_profit=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_VALUE_PROFIT), 8),
+         " tick_value_loss=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_VALUE_LOSS), 8),
+         " tick_value_ready=", ((MathIsValidNumber(SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_VALUE)) &&
+                                  SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_VALUE) > 0.0) ? "true" : "false"));
 
    if(accountMode == ACCOUNT_TRADE_MODE_REAL)
       Print("[FXTF SAFETY] REAL account detected. All Render network requests are hard-blocked; local read-only monitoring only.");
