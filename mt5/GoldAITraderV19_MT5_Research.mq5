@@ -17,6 +17,7 @@ input bool   RequireStrictFXTFProfile = true;
 input bool   EnableSignalRequests = false;
 input bool   RunAITestOnce = false;
 input bool   EnableSafetyHeartbeat = false;
+input bool   EnableLocalForwardLogging = true;
 
 input int    TimerSeconds = 1;
 input int    MagicNumber = 26092801;
@@ -52,6 +53,8 @@ string g_signalFlowReason = "not_started";
 
 datetime g_lastObservedTickUtc = 0;
 datetime g_lastSafetyHeartbeatAttemptUtc = 0;
+datetime g_lastForwardLoggedBar = 0;
+bool g_forwardLogWarningLogged = false;
 double g_lastAcceptedMid = 0.0;
 datetime g_reopenLockUntilUtc = 0;
 bool g_firstSessionTickPending = true;
@@ -149,6 +152,7 @@ int OnInit()
       return INIT_FAILED;
 
    LoadMarketSafetyState();
+   LoadForwardLogState();
 
    if(!EventSetTimer(TimerSeconds))
    {
