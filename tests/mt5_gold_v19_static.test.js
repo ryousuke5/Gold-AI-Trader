@@ -156,3 +156,12 @@ test('FXTF terminal state keys are scoped to broker, full login and symbol', () 
   assert.match(common, /IntegerToString\(login\)/);
   assert.match(common, /StringSubstr\(sym, 0, 8\)/);
 });
+
+test('FXTF profile allows read-only startup when the dynamic JPY tick value is unavailable', () => {
+  const payload = read('../mt5/include/GoldV19MT5_Payload.mqh');
+  assert.match(common, /tick value unavailable at initialization/);
+  assert.doesNotMatch(common, /reason = "tick_value_invalid"/);
+  assert.match(payload, /tickValue > 0\.0/);
+  assert.match(entry, /SYMBOL_TRADE_TICK_VALUE_PROFIT/);
+  assert.match(entry, /SYMBOL_TRADE_TICK_VALUE_LOSS/);
+});
