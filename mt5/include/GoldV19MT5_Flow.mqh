@@ -10,6 +10,7 @@ bool IsStaleBarTimeRejection(string response)
 void OnTimer()
 {
    string sym = TradeSymbol();
+
    if(!IsGoldSymbol(sym))
    {
       g_signalFlowStatus = "SYMBOL_NOT_GOLD";
@@ -24,9 +25,6 @@ void OnTimer()
       return;
    }
 
-   // Local market-safety monitoring remains available without API credentials.
-   // No network request is made unless the corresponding enable flag is true
-   // and the API configuration is valid.
    UpdateMarketSafety(sym);
 
    if(!g_apiConfigReady && !g_apiConfigWarningLogged)
@@ -35,8 +33,25 @@ void OnTimer()
       g_apiConfigWarningLogged = true;
    }
 
+   // Hard safety boundary: this build never sends Render requests from REAL
+   // or CONTEST accounts, even if the input switches are accidentally enabled.
+   if(!NetworkAllowedForCurrentAccount())
+   {
+      g_signalFlowStatus = "REAL_ACCOUNT_LOCAL_ONLY";
+      g_signalFlowReason = "network_blocked_unless_fxtf_demo_account";
+      if(!g_liveNetworkBlockLogged)
+      {
+         Print("[FXTF SAFETY] Network blocked for account mode ",
+               AccountModeText(AccountInfoInteger(ACCOUNT_TRADE_MODE)),
+               ". Local read-only market monitoring only.");
+         g_liveNetworkBlockLogged = true;
+      }
+      return;
+   }
+
    int heartbeatSeconds = (int)MathMax(5, MathMin(60, SafetyHeartbeatSeconds));
    datetime heartbeatNowUtc = TimeGMT();
+
    if(g_apiConfigReady &&
       EnableSafetyHeartbeat &&
       heartbeatNowUtc > 0 &&
@@ -92,13 +107,13 @@ void OnTimer()
       g_signalFlowStatus = "SAFETY_BLOCKED";
       g_signalFlowReason = g_marketSafetyReason;
       g_lastClosedM5Bar = closedBar;
-      Print("[GOLD MARKET SAFETY MT5] signal_skipped_before_api bar_open=",
+      Print("[GOLD MARKET SAFETY FXTF] signal_skipped_before_api bar_open=",
             TimeToString(closedBar, TIME_DATE|TIME_MINUTES),
             " reason=", g_marketSafetyReason);
       return;
    }
 
-   datetime now = TimeCurrent();
+   datetime now = TimeTradeServer();
    if(closedBar == g_lastAttemptedM5Bar &&
       g_lastAttemptAt > 0 &&
       (now - g_lastAttemptAt) < g_retrySeconds)
@@ -113,6 +128,7 @@ void OnTimer()
 
    string payload = "";
    string response = "";
+
    if(!BuildSignalPayload(payload))
    {
       g_signalFlowStatus = "PAYLOAD_BUILD_FAILED";
@@ -124,13 +140,14 @@ void OnTimer()
    {
       g_signalFlowStatus = "AI_TEST_ONLY";
       g_signalFlowReason = "RunAITestOnce=true_routes_to_ai_test_not_signal";
-      string aiTestDoneKey = "GoldAITraderV19:AI_TEST_DONE";
+      string aiTestDoneKey = ScopedGlobalKey("FLOW", "AI_TEST_DONE");
+
       if(!GlobalVariableCheck(aiTestDoneKey))
       {
          string aiTestResponse = "";
          if(PostJson("/api/gold/ai-test", payload, aiTestResponse))
          {
-            GlobalVariableSet(aiTestDoneKey, TimeCurrent());
+            GlobalVariableSet(aiTestDoneKey, TimeTradeServer());
             Print("GoldAITrader MT5: AI test response = ", aiTestResponse);
          }
          else
@@ -146,6 +163,7 @@ void OnTimer()
 
    g_signalFlowStatus = "SIGNAL_POST_PENDING";
    g_signalFlowReason = "posting_to_api_gold_signal";
+
    bool requestSucceeded = PostJson("/api/gold/signal", payload, response);
    if(requestSucceeded)
    {
