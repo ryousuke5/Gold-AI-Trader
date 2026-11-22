@@ -14,7 +14,7 @@ Base: refactor/v19-mt5-portability-foundation
 - The environment probe in mt5/tools/FXTF_GOLD_EnvironmentProbe.mq5 is a one-shot Script. It contains no order APIs, no CTrade, no WebRequest and no external network calls.
 - Do not enable the existing V19 adapter's signal requests or safety heartbeat until symbol, time, quote, API contract and cost handling have been reviewed.
 - Keep auto_trading_enabled=false, execution gates OFF, and no CTrade/order implementation in this migration branch.
-- Prefer a separate FXTF demo account for any recurring Forward test. A live-account read-only quote probe is not permission to trade.
+- Prefer a separate FXTF MT5 Product CFD demo account for recurring Forward tests only if FXTF currently offers one for this service. The public MT5 pages currently list Product CFD and Crypto CFD but do not clearly publish a self-serve MT5 demo route; the 2026-05-20 release notice said demo availability would be announced separately. Verify in the logged-in terminal's Open an Account flow or with FXTF support before assuming a demo is available. A live-account read-only quote probe is not permission to trade.
 
 ## Broker facts to validate against terminal output
 
@@ -71,7 +71,7 @@ Existing mt5/GoldAITraderV19_MT5_Research.mq5 is a first-pass read-only port. Be
 
 ## Phase 4 — controlled forward test and cutover
 
-- Use a dedicated FXTF demo account for any recurring forward/heartbeat testing where possible.
+- Use a dedicated FXTF MT5 Product CFD demo account for recurring forward/heartbeat testing only if available. If FXTF has not opened a demo environment, keep the EA read-only on the live terminal, keep all network requests disabled until reviewed, and do not place orders. A local Strategy Tester is useful for code/history checks but does not validate live server UTC, live spread or execution quality.
 - Ensure the API knows the terminal as broker FXTF and the symbol exactly as supplied by the terminal. No secrets belong in source control.
 - The existing API service's market-safety and signal routes must be checked for FXTF's contract/cost model before any network submission.
 - Compare the frozen strategy on FXTF-native history and forward ticks. Recalculate spread + opening fee + swap assumptions; don't transfer XM PF/expectancy/DD as FXTF evidence.
