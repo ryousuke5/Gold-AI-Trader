@@ -37,8 +37,8 @@ input int    MaxQuoteAgeSeconds = 30;
 input int    RequestTimeoutMs = 8000;
 input int    SafetyHeartbeatSeconds = 15;
 
-// Order execution is intentionally absent. Do not add CTrade, OrderSend,
-// PositionOpen, PositionClose, or any order-modification API in this phase.
+// Order execution is intentionally absent. Do not add any trade-library calls, order-send, position-open,
+// position-close, or order-modification API in this phase.
 
 datetime g_lastClosedM5Bar = 0;
 datetime g_lastAttemptedM5Bar = 0;
