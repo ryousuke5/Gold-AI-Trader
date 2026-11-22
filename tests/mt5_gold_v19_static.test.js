@@ -48,11 +48,10 @@ test('MT5 adapter avoids reserved symbol names and MQL4-only time functions', ()
   assert.match(entry, /input string\s+InpSymbol\s*=/);
   assert.doesNotMatch(entry, /input string\s+SymbolName\s*=/);
   assert.match(common, /TrimText\(InpSymbol\)/);
-  assert.match(marketSafety, /MqlDateTime\s+nowUtcParts/);
-  assert.match(marketSafety, /TimeToStruct\(nowUtc,\s*nowUtcParts\)/);
-  assert.match(marketSafety, /nowUtcParts\.day_of_week\s*==\s*0/);
-  assert.match(marketSafety, /nowUtcParts\.hour\s*>=\s*20/);
-  assert.match(marketSafety, /nowUtcParts\.hour\s*<=\s*23/);
+  assert.match(marketSafety, /bool\s+IsWithinTradingSession\s*\(/);
+  assert.match(marketSafety, /SymbolInfoSessionTrade\s*\(/);
+  assert.match(marketSafety, /reason\s*=\s*"market_closed"/);
+  assert.match(marketSafety, /datetime\s+serverNow\s*=\s*TimeTradeServer\(\)/);
   assert.doesNotMatch(marketSafety, /\bTimeDayOfWeek\s*\(|\bTimeHour\s*\(/);
 });
 
@@ -117,4 +116,37 @@ test('MT5 bar-copy routine requires 24 completed bars and keeps chronological JS
   assert.match(source, /CopyRates\(sym,\s*PERIOD_M5,\s*1,\s*24,\s*m5Bars\)\s*!=\s*24/);
   assert.match(source, /CopyRates\(sym,\s*PERIOD_H1,\s*1,\s*24,\s*h1Bars\)\s*!=\s*24/);
   assert.match(source, /for\(int i = 0; i < count; i\+\+\)/);
+});
+
+
+test('FXTF profile is pinned to XAUUSD, JPY and the observed contract specification', () => {
+  assert.match(entry, /input string\s+InpSymbol\s*=\s*"XAUUSD"/);
+  assert.match(entry, /ExpectedFXTFServer\s*=\s*"FXTF-MT5"/);
+  assert.match(common, /ACCOUNT_SERVER/);
+  assert.match(common, /ExpectedDepositCurrency/);
+  assert.match(common, /SYMBOL_TRADE_CONTRACT_SIZE/);
+  assert.match(common, /SYMBOL_VOLUME_MIN/);
+  assert.match(common, /MathAbs\(minVolume - 1\.0\)/);
+  assert.match(common, /MathAbs\(volumeStep - 1\.0\)/);
+  assert.match(common, /SYMBOL_TRADE_TICK_VALUE/);
+});
+
+test('FXTF daily realized PnL includes opening-side commissions and fees', () => {
+  const marketData = read('../mt5/include/GoldV19MT5_MarketData.mqh');
+  assert.match(marketData, /HistoryDealGetDouble\(ticket, DEAL_COMMISSION\)/);
+  assert.match(marketData, /HistoryDealGetDouble\(ticket, DEAL_FEE\)/);
+  assert.match(marketData, /datetime now = TimeTradeServer\(\)/);
+  assert.doesNotMatch(marketData, /entry != DEAL_ENTRY_OUT/);
+});
+
+test('FXTF real and contest accounts are hard-blocked from Render network calls', () => {
+  assert.match(common, /return \(AccountInfoInteger\(ACCOUNT_TRADE_MODE\) == ACCOUNT_TRADE_MODE_DEMO\)/);
+  assert.match(flow, /if\(!NetworkAllowedForCurrentAccount\(\)\)/);
+  assert.match(flow, /REAL_ACCOUNT_LOCAL_ONLY/);
+});
+
+test('FXTF server UTC conversion accepts only GMT+2 or GMT+3', () => {
+  const timeModule = read('../mt5/include/GoldV19MT5_Time.mqh');
+  assert.match(timeModule, /roundedOffset != 7200/);
+  assert.match(timeModule, /roundedOffset != 10800/);
 });
