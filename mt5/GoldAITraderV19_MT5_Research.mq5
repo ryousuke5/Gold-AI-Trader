@@ -1,28 +1,44 @@
 #property strict
-#property version   "1.00"
-#property description "GOLD V19 MT5 research adapter. Read-only telemetry; no order execution."
+#property version   "1.10"
+#property description "FXTF GOLD V19 MT5 research adapter. Read-only; no order execution."
 
+// FXTF MT5 Product CFD profile.
+// Defaults are based on the observed FXTF terminal specification dated 2026-11-22.
 input string ApiBaseUrl = "https://gold-ai-trader-1.onrender.com";
 input string ApiKey = "CHANGE_ME";
-input string InpSymbol = "";
-input bool   RequireGoldSymbol = true;
+input string InpSymbol = "XAUUSD";
+input string ExpectedFXTFServer = "FXTF-MT5";
+input string ExpectedCompanyFragment = "Goldenway";
+input string ExpectedDepositCurrency = "JPY";
+input bool   RequireStrictFXTFProfile = true;
+
+// Network is disabled by default. A hard guard in the Flow module blocks
+// ALL Render requests whenever the logged-in account is a REAL account.
 input bool   EnableSignalRequests = false;
 input bool   RunAITestOnce = false;
+input bool   EnableSafetyHeartbeat = false;
+
 input int    TimerSeconds = 1;
 input int    MagicNumber = 26092801;
+
+// FXTF spread price ceiling is capped at the existing backend limit (0.50).
+// The observed 0.19 spread was a single weekend last quote, not a live sample.
 input double MaxSpreadPrice = 0.50;
-input int    RequestTimeoutMs = 8000;
-input int    MarketReopenGapSeconds = 7200;
+
+// FXTF has a daily maintenance gap (observed sessions: server 01:05-23:55).
+// A 30-minute tick gap triggers a 30-minute post-reopen safety lock.
+input int    MarketReopenGapSeconds = 1800;
 input int    MarketReopenLockMinutes = 30;
 input double MaxTickJumpPrice = 3.00;
 input double TickRecoveryBandPrice = 0.50;
 input int    TickRecoverySamples = 3;
 input int    MaxQuoteAgeSeconds = 30;
-input bool   EnableSafetyHeartbeat = false;
+
+input int    RequestTimeoutMs = 8000;
 input int    SafetyHeartbeatSeconds = 15;
 
-// Order execution is intentionally absent. The heartbeat always reports
-// allow_auto_orders=false; this adapter contains no order/trade API calls.
+// Order execution is intentionally absent. Do not add CTrade, OrderSend,
+// PositionOpen, PositionClose, or any order-modification API in this phase.
 
 datetime g_lastClosedM5Bar = 0;
 datetime g_lastAttemptedM5Bar = 0;
@@ -30,6 +46,7 @@ datetime g_lastAttemptAt = 0;
 int g_retrySeconds = 30;
 bool g_apiConfigReady = false;
 bool g_apiConfigWarningLogged = false;
+bool g_liveNetworkBlockLogged = false;
 string g_signalFlowStatus = "INITIALIZING";
 string g_signalFlowReason = "not_started";
 
@@ -37,9 +54,11 @@ datetime g_lastObservedTickUtc = 0;
 datetime g_lastSafetyHeartbeatAttemptUtc = 0;
 double g_lastAcceptedMid = 0.0;
 datetime g_reopenLockUntilUtc = 0;
+bool g_firstSessionTickPending = true;
 bool g_tickAnomalyActive = false;
 double g_recoveryMid = 0.0;
 int g_recoveryStableCount = 0;
+
 double g_marketSafetyBid = 0.0;
 double g_marketSafetyAsk = 0.0;
 double g_marketSafetyMid = 0.0;
@@ -70,25 +89,51 @@ int g_h1Atr14Handle = INVALID_HANDLE;
 int OnInit()
 {
    string sym = TradeSymbol();
+   string profileReason = "";
 
-   Print("GoldAITrader V19 MT5 research adapter: initializing. symbol=", sym,
+   Print("GoldAITrader V19 FXTF MT5: initializing. symbol=", sym,
          " signalRequests=", (EnableSignalRequests ? "true" : "false"),
          " safetyHeartbeat=", (EnableSafetyHeartbeat ? "true" : "false"),
          " orderExecution=not_implemented");
 
-   g_apiConfigReady = IsValidApiConfiguration();
-   if(!IsGoldSymbol(sym))
+   if(!ValidateFXTFAccount(profileReason))
    {
-      Print("GoldAITrader MT5: chart symbol is not recognized as gold: ", sym);
+      Print("[FXTF PROFILE] account validation failed: ", profileReason);
       return INIT_FAILED;
    }
 
    if(!SymbolSelect(sym, true))
    {
-      Print("GoldAITrader MT5: SymbolSelect failed. error=", GetLastError(),
+      Print("[FXTF PROFILE] SymbolSelect failed. error=", GetLastError(),
             " symbol=", sym);
       return INIT_FAILED;
    }
+
+   if(RequireStrictFXTFProfile)
+   {
+      if(!ValidateFXTFGoldSpecification(sym, profileReason))
+      {
+         Print("[FXTF PROFILE] symbol specification validation failed: ", profileReason);
+         return INIT_FAILED;
+      }
+   }
+
+   long accountMode = AccountInfoInteger(ACCOUNT_TRADE_MODE);
+   Print("[FXTF PROFILE] verified server=", AccountInfoString(ACCOUNT_SERVER),
+         " company=", AccountInfoString(ACCOUNT_COMPANY),
+         " currency=", AccountInfoString(ACCOUNT_CURRENCY),
+         " account_mode=", AccountModeText(accountMode),
+         " symbol=", sym,
+         " contract_size=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_TRADE_CONTRACT_SIZE), 4),
+         " min_volume=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_VOLUME_MIN), 4),
+         " volume_step=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_VOLUME_STEP), 4),
+         " tick_size=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_SIZE), 8),
+         " tick_value_account_currency=", DoubleToString(SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_VALUE), 8));
+
+   if(accountMode == ACCOUNT_TRADE_MODE_REAL)
+      Print("[FXTF SAFETY] REAL account detected. All Render network requests are hard-blocked; local read-only monitoring only.");
+
+   g_apiConfigReady = IsValidApiConfiguration();
 
    if(TimerSeconds < 1 || RequestTimeoutMs < 1000)
    {
@@ -108,17 +153,18 @@ int OnInit()
       return INIT_FAILED;
    }
 
-   Print("GoldAITrader MT5 research adapter initialized. orderExecution=not_implemented; defaults are network-disabled.");
+   Print("GoldAITrader V19 FXTF MT5 initialized. READ_ONLY=true; network defaults OFF; real-account network guard ACTIVE; orderExecution=not_implemented.");
    return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason)
 {
    EventKillTimer();
+   SaveMarketSafetyState();
    ReleaseIndicatorHandles();
 }
 
 void OnTick()
 {
-   // Timer-driven adapter, intentionally no trading or per-tick action.
+   // Timer-driven read-only adapter. No trading or per-tick action.
 }
