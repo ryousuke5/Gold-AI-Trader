@@ -29,6 +29,9 @@ void OnTimer()
    // and the API configuration is valid.
    UpdateMarketSafety(sym);
 
+   // Local CSV capture is read-only and runs before any optional API route.
+   LogForwardM5Snapshot(sym);
+
    if(!g_apiConfigReady && !g_apiConfigWarningLogged)
    {
       Print("GoldAITrader MT5: API configuration incomplete; local safety monitoring continues and network requests are paused.");
