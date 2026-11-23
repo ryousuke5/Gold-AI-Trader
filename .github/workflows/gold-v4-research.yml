@@ -268,6 +268,7 @@ jobs:
 
   research:
     needs: assemble
+    if: ${{ always() && needs.assemble.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
