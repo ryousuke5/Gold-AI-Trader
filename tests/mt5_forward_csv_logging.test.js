@@ -13,13 +13,13 @@ assert.ok(loggerStart >= 0 && loggerEnd > loggerStart, 'forward logger function 
 const logger = marketData.slice(loggerStart, loggerEnd);
 
 test('local forward CSV capture is enabled by default and restores duplicate state on startup', () => {
-  assert.match(entry, /input bool\\s+EnableLocalForwardLogging\\s*=\\s*true;/);
-  assert.match(entry, /LoadForwardLogState\\(\\);/);
-  assert.match(entry, /EnableSignalRequests\\s*=\\s*false;/);
-  assert.match(entry, /EnableSafetyHeartbeat\\s*=\\s*false;/);
-  assert.match(marketData, /void LoadForwardLogState\\(\\)/);
-  assert.match(logger, /GlobalVariableCheck\\(stateKey\\)/);
-  assert.match(logger, /closedM5Bar\\s*<=\\s*g_lastForwardLoggedBar/);
+  assert.ok(entry.includes('input bool   EnableLocalForwardLogging = true;'));
+  assert.ok(entry.includes('LoadForwardLogState();'));
+  assert.ok(entry.includes('input bool   EnableSignalRequests = false;'));
+  assert.ok(entry.includes('input bool   EnableSafetyHeartbeat = false;'));
+  assert.ok(marketData.includes('void LoadForwardLogState()'));
+  assert.ok(logger.includes('GlobalVariableCheck(stateKey)'));
+  assert.ok(logger.includes('closedM5Bar <= g_lastForwardLoggedBar'));
 });
 
 test('forward CSV contains the completed M5 bar, live quote, cost and indicator fields', () => {
@@ -35,10 +35,10 @@ test('forward CSV contains the completed M5 bar, live quote, cost and indicator 
   ]) {
     assert.ok(logger.includes('"' + field + '"'), 'missing CSV column: ' + field);
   }
-  assert.match(logger, /GoldAITraderV19_M5_Forward\\.csv/);
-  assert.match(logger, /FileOpen\\(fileName,[\\s\\S]*FILE_READ\\|FILE_WRITE\\|FILE_CSV\\|FILE_ANSI\\|FILE_SHARE_READ/);
-  assert.match(logger, /FileSeek\\(file, 0, SEEK_END\\)/);
-  assert.match(logger, /FileFlush\\(file\\)/);
+  assert.ok(logger.includes('GoldAITraderV19_M5_Forward.csv'));
+  assert.ok(logger.includes('FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ'));
+  assert.ok(logger.includes('FileSeek(file, 0, SEEK_END)'));
+  assert.ok(logger.includes('FileFlush(file)'));
 });
 
 test('CSV capture runs after market safety and before optional API requests', () => {
@@ -53,11 +53,10 @@ test('CSV capture runs after market safety and before optional API requests', ()
 });
 
 test('CSV logger itself is local-only and has no trading or HTTP execution calls', () => {
-  assert.doesNotMatch(logger, /\\bWebRequest\\s*\\(/);
-  assert.doesNotMatch(logger, /\\bCTrade\\b/);
-  assert.doesNotMatch(logger, /\\bOrderSend\\s*\\(/);
-  assert.doesNotMatch(logger, /\\bPositionOpen\\s*\\(/);
-  assert.doesNotMatch(logger, /\\bPositionClose\\s*\\(/);
-  assert.doesNotMatch(logger, /\\.Buy\\s*\\(/);
-  assert.doesNotMatch(logger, /\\.Sell\\s*\\(/);
+  for (const forbidden of [
+    'WebRequest(', 'CTrade', 'OrderSend(', 'PositionOpen(',
+    'PositionClose(', '.Buy(', '.Sell('
+  ]) {
+    assert.ok(!logger.includes(forbidden), 'unexpected call in local logger: ' + forbidden);
+  }
 });
