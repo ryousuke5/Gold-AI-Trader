@@ -22,6 +22,8 @@ jobs:
       - run: npm run test:mt4:live
       - run: node --check scripts/backtest-gold-v4.mjs
       - run: node --check scripts/backtest-gold-v4-walkforward.mjs
+      - run: node --check src/gold_macro_regime_v1.js
+      - run: node --check scripts/backtest-gold-macro-regime-v1.mjs
       - name: V4 synthetic backtest smoke test
         run: |
           node <<'NODE'
