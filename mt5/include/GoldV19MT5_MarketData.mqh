@@ -250,8 +250,7 @@ bool LogForwardM5Snapshot(string sym)
          int fileOpenError = GetLastError();
          Print("[FXTF FORWARD LOG] FileOpen failed. error=", fileOpenError,
                " file=", fileName,
-               " data_path=", TerminalInfoString(TERMINAL_DATA_PATH),
-               " files_folder=", TerminalInfoString(TERMINAL_DATA_PATH), "\\MQL5\\Files");
+               " data_path=", TerminalInfoString(TERMINAL_DATA_PATH));
          g_forwardLogWarningLogged = true;
       }
       return false;
