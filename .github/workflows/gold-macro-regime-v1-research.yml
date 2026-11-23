@@ -1,0 +1,58 @@
+name: GOLD Macro Regime V1 Research
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Completed GOLD V4 run containing the prepared 1825-day XAUUSD M5 dataset"
+        required: true
+        default: "45250185009"
+  push:
+    branches: [main]
+    paths:
+      - "src/gold_macro_regime_v1.js"
+      - "scripts/backtest-gold-macro-regime-v1.mjs"
+      - "tests/gold_macro_regime_v1.test.js"
+      - "docs/GOLD_MACRO_REGIME_V1.md"
+      - ".github/workflows/gold-macro-regime-v1-research.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_RUN_ID: ${{ github.event.inputs.source_run_id || '45250185009' }}
+      GOLD_BACKTEST_DATA_FILE: gold-xauusd-data/xauusd-m5.json.gz
+      GOLD_MACRO_OUTPUT_DIR: gold-macro-regime-v1-output
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run repository tests
+        run: npm test
+      - name: Download the completed 5-year XAUUSD M5 dataset from GOLD V4 Research #23
+        uses: actions/download-artifact@v4
+        with:
+          name: gold-v4-xauusd-m5-1825d
+          path: gold-xauusd-data
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+      - name: Run frozen GOLD macro regime event study
+        run: node scripts/backtest-gold-macro-regime-v1.mjs
+      - name: Upload reproducible research report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-macro-regime-v1-research
+          path: |
+            gold-macro-regime-v1-output/
+          retention-days: 30
+          if-no-files-found: warn
