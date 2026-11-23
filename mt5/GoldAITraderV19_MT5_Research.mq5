@@ -19,6 +19,7 @@ input double TickRecoveryBandPrice = 0.50;
 input int    TickRecoverySamples = 3;
 input int    MaxQuoteAgeSeconds = 30;
 input bool   EnableSafetyHeartbeat = false;
+input bool   EnableLocalForwardLogging = true;
 input int    SafetyHeartbeatSeconds = 15;
 
 // Order execution is intentionally absent. The heartbeat always reports
@@ -35,6 +36,8 @@ string g_signalFlowReason = "not_started";
 
 datetime g_lastObservedTickUtc = 0;
 datetime g_lastSafetyHeartbeatAttemptUtc = 0;
+datetime g_lastForwardLoggedBar = 0;
+bool g_forwardLogWarningLogged = false;
 double g_lastAcceptedMid = 0.0;
 datetime g_reopenLockUntilUtc = 0;
 bool g_tickAnomalyActive = false;
@@ -100,6 +103,7 @@ int OnInit()
       return INIT_FAILED;
 
    LoadMarketSafetyState();
+   LoadForwardLogState();
 
    if(!EventSetTimer(TimerSeconds))
    {
