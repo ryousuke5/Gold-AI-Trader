@@ -226,7 +226,8 @@ jobs:
             gold-xauusd-data/chunks/xauusd-m5-${{ matrix.chunk.id }}.manifest.json
           retention-days: 7
   assemble:
-    needs: [plan, prepare]
+    needs: [plan, prepare, recover]
+    if: ${{ always() && needs.plan.result == 'success' && (needs.prepare.result == 'success' || needs.recover.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -234,9 +235,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download completed V4 chunks
+        if: needs.prepare.result == 'success' || needs.recover.result == 'success'
         uses: actions/download-artifact@v4
         with:
           pattern: gold-v4-xauusd-m5-chunk-*
+          path: gold-xauusd-data/chunks
+          merge-multiple: true
+      - name: Download recovered V4 chunks
+        if: needs.recover.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gold-v4-xauusd-m5-recovery-*
           path: gold-xauusd-data/chunks
           merge-multiple: true
       - name: Assemble and validate V4 dataset
