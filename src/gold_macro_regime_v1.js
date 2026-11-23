@@ -28,7 +28,7 @@ export function parseFredCsv(csvText, seriesId = "FRED") {
   }
   const rows = [...byDate.entries()].map(([date, value]) => ({ date, value }))
     .sort((a, b) => a.date.localeCompare(b.date));
-  if (rows.length < 10) throw new Error(seriesId + ": too few usable FRED observations (" + rows.length + ")");
+  if (rows.length === 0) throw new Error(seriesId + ": no usable FRED observations");
   return rows;
 }
 
