@@ -5,12 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { buildGoldV2Setup } from '../src/gold_strategy_v2.js';
 import { buildGoldPullbackRetestSetup } from '../src/gold_pullback_retest_research.js';
 import { buildGoldH1M5HalfbackV1Setup } from '../src/gold_h1_m5_halfback_v1.js';
+import { buildGoldM5Ema20PullbackBreakoutV1Setup, GOLD_M5_EMA20_PULLBACK_BREAKOUT_V1 } from '../src/gold_m5_ema20_pullback_breakout_v1.js';
 import { isolateIsWindow } from '../src/gold_backtest_split.js';
 
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
-  if (!['breakout_v2', 'pullback_retest', 'halfback_v1'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest or halfback_v1.`);
+  if (!['breakout_v2', 'pullback_retest', 'halfback_v1', 'ema20_pullback_breakout_v1'].includes(variant)) {
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest, halfback_v1, or ema20_pullback_breakout_v1.`);
   }
   return variant;
 }
@@ -45,7 +46,9 @@ const HALFBACK_STRATEGY = {
 };
 const buildSelectedSetup = STRATEGY_VARIANT === 'halfback_v1'
   ? (features) => buildGoldH1M5HalfbackV1Setup(features, HALFBACK_STRATEGY)
-  : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
+  : STRATEGY_VARIANT === 'ema20_pullback_breakout_v1'
+    ? (features) => buildGoldM5Ema20PullbackBreakoutV1Setup(features, GOLD_M5_EMA20_PULLBACK_BREAKOUT_V1)
+    : STRATEGY_VARIANT === 'pullback_retest' ? buildGoldPullbackRetestSetup : buildGoldV2Setup;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -541,6 +544,10 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const state={day:null,dayStartEquity:equity,peak:equity};
   const blocks={};
   const setupWaitReasons={};
+  const configuredHistoryBars = Number(strategy.recentM5HistoryBars);
+  const recentM5HistoryBars = Number.isInteger(configuredHistoryBars) && configuredHistoryBars > 0
+    ? configuredHistoryBars
+    : Math.max(80, strategy.rangeLookback + 1);
   let nextAvailable=0;
   let drawdownLockReached=false;
   let firstBlockedCandidateTime=null;
@@ -568,7 +575,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const setup=buildSelectedSetup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
-      recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
+      recentM5:recentBars(m5Ind,i,recentM5HistoryBars)
     },strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
@@ -747,7 +754,9 @@ async function main() {
   const effectiveRequestedStart = config.isOnly ? new Date(rawM5[0].time * 1000) : requestedStart;
   const effectiveRequestedEnd = config.isOnly ? new Date((rawM5.at(-1).time + 300) * 1000) : requestedEnd;
   const rawH1=aggregateM5ToH1(rawM5,config.serverTimezone);
-  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
+  const strategy=STRATEGY_VARIANT==='halfback_v1' ? HALFBACK_STRATEGY
+    : STRATEGY_VARIANT==='ema20_pullback_breakout_v1' ? GOLD_M5_EMA20_PULLBACK_BREAKOUT_V1
+      : JSON.parse(process.env.GOLD_STRATEGY_JSON||JSON.stringify(STRATEGY));
   const results={};
   for(const cost of costScenarios(config)) {
     const runConfig={...config,...cost};
@@ -756,9 +765,11 @@ async function main() {
     console.log(cost.name, out.summary);
   }
   const report={
-    strategy: STRATEGY_VARIANT === 'halfback_v1'
-      ? 'XAUUSD research-only H1 trend + confirmed M5 impulse + 45-55% halfback + continuation reconfirmation'
-      : STRATEGY_VARIANT === 'pullback_retest'
+    strategy: STRATEGY_VARIANT === 'ema20_pullback_breakout_v1'
+      ? 'XAUUSD research-only BUY: completed H1 uptrend + rising M5 EMA20 + EMA20 pullback hold + close above prior 3-bar high'
+      : STRATEGY_VARIANT === 'halfback_v1'
+        ? 'XAUUSD research-only H1 trend + confirmed M5 impulse + 45-55% halfback + continuation reconfirmation'
+        : STRATEGY_VARIANT === 'pullback_retest'
         ? 'XAUUSD research-only H1 trend + M5 EMA20 pullback / prior-candle reconfirmation'
         : 'XAUUSD V2 H1 trend + M5 compression/volume breakout (technical core)',
     strategy_variant: STRATEGY_VARIANT,
@@ -808,7 +819,8 @@ async function main() {
   };
   const outDir=process.env.GOLD_BACKTEST_OUTPUT_DIR||path.resolve(__dirname,'../gold-backtest-output');
   await fs.mkdir(outDir,{recursive:true});
-  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1':'gold_v2';
+  const outputPrefix=STRATEGY_VARIANT==='halfback_v1'?'gold_halfback_v1'
+    : STRATEGY_VARIANT==='ema20_pullback_breakout_v1'?'gold_m5_ema20_pullback_breakout_v1':'gold_v2';
   await fs.writeFile(path.join(outDir,outputPrefix+'_backtest_report.json'),JSON.stringify(report,null,2));
   for(const [name,r] of Object.entries(results)) {
     await fs.writeFile(path.join(outDir,outputPrefix+'_trades_'+name+'.csv'),toCsv(r.trades));
