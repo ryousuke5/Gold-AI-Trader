@@ -40,6 +40,7 @@ function bullishFeatures() {
 }
 
 test('EMA20 pullback breakout V1 emits BUY for H1 uptrend + EMA20 touch + rising EMA20 + 3-bar high close breakout', () => {
+  assert.equal(GOLD_M5_EMA20_PULLBACK_BREAKOUT_V1.rangeLookback, 80);
   const features = bullishFeatures();
   const setup = buildGoldM5Ema20PullbackBreakoutV1Setup(features);
 
