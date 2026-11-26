@@ -41,6 +41,7 @@ function bullishFeatures() {
 
 test('EMA20 pullback breakout V1 emits BUY for H1 uptrend + EMA20 touch + rising EMA20 + 3-bar high close breakout', () => {
   assert.equal(GOLD_M5_EMA20_PULLBACK_BREAKOUT_V1.rangeLookback, 80);
+  assert.equal(GOLD_M5_EMA20_PULLBACK_BREAKOUT_V1.recentM5HistoryBars, 7);
   const features = bullishFeatures();
   const setup = buildGoldM5Ema20PullbackBreakoutV1Setup(features);
 
@@ -54,6 +55,15 @@ test('EMA20 pullback breakout V1 emits BUY for H1 uptrend + EMA20 touch + rising
   assert.ok(setup.stop_loss < setup.entry_reference);
   assert.ok(setup.take_profit > setup.entry_reference);
   assert.equal(setup.risk_reward, 2);
+});
+
+test('EMA20 pullback breakout V1 emits the same BUY using only the required seven completed M5 bars', () => {
+  const features = bullishFeatures();
+  features.recentM5 = features.recentM5.slice(-GOLD_M5_EMA20_PULLBACK_BREAKOUT_V1.recentM5HistoryBars);
+  const setup = buildGoldM5Ema20PullbackBreakoutV1Setup(features);
+  assert.equal(features.recentM5.length, 7);
+  assert.equal(setup.candidate, 'BUY');
+  assert.equal(setup.reason, 'ema20_pullback_breakout_confirmed');
 });
 
 test('EMA20 pullback breakout V1 rejects a market without the strict completed-H1 uptrend', () => {

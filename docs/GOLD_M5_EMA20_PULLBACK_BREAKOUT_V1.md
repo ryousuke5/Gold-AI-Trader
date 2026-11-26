@@ -50,6 +50,7 @@ All candles used by the signal must already be closed.
 - Conservative cost: spread at least 0.75 + slippage at least 0.10.
 - Daily loss limit: 2%; maximum drawdown lock: 5%; maximum hold: 96 M5 bars.
 - Research direction filter: BUY.
+- The EMA20 setup consumes a seven-bar rolling M5 context, sufficient for its fixed five-bar pullback, three-bar breakout, and three-bar EMA20-slope rules; this does not alter signal criteria.
 
 The existing IS candidate gate is unchanged: at least 20 trades, PF >= 1.10,
 expectancy >= +0.05R, max drawdown <= 5%, and at least two calendar years with

@@ -124,6 +124,7 @@ jobs:
           if (r.data_source?.m5 !== 'PREPARED_DUKASCOPY_XAUUSD') throw new Error('Unexpected M5 data source');
           if (r.assumptions?.direction_filter_for_research_only !== 'BUY') throw new Error('Research side must be BUY-only');
           if (r.strategy_parameters?.rangeLookback !== 80) throw new Error('Bounded recent-M5 history setting is missing');
+          if (r.strategy_parameters?.recentM5HistoryBars !== 7) throw new Error('EMA20 seven-bar history optimization is missing');
           const output = {};
           for (const scenario of ['baseline', 'conservative']) {
             const result = r.results?.[scenario];

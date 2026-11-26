@@ -544,6 +544,10 @@ async function runOne(rawM5, rawH1, config, strategy) {
   const state={day:null,dayStartEquity:equity,peak:equity};
   const blocks={};
   const setupWaitReasons={};
+  const configuredHistoryBars = Number(strategy.recentM5HistoryBars);
+  const recentM5HistoryBars = Number.isInteger(configuredHistoryBars) && configuredHistoryBars > 0
+    ? configuredHistoryBars
+    : Math.max(80, strategy.rangeLookback + 1);
   let nextAvailable=0;
   let drawdownLockReached=false;
   let firstBlockedCandidateTime=null;
@@ -571,7 +575,7 @@ async function runOne(rawM5, rawH1, config, strategy) {
     const setup=buildSelectedSetup({
       m5:{ema20:signal.ema20,ema50:signal.ema50,rsi14:signal.rsi14,atr14:signal.atr14},
       h1:{close:h.close,ema20:h.ema20,ema50:h.ema50,ema200:h.ema200,rsi14:h.rsi14,atr14:h.atr14},
-      recentM5:recentBars(m5Ind,i,Math.max(80,strategy.rangeLookback+1))
+      recentM5:recentBars(m5Ind,i,recentM5HistoryBars)
     },strategy);
     if(setup.candidate==='WAIT') {
       const reason=setup.reason||'unknown';
