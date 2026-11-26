@@ -16,6 +16,8 @@ function contiguous(bars, start, end) {
 }
 
 export const GOLD_M5_EMA20_PULLBACK_BREAKOUT_V1 = Object.freeze({
+  // Shared backtester caps recentM5 history at max(80, rangeLookback + 1).
+  rangeLookback: 80,
   pullbackLookbackBars: 5,
   breakoutLookbackBars: 3,
   ema20SlopeLookbackBars: 3,
