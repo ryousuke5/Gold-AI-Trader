@@ -11,7 +11,7 @@ import { isolateIsWindow } from '../src/gold_backtest_split.js';
 export function normalizeBacktestStrategyVariant(value = 'breakout_v2') {
   const variant = String(value || 'breakout_v2').trim().toLowerCase();
   if (!['breakout_v2', 'pullback_retest', 'halfback_v1', 'ema20_pullback_breakout_v1'].includes(variant)) {
-    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2, pullback_retest, halfback_v1, or ema20_pullback_breakout_v1.`);
+    throw new Error(`Invalid GOLD_BACKTEST_STRATEGY_VARIANT: ${variant}. Use breakout_v2 or pullback_retest, halfback_v1, or ema20_pullback_breakout_v1.`);
   }
   return variant;
 }
