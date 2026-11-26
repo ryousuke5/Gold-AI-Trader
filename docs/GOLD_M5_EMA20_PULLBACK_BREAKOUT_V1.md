@@ -37,8 +37,10 @@ All candles used by the signal must already be closed.
 
 ## Fixed IS screen
 
-- Data: Dukascopy XAUUSD M5 bid bars; H1 bars are aggregated from M5 by the
-  shared backtester.
+- Data: Dukascopy XAUUSD M1 BID archive bars are resampled to complete M5 bars
+  in UTC. Incomplete M5 groups and inactive zero-volume flat placeholders are
+  removed by the existing preparation pipeline. H1 bars are aggregated from M5
+  by the shared backtester.
 - Requested data window: 1,825 days ending 2026-10-05 23:59:59 UTC.
 - Evaluation: the shared IS-only split excludes the final 730 days before
   generating indicators/signals. OOS prices are not used for signal generation.
