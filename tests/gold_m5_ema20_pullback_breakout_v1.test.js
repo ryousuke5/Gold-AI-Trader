@@ -104,7 +104,7 @@ test('EMA20 pullback breakout V1 rejects noncontiguous M5 bars', () => {
   features.recentM5[17].time += 300;
   const setup = buildGoldM5Ema20PullbackBreakoutV1Setup(features);
   assert.equal(setup.candidate, 'WAIT');
-  assert.equal(setup.reason, 'noncontiguous_confirmation_bars');
+  assert.equal(setup.reason, 'noncontiguous_pullback_sequence');
 });
 
 test('EMA20 pullback breakout V1 is BUY-only and has no short-side mirror', () => {
