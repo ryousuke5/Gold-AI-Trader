@@ -27,7 +27,7 @@ function bullishFeatures() {
     ...bars[15], open: 101.8, high: 102.0, low: 101.0, close: 101.4
   };
   // Local highs after the pullback; the signal candle must close above all 3.
-  bars[16] = { ...bars[16], open: 102.0, high: 102.7, low: 101.7, close: 102.4 };
+  bars[16] = { ...bars[16], open: 102.0, high: 102.7, low: 101.9, close: 102.4 };
   bars[17] = { ...bars[17], open: 102.3, high: 103.0, low: 102.1, close: 102.7 };
   bars[18] = { ...bars[18], open: 102.6, high: 102.9, low: 102.4, close: 102.5 };
   bars[19] = { ...bars[19], open: 102.7, high: 103.9, low: 102.6, close: 103.6 };
