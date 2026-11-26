@@ -1,0 +1,106 @@
+name: GOLD M5 EMA20 Pullback Breakout V1 IS Screen
+
+on:
+  push:
+    branches:
+      - feat/gold-m5-ema20-pullback-breakout-v1
+    paths:
+      - 'src/gold_m5_ema20_pullback_breakout_v1.js'
+      - 'tests/gold_m5_ema20_pullback_breakout_v1.test.js'
+      - 'scripts/backtest-gold-v2.mjs'
+      - '.github/workflows/gold-m5-ema20-pullback-breakout-v1-is-screen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gold-m5-ema20-pullback-breakout-v1-is-screen
+  cancel-in-progress: false
+
+jobs:
+  is-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GOLD_BACKTEST_STRATEGY_VARIANT: ema20_pullback_breakout_v1
+      GOLD_BACKTEST_IS_ONLY: 'true'
+      GOLD_BACKTEST_ALLOWED_SIDE: BUY
+      GOLD_BACKTEST_LOOKBACK_DAYS: '1825'
+      GOLD_BACKTEST_END_UTC: '2026-10-05T23:59:59Z'
+      GOLD_BACKTEST_INITIAL_EQUITY: '100000'
+      GOLD_BACKTEST_RISK_PCT: '0.25'
+      GOLD_BACKTEST_SPREAD_PRICE: '0.50'
+      GOLD_BACKTEST_SLIPPAGE_PRICE: '0.05'
+      GOLD_BACKTEST_MAX_DAILY_LOSS_PCT: '2'
+      GOLD_BACKTEST_MAX_DRAWDOWN_PCT: '5'
+      GOLD_BACKTEST_MAX_HOLD_BARS: '96'
+      GOLD_BACKTEST_MAX_ENTRY_GAP_ATR: '0.50'
+      GOLD_BACKTEST_OUTPUT_DIR: gold-m5-ema20-pullback-breakout-v1-is-output
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run complete unit and safety test suite
+        run: npm test
+
+      - name: Syntax checks
+        run: |
+          node --check src/gold_m5_ema20_pullback_breakout_v1.js
+          node --check scripts/backtest-gold-v2.mjs
+
+      - name: Download Dukascopy XAUUSD M5 history and run fixed 3-year IS-only screen
+        run: node scripts/backtest-gold-v2.mjs
+
+      - name: Verify IS-only report contract
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const reportPath = 'gold-m5-ema20-pullback-breakout-v1-is-output/gold_m5_ema20_pullback_breakout_v1_backtest_report.json';
+          const r = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+          if (r.strategy_variant !== 'ema20_pullback_breakout_v1') throw new Error('Wrong strategy variant');
+          if (r.evaluation_mode !== 'IS_ONLY_CANDIDATE_SCREEN') throw new Error('Report is not IS-only');
+          if (r.oos_prices_used_for_signal_generation !== false) throw new Error('OOS data was used for signal generation');
+          if (r.data_source?.m5 !== 'DUKASCOPY_XAUUSD') throw new Error('Unexpected M5 data source');
+          if (r.assumptions?.direction_filter_for_research_only !== 'BUY') throw new Error('Research side must be BUY-only');
+          for (const scenario of ['baseline', 'conservative']) {
+            const result = r.results?.[scenario];
+            if (!result || !Number.isFinite(Number(result.signals_evaluated))) {
+              throw new Error('Missing scenario or signal count: ' + scenario);
+            }
+            for (const key of ['trades', 'profit_factor', 'expectancy_R', 'max_drawdown_pct']) {
+              if (!Number.isFinite(Number(result.summary?.[key]))) {
+                throw new Error('Missing metric ' + key + ' in ' + scenario);
+              }
+            }
+            if (result.candidates_sell !== 0) throw new Error('BUY-only strategy produced SELL candidates');
+          }
+          console.log('EMA20 PULLBACK BREAKOUT V1 IS-ONLY REPORT CONTRACT PASS');
+          console.log(JSON.stringify({
+            strategy: r.strategy,
+            strategy_parameters: r.strategy_parameters,
+            test_period: r.test_period,
+            baseline: r.results.baseline.summary,
+            baseline_quality_gate: r.results.baseline.qualityGate,
+            conservative: r.results.conservative.summary,
+            conservative_quality_gate: r.results.conservative.qualityGate
+          }, null, 2));
+          NODE
+
+      - name: Upload IS-only research artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-m5-ema20-pullback-breakout-v1-is-only-results
+          path: gold-m5-ema20-pullback-breakout-v1-is-output/
+          retention-days: 30
+          if-no-files-found: warn
