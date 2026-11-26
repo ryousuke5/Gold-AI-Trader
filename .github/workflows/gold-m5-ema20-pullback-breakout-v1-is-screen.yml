@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: gold-m5-ema20-pullback-breakout-v1-is-screen
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   plan:
